@@ -1,0 +1,4 @@
+# Ignore generated HWID reports (contains sensitive serial numbers)
+HWID-Reports/
+*.txt
+*.json
