@@ -344,7 +344,12 @@ Assert ((Get-PnpStatus 28).Text -eq 'Driver not installed (code 28)') 'Missing d
 Assert ((Get-PnpStatus 12).Text -match 'Resource conflict') 'Actual Windows resource conflicts are identified'
 Assert ((Get-PnpStatus 999).Text -eq 'Device issue (code 999)') 'Unmapped status codes retain their numeric value'
 $usbKeyboard=[pscustomobject]@{Name='Keyboard';PNPClass='HIDClass';DeviceInstanceId='USB\VID_TEST\KEYBOARD';HardwareID=@('USB\MODEL','USB\GENERAL');CompatibleID=@('USB\CLASS');ConfigManagerErrorCode=0}
-Assert ((Get-PnpGroup $usbKeyboard) -eq 'USB') 'USB peripherals outside the USB class are grouped correctly'
+Assert ((Get-PnpGroup $usbKeyboard) -eq 'INPUT') 'USB input devices are grouped by function rather than their transport'
+foreach($entry in @(@('Camera','CAMERAS'),@('MEDIA','AUDIO'),@('Bluetooth','BLUETOOTH'),@('Keyboard','INPUT'),@('Mouse','INPUT'))) {
+    Assert ((Get-PnpGroup ([pscustomobject]@{PNPClass=$entry[0];DeviceInstanceId='USB\VID_TEST\DEVICE'})) -eq $entry[1]) ('USB function grouping retains '+$entry[0])
+}
+Assert ((Get-PnpGroup ([pscustomobject]@{PNPClass=$null;DeviceInstanceId='USB\VID_TEST\DEVICE'})) -eq 'USB') 'Unclassified USB nodes remain visible in USB fallback'
+Assert ((Get-PnpGroup ([pscustomobject]@{PNPClass=$null;DeviceInstanceId='USBSTOR\DISK'})) -eq 'OTHER DEVICES') 'USB bus fallback requires the complete enumerator name'
 $unknownDevice=[pscustomobject]@{Name='Unknown device';PNPClass=$null;DeviceInstanceId='PCI\UNKNOWN';ConfigManagerErrorCode=28}
 Assert ((Get-PnpGroup $unknownDevice) -eq 'OTHER DEVICES') 'Unclassified problem devices remain visible'
 $anotherKeyboard=[pscustomobject]@{Name='Keyboard 2';PNPClass='HIDClass';DeviceInstanceId='USB\VID_TEST\KEYBOARD2';HardwareID=@('USB\MODEL');ConfigManagerErrorCode=0}
@@ -354,7 +359,7 @@ Assert (@(Get-PnpIssues @($usbKeyboard,$duplicateKeyboard) | Where-Object Kind -
 Assert (@(Get-PnpIssues @($unknownDevice)).Count -eq 1) 'Nonzero device status appears in review issues'
 $script:rendered.Clear()
 Show-PnpRecords @($usbKeyboard,$unknownDevice)
-Assert (@($script:rendered | Where-Object Text -match 'USB / 1 device').Count -eq 1) 'Compact deep view has category headings and counts'
+Assert (@($script:rendered | Where-Object Text -match 'INPUT / 1 device').Count -eq 1) 'Compact deep view has function category headings and counts'
 Assert (@($script:rendered | Where-Object Text -match 'USB\\GENERAL|Compatible ID').Count -eq 0) 'Compact deep view hides extra hardware and compatibility lists'
 $script:rendered.Clear()
 Show-PnpRecords @($usbKeyboard) -Full
@@ -363,6 +368,9 @@ Assert (@($fullLines | Where-Object {$_ -like '*Hardware ID 1*USB\MODEL*'}).Coun
 Assert (@($fullLines | Where-Object {$_ -like '*Hardware ID 2*USB\GENERAL*'}).Count -eq 1) 'Full view preserves additional IDs in the provider order'
 Assert (@($fullLines | Where-Object {$_ -like '*Compatible ID 1*USB\CLASS*'}).Count -eq 1) 'Full view lists compatible IDs separately'
 $nameless=[pscustomobject]@{Name=$null;PNPClass='USB';DeviceInstanceId=$null;HardwareID=@();CompatibleID=@();ConfigManagerErrorCode=$null}
+Assert (@(Get-PnpIssues @($nameless) | Where-Object Kind -eq 'UnknownStatus').Count -eq 1) 'Unread status is a review item rather than a false all-clear'
+Assert (@(Get-PnpIssues @($null,$usbKeyboard)).Count -eq 0) 'Null provider rows do not create unknown-device review items'
+Assert (@(Get-PnpIssues @([pscustomobject]@{Name='Bad code';ConfigManagerErrorCode='invalid'}) | Where-Object Kind -eq 'UnknownStatus').Count -eq 1) 'Malformed provider status is shown as unknown rather than working'
 $script:rendered.Clear()
 Show-PnpRecords @($nameless) -Full
 Assert (@($script:rendered | Where-Object Text -match 'Unnamed device').Count -eq 1) 'Incomplete devices render without an empty heading'
@@ -545,6 +553,13 @@ Assert $missingReport 'Missing report files produce a clear import error'
 $recentFixture=@([pscustomobject]@{FullName="C:\Reports\a ! & [test] ' e.json"},[pscustomobject]@{FullName='C:\Reports\b.json'})
 Assert ((Resolve-CompareInput '1' $recentFixture) -eq $recentFixture[0].FullName) 'Recent-report selection preserves literal special characters in paths'
 Assert ((Resolve-CompareInput '"C:\Reports\custom file.json"' @()) -eq 'C:\Reports\custom file.json') 'Quoted pasted report paths are accepted'
+Assert ((Resolve-CompareInput "'C:\Reports\custom file.json'" @()) -eq 'C:\Reports\custom file.json') 'Single-quoted report paths from PowerShell are accepted'
+Assert ((Resolve-CompareInput '"C:\Reports\O''Brien [baseline] & scan!.json"' @()) -eq 'C:\Reports\O''Brien [baseline] & scan!.json') 'Pasted paths preserve apostrophes brackets and command-like characters literally'
+foreach($badPathInput in @('"C:\Reports\scan.json','C:\Reports\scan.json"','""',("C:\Reports\scan"+[char]0+'.json'),("C:\Reports\one.json"+[char]10+'two.json'))) {
+    $badPathRejected=$false
+    try {Resolve-CompareInput $badPathInput @() | Out-Null}catch{$badPathRejected=$true}
+    Assert $badPathRejected 'Malformed empty quoted or multiline report paths get a specific input error'
+}
 Assert ($null -eq (Resolve-CompareInput '0' $recentFixture) -and $null -eq (Resolve-CompareInput '' $recentFixture)) 'Zero and blank cancel report selection'
 $badRecent=$false
 try {Resolve-CompareInput '9' $recentFixture | Out-Null}catch{$badRecent=$true}

@@ -14,6 +14,7 @@ Use **[1]** for the overview. It separates normal query coverage, identifier fie
 | NOT READ | A query or optional catalog could not be read |
 | Not scanned | The optional extended scan has not been requested |
 | Conflict | Sources disagree, or records cannot be matched reliably |
+| Status not supplied | Windows did not return a readable device status; condition is unknown and included in review |
 
 Found does not prove that an identifier is unique or authentic. Missing/default values are different from failed queries. **[4]** explains findings; **[5]** shows full values and sources. Extended records have their own capture time and are not added to the normal identifier-field total.
 
@@ -31,6 +32,8 @@ TXT is for reading. JSON is for comparison. Saves use new filenames rather than 
 2. After changing hardware or connecting devices, choose **[9] > [1]** to refresh the current scan.
 3. Choose **[7]** and enter the path to the baseline JSON.
 4. Read the previous/current values and the indicated character differences.
+
+Pasted paths can use matching single or double quotes. Brackets, apostrophes and ampersands are treated as literal filename characters. The checker does not execute pasted text or expand shell commands.
 
 Comparison also identifies added/removed records. Missing or duplicate matching keys can prevent a reliable match; the checker explains skipped comparisons rather than guessing. A changed device-instance ID can reflect a different port or Windows device record.
 

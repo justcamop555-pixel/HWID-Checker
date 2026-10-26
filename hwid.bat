@@ -651,7 +651,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.40' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.41' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -1363,7 +1363,6 @@ function Get-PnpGroup($Device) {
         'DiskDrive' {return 'STORAGE'}; 'SCSIAdapter' {return 'STORAGE'}; 'HDC' {return 'STORAGE'}
         'USB' {return 'USB'}
     }
-    if([string]$Device.DeviceInstanceId -match '^USB'){return 'USB'}
     switch([string]$Device.PNPClass) {
         'Keyboard' {return 'INPUT'}; 'Mouse' {return 'INPUT'}; 'HIDClass' {return 'INPUT'}
         'MEDIA' {return 'AUDIO'}; 'AudioEndpoint' {return 'AUDIO'}
@@ -1373,14 +1372,19 @@ function Get-PnpGroup($Device) {
         'Processor' {return 'SYSTEM & FIRMWARE'}; 'Firmware' {return 'SYSTEM & FIRMWARE'}
         'SecurityDevices' {return 'SYSTEM & FIRMWARE'}; 'Memory' {return 'SYSTEM & FIRMWARE'}
     }
+    # Prefer a known device function over its transport (USB cameras are cameras).
+    if([string]$Device.DeviceInstanceId -match '^USB\\'){return 'USB'}
     return 'OTHER DEVICES'
 }
 function Get-PnpIssues($Devices) {
     if(-not (Test-SectionReadable $Devices)){return}
     foreach($device in $Devices) {
+        if($null -eq $device){continue}
         $status=Get-PnpStatus $device.ConfigManagerErrorCode
         if($status.Quality -eq 'Review') {
             [pscustomobject]@{Device=$device.Name;Message=$status.Text;Kind='Status'}
+        } elseif($status.Quality -eq 'Unknown') {
+            [pscustomobject]@{Device=$device.Name;Message='Windows device status was not read; condition is unknown.';Kind='UnknownStatus'}
         }
     }
     # Hardware IDs describe models, so sharing them is expected. Only instance IDs
@@ -1769,7 +1773,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-Host '  Hardware identity and Windows inventory. Read-only scan.' -ForegroundColor $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.40'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.41'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-Host "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" -ForegroundColor $palette.Muted
@@ -2175,7 +2179,17 @@ function Resolve-CompareInput($Value,$Recent) {
         if($index -ge @($Recent).Count){throw 'That recent-report number is not listed. Paste a JSON path or select a listed number.'}
         return $Recent[$index].FullName
     }
-    return $text.Trim('"')
+    # Only remove one matching pair; preserve apostrophes and literal path characters.
+    $first=$text[0];$last=$text[$text.Length-1]
+    if($first -eq [char]34 -or $first -eq [char]39) {
+        if($text.Length -lt 2 -or $last -ne $first){throw 'Report path has an unmatched quote. Paste the path again.'}
+        $text=$text.Substring(1,$text.Length-2)
+    } elseif($last -eq [char]34 -or $last -eq [char]39) {
+        throw 'Report path has an unmatched quote. Paste the path again.'
+    }
+    if([string]::IsNullOrWhiteSpace($text)){throw 'Report path is empty. Choose a listed number, paste a JSON path, or use 0 to go back.'}
+    if($text -match '[\x00-\x1f\x7f]'){throw 'Report path contains a control character. Paste a single JSON file path.'}
+    return $text
 }
 function Read-CompareReportPath {
     $folder=Join-Path (Split-Path -Parent $env:HWID_SCRIPT) 'HWID-Reports'
