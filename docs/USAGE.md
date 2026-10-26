@@ -18,6 +18,22 @@ Use **[1]** for the overview. It separates normal query coverage, identifier fie
 
 Found does not prove that an identifier is unique or authentic. Missing/default values are different from failed queries. **[4]** explains findings; **[5]** shows full values and sources. Extended records have their own capture time and are not added to the normal identifier-field total.
 
+## Understand unreadable results
+
+The scan's **NOT READ** label means the query did not supply usable records. **CHECK** means records were read but some fields or device records need review. The finish line counts read and not-read sections separately.
+
+| Code | Reason | Suggested action |
+| --- | --- | --- |
+| READ-01 | Access blocked | Run as administrator if appropriate, then rescan |
+| READ-02 | Provider timed out | Retry the scan; the Windows provider may be slow or stalled |
+| READ-03 | Provider unavailable | Check runtime/provider details in **[5]**; the Windows version may not expose it |
+| READ-04 | No records returned | Check whether the device is expected or connected, then rescan |
+| READ-05 | Other Windows read failure | Retry and inspect technical details in **[5]** or saved reports |
+
+Main **[4]** groups device findings, unreadable sections, and missing/default IDs separately. Use **1** for the top, **2** for devices, **3** for unreadable sections, and **4** for ID fields. Missing instance IDs and unread device status are review findings; they do not establish that hardware is broken. Raw technical messages remain in the full report and exports.
+
+Failure classification uses available typed errors/codes first, then known message patterns. An unfamiliar localized message without a recognized code remains READ-05. A timeout setting does not guarantee an overall scan deadline.
+
 ## Save a baseline
 
 1. Finish the scan you want to keep.

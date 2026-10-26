@@ -651,7 +651,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.41' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.42' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -689,6 +689,7 @@ function Get-FieldLabel($Name) {
     $labels = @{
         PartitionGuid='Unique GPT partition ID'; GptType='GPT partition type (shared category)'; MbrType='MBR partition type code'; AccessPaths='Volume GUID / access paths'; DiskNumber='Disk number'; PartitionNumber='Partition number'
         ScanSeconds='Total scan time (seconds)'; ScanCompleted='Scan completed'; ScanNumber='Session snapshot number'; QueryMode='Scan mode'; Seconds='Query time (seconds)'; Results='Records returned'
+        FailureCode='Read error code';FailureReason='Read failure';NextStep='Suggested next step'
         PowerShellVersion='PowerShell version';WindowsVersion='Windows version';QueryBackend='Hardware query backend';MissingCommands='Unavailable commands (may be optional)';LanguageMode='PowerShell language mode'
         ProcessorId='CPU identifier'; UUID='System UUID'; SerialNumber='Serial number'
         DeviceInstanceId='Device instance ID'; HardwareID='Hardware IDs (driver match)'; CompatibleID='Compatible driver IDs'; ConfigManagerErrorCode='Windows device status code'
@@ -1000,39 +1001,48 @@ function Show-FullReport {
         Show-PnpRecords $report['Extended device inventory'] -Full -Extended
     }
     Add-ReportBookmark '8'
-    Show-Attention
+    Show-Attention -Inline
     Write-Heading 'STARTUP SCAN TIMING'
     Write-PnpValue 'Timing scope' 'Startup queries only; refreshed device views do not retime the original scan.' $palette.Muted
     Show-Records $report['Scan timing']
 }
-function Show-Attention {
+function Show-Attention([switch]$Inline) {
+    if(-not $Inline){Reset-UiPage}
     Start-UiReport
+    if(-not $Inline){Add-ReportBookmark '1'}
     Write-Heading 'ITEMS TO REVIEW'
     $issues = @($identifiers | Where-Object Quality -ne 'Reported')
     $conflicts = @(Get-QuickDisks $report | Where-Object Quality -eq 'Conflict')
     $pnpIssues=@(Get-PnpIssues $report['PnP hardware IDs'])
     $inventoryConflicts=@(Get-InventoryConflicts $report)
+    Write-PnpValue 'Review counts' ("$($warnings.Count) sections not read / $($pnpIssues.Count) device findings / $($issues.Count) missing or default IDs") $palette.Text
+    if(-not $Inline){Write-PnpValue 'Jump' '1 Top / 2 Devices / 3 Not read / 4 IDs. Enter = menu.' $palette.Muted}
     if (-not $issues.Count -and -not $warnings.Count -and -not $conflicts.Count -and -not $pnpIssues.Count -and -not $inventoryConflicts.Count) {
         Write-Host '  [OK] No missing identifiers, placeholders, or failed sections detected.' -ForegroundColor $palette.Good
     }
     foreach($conflict in $inventoryConflicts){Write-PnpValue 'SCAN CONFLICT' ($conflict.Section+' / '+$conflict.DeviceKey+' / '+$conflict.Message) $palette.Warn}
+    if(-not $Inline){Add-ReportBookmark '2'}
+    if($pnpIssues.Count){Write-Host '';Write-Host '  DEVICE STATUS & RECORDS' -ForegroundColor $palette.Heading}
     foreach($problem in $pnpIssues){Write-PnpValue 'DEVICE REVIEW' ($problem.Device+' / '+$problem.Message) $palette.Warn}
     foreach ($conflict in $conflicts) { Write-Host "  [SOURCE CLASH] $($conflict.Label): Windows reports two different serials. See [5]." -ForegroundColor $palette.Warn }
+    if(-not $Inline){Add-ReportBookmark '3'}
+    if($warnings.Count){Write-Host '';Write-Host '  SECTIONS NOT READ' -ForegroundColor $palette.Heading}
     foreach ($warning in $warnings) {
         $split = $warning -split ': ', 2
-        Write-Host "  [NOT READ] $($split[0])" -ForegroundColor $palette.Warn
-        $advice = if ($split[1] -match 'access|denied|privilege|permission|authorized') { 'Windows blocked access. Try Run as administrator.' }
-            elseif ($split[1] -match 'No data') { 'Windows did not return a device for this section.' }
-            else { 'Windows could not read this section. See Full report for the technical message.' }
-        Write-Host "      $advice" -ForegroundColor $palette.Muted
+        $failure=Get-ScanFailureInfo $split[1]
+        $stored=if($report.Contains($split[0])){@($report[$split[0]])[0]}else{$null}
+        if($stored.FailureCode -and $stored.FailureReason -and $stored.NextStep){$failure=[pscustomobject]@{Code=$stored.FailureCode;Reason=$stored.FailureReason;Action=$stored.NextStep}}
+        Write-PnpValue ('NOT READ / '+$split[0]) ($failure.Reason+' ['+$failure.Code+']') $palette.Warn
+        Write-PnpValue 'Next' $failure.Action $palette.Muted
     }
+    if(-not $Inline){Add-ReportBookmark '4'}
+    if($issues.Count){Write-Host '';Write-Host '  IDENTIFIERS NOT SUPPLIED / DEFAULT' -ForegroundColor $palette.Heading}
     foreach ($row in $issues) {
         $device = if ($row.Device) { " ($($row.Device))" } else { '' }
         $status = if ($row.Quality -eq 'Missing') { 'NOT SUPPLIED' } else { 'DEFAULT VALUE' }
         Write-PnpValue $status ("$($row.Section)${device} / $(Get-FieldLabel $row.Field)") $palette.Warn
         if ($row.Quality -eq 'Placeholder') { Write-Host "      Windows returned '$($row.Value)' instead of a useful ID." -ForegroundColor $palette.Muted }
     }
-    if ($warnings.Count) { Write-Host '  Access denied? Try Run as administrator. Some providers may still be unavailable.' -ForegroundColor $palette.Muted }
     if ($issues.Count) { Write-Host '  Missing or placeholder values can be normal firmware limitations.' -ForegroundColor $palette.Muted }
 }
 function Show-Categories {
@@ -1331,7 +1341,9 @@ function Start-ExtendedDeviceScan {
         for($i=$warnings.Count-1;$i -ge 0;$i--){if($warnings[$i].StartsWith('Extended device inventory: ')){$warnings.RemoveAt($i)}}
         $report['Warnings']=@($warnings.ToArray())
     }catch {
-        Write-PnpValue 'EXTENDED-01 / not completed' (Get-ScanFailureHint $_.Exception.Message) $palette.Warn
+        $failure=Get-ScanFailureInfo $_
+        Write-PnpValue 'EXTENDED-01 / not completed' ($failure.Reason+' ['+$failure.Code+']') $palette.Warn
+        Write-PnpValue 'Technical detail' $failure.Details $palette.Muted
         Write-PnpValue 'Retry' 'Use [9] > [4] again. Existing normal-scan data is unchanged.' $palette.Muted
         if($report.Contains('Extended device inventory') -and $report.Contains('Extended scan info')){Write-PnpValue 'Previous catalog kept' ('Earlier capture: '+(Format-ScanTime $report['Extended scan info'].Captured)) $palette.Warn}
         return
@@ -1380,6 +1392,9 @@ function Get-PnpIssues($Devices) {
     if(-not (Test-SectionReadable $Devices)){return}
     foreach($device in $Devices) {
         if($null -eq $device){continue}
+        if([string]::IsNullOrWhiteSpace([string]$device.DeviceInstanceId)) {
+            [pscustomobject]@{Device=$device.Name;Message='Device instance ID was not supplied; this node cannot be matched reliably.';Kind='MissingInstance'}
+        }
         $status=Get-PnpStatus $device.ConfigManagerErrorCode
         if($status.Quality -eq 'Review') {
             [pscustomobject]@{Device=$device.Name;Message=$status.Text;Kind='Status'}
@@ -1481,7 +1496,8 @@ function Show-DriverHardwareIds {
         $report['PnP hardware IDs']=$devices
     } catch {
         $message=$_.Exception.Message
-        $report['PnP hardware IDs']=@{Unavailable=$message}
+        $failure=Get-ScanFailureInfo $_
+        $report['PnP hardware IDs']=@{Unavailable=$message;FailureCode=$failure.Code;FailureReason=$failure.Reason;NextStep=$failure.Action}
         $warnings.Add("PnP hardware IDs: $message")
     }
     $report['Warnings']=@($warnings.ToArray())
@@ -1590,11 +1606,13 @@ function Show-Records($Records,$SectionName='') {
 function Get-SectionIdentifierInfo($Name,$Records) {
     if($Name -eq 'PnP hardware IDs') {
         $nodes=@($Records | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_.DeviceInstanceId)}).Count
+        $missingNodes=@($Records | Where-Object {$null -ne $_ -and [string]::IsNullOrWhiteSpace([string]$_.DeviceInstanceId)}).Count
         $models=@($Records | Where-Object {@($_.HardwareID | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_)}).Count -gt 0}).Count
         $review=@(Get-PnpIssues $Records).Count
         $text="$nodes instance IDs; $models with model IDs"
+        if($missingNodes){$text+="; $missingNodes instance IDs missing"}
         if($review){$text+="; $review review"}
-        return [pscustomobject]@{Text=$text;Tag=$(if($review){'CHECK'}else{'READ'});Color=$(if($review){'Warn'}else{'Good'});Found=$nodes;Missing=0;Default=0}
+        return [pscustomobject]@{Text=$text;Tag=$(if($review){'CHECK'}else{'READ'});Color=$(if($review){'Warn'}else{'Good'});Found=$nodes;Missing=$missingNodes;Default=0}
     }
     $found=0;$missing=0;$defaults=0
     foreach($record in $Records) {
@@ -1704,24 +1722,54 @@ function Invoke-ScanQuery([scriptblock]$Query,[scriptblock]$Pulse) {
         $worker.Dispose()
     }
 }
+function Get-ScanFailureInfo($Failure) {
+    $details=[string]$Failure
+    $category='';$kind='Other'
+    $exception=$null
+    if($Failure -is [System.Management.Automation.ErrorRecord]) {
+        $details=$Failure.Exception.Message;$category=[string]$Failure.CategoryInfo.Category;$exception=$Failure.Exception
+    } elseif($Failure -is [Exception]) {$details=$Failure.Message;$exception=$Failure}
+    # Typed errors and standard HRESULTs remain useful on non-English Windows.
+    for($depth=0;$null -ne $exception -and $depth -lt 16;$depth++) {
+        $hresult=$exception.HResult.ToString('X8')
+        $cimStatus=if($exception.PSObject.Properties['StatusCode']){[string]$exception.StatusCode}else{''}
+        if($exception -is [UnauthorizedAccessException] -or $hresult -in @('80070005','80041003') -or $cimStatus -eq 'AccessDenied'){$kind='Access';break}
+        if($exception -is [TimeoutException] -or $hresult -eq '800705B4'){$kind='Timeout';break}
+        if($hresult -in @('8004100E','80041010','80041013','800706BA') -or $cimStatus -in @('InvalidClass','InvalidNamespace','NotSupported')){$kind='Provider';break}
+        $exception=$exception.InnerException
+    }
+    if($kind -eq 'Other') {
+        if($category -eq 'PermissionDenied' -or $details -match '(?i)access\s+(is\s+)?denied|unauthori[sz]ed|permission denied|insufficient privileges?|0x80070005|0x80041003'){$kind='Access'}
+        elseif($category -eq 'OperationTimeout' -or $details -match '(?i)timed out|timeout|time-out|0x800705B4'){$kind='Timeout'}
+        elseif($details -match '(?i)Invalid class|Invalid namespace|not supported|not recognized|No CIM or legacy WMI|0x8004100e|0x80041010|0x80041013|0x800706ba'){$kind='Provider'}
+        elseif($details -match '(?i)No data returned|No .* returned'){$kind='Empty'}
+    }
+    $info=switch($kind) {
+        'Access' {@('READ-01','Access blocked','Run as administrator if appropriate, then rescan [9] > [1].')}
+        'Timeout' {@('READ-02','Provider timed out','Retry [9] > [1]. A slow or stalled Windows provider may need attention.')}
+        'Provider' {@('READ-03','Provider unavailable','Check runtime/provider details in [5]. This Windows version may not expose it.')}
+        'Empty' {@('READ-04','No records returned','No matching records were returned. If a device is expected, connect it and rescan.')}
+        default {@('READ-05','Windows read failed','Retry [9] > [1]. Technical details are in [5] and saved reports.')}
+    }
+    [pscustomobject]@{Code=$info[0];Reason=$info[1];Action=$info[2];Details=$details}
+}
 function Get-ScanFailureHint($Message) {
-    if($Message -match 'access|denied|privilege|permission|authorized'){return 'Access blocked'}
-    if($Message -match 'timed out|timeout|time-out'){return 'Provider timed out'}
-    if($Message -match 'No data returned|No .* returned'){return 'No records returned'}
-    if($Message -match 'Invalid class|Invalid namespace|not supported|not recognized|No CIM or legacy WMI'){return 'Provider unavailable'}
-    return 'Windows read failed'
+    return (Get-ScanFailureInfo $Message).Reason
 }
 function Section($Name, [scriptblock]$Query) {
     $script:scanStep++
     $line=Start-ScanLine ('  [{0:00}/{2}] {1,-24} ' -f $script:scanStep, $Name, $scanTotal)
     $timer=[Diagnostics.Stopwatch]::StartNew()
     $status='UNAVAILABLE';$results=0;$summary='Not read'
+    $failureCode=$null;$nextStep=$null
     try {
         $data = @(Invoke-ScanQuery $Query {
             Update-ScanProgress ([math]::Max(0,$script:scanStep-1))
             Update-ScanWaiting $line $timer.Elapsed.TotalSeconds
         } | Where-Object {$null -ne $_})
         if ($data.Count -eq 0) { throw 'No data returned by Windows.' }
+        $unavailable=@($data | Where-Object {$_.Unavailable})
+        if($unavailable.Count){throw ([string]$unavailable[0].Unavailable)}
         # Normalize dates before export so JSON is consistent in Windows PowerShell 5.1 and 7.
         $data = @(foreach ($record in $data) {
             $normalized = [ordered]@{}
@@ -1742,14 +1790,16 @@ function Section($Name, [scriptblock]$Query) {
         try {Complete-ScanLine $line $Name ("[$status] $results $unit | $summary | {0:0.0}s" -f $timer.Elapsed.TotalSeconds) $palette[$info.Color]}catch{}
     } catch {
         $message = $_.Exception.Message
-        $summary=Get-ScanFailureHint $message
+        $failure=Get-ScanFailureInfo $_
+        $summary=$failure.Reason;$failureCode=$failure.Code;$nextStep=$failure.Action
+        $status='UNAVAILABLE';$results=0
         $warnings.Add("${Name}: $message")
-        $report[$Name] = @{ Unavailable = $message }
+        $report[$Name] = @{Unavailable=$message;FailureCode=$failure.Code;FailureReason=$failure.Reason;NextStep=$failure.Action}
         $timer.Stop()
-        try {Complete-ScanLine $line $Name ('[UNAVAILABLE] '+$summary+' / see [4] | '+('{0:0.0}s' -f $timer.Elapsed.TotalSeconds)) $palette.Warn}catch{}
+        try {Complete-ScanLine $line $Name ('[NOT READ] '+$summary+' / [4] / '+$failure.Code+' | '+('{0:0.0}s' -f $timer.Elapsed.TotalSeconds)) $palette.Warn}catch{}
     } finally {
         $timer.Stop()
-        if($null -ne $script:scanTimings){$script:scanTimings.Add([pscustomobject]@{Section=$Name;Status=$status;Results=$results;Seconds=[math]::Round($timer.Elapsed.TotalSeconds,3);Summary=$summary})}
+        if($null -ne $script:scanTimings){$script:scanTimings.Add([pscustomobject]@{Section=$Name;Status=$status;Results=$results;Seconds=[math]::Round($timer.Elapsed.TotalSeconds,3);Summary=$summary;FailureCode=$failureCode;NextStep=$nextStep})}
         Update-ScanProgress
     }
 }
@@ -1773,7 +1823,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-Host '  Hardware identity and Windows inventory. Read-only scan.' -ForegroundColor $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.41'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.42'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-Host "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" -ForegroundColor $palette.Muted
@@ -1794,7 +1844,7 @@ if($UseWorker) {
 }
 $report['Report info']['QueryMode']=if($null -ne $script:scanQueryWorker){'Live progress'}else{'Direct queries'}
 Write-Heading "SCANNING $scanTotal SECTIONS"
-Write-Host '  READ = data read. CHECK = some IDs need review; the query still succeeded.' -ForegroundColor $palette.Muted
+Write-Host '  READ = data read. CHECK = values or device records need review; query succeeded.' -ForegroundColor $palette.Muted
 Write-Host '  Found = supplied by Windows. Missing = not supplied. Default = generic value.' -ForegroundColor $palette.Muted
 Section 'System identity' {
     Get-HwidInstance -OperationTimeoutSec 20 Win32_ComputerSystemProduct -Property Vendor,Name,Version,IdentifyingNumber,UUID | Select-Object Vendor, Name, Version, IdentifyingNumber, UUID
@@ -1860,9 +1910,10 @@ if($IncludeExtended) {
     }catch {
         $message=$_.Exception.Message
         $warnings.Add('Extended device inventory: '+$message)
-        $report['Extended scan info']=[ordered]@{Captured=(Get-Date).ToString('o');Source='Extended refresh failed';Records=0;Error=$message}
+        $failure=Get-ScanFailureInfo $_
+        $report['Extended scan info']=[ordered]@{Captured=(Get-Date).ToString('o');Source='Extended refresh failed';Records=0;Error=$message;FailureCode=$failure.Code;FailureReason=$failure.Reason;NextStep='Retry the extended scan using [9] > [4].'}
         $report['Report info']['ExtendedStatus']='Unavailable'
-        try {Complete-ScanLine $extraLine 'Extended catalog' ('[UNAVAILABLE] '+(Get-ScanFailureHint $message)) $palette.Warn}catch{}
+        try {Complete-ScanLine $extraLine 'Extended catalog' ('[NOT READ] '+$failure.Reason+' / '+$failure.Code) $palette.Warn}catch{}
     }finally{$extraClock.Stop()}
 }
 $scanClock.Stop()
@@ -1872,7 +1923,7 @@ $report['Scan timing']=@($scanTimings.ToArray())
 $report['Warnings'] = @($warnings.ToArray())
     if($script:scanStep -ne $scanTotal -or $scanTimings.Count -ne $scanTotal){throw 'The scan did not finish every section.'}
     $read=@($scanTimings | Where-Object Status -ne 'UNAVAILABLE').Count
-    Write-PnpValue 'Finished' ("$scanTotal/$scanTotal queries completed / $read sections read / $($report['Report info'].ScanSeconds)s") $(if($read -eq $scanTotal){$palette.Good}else{$palette.Warn})
+    Write-PnpValue 'Finished' ("$scanTotal/$scanTotal finished / $read read / $($scanTotal-$read) not read / $($report['Report info'].ScanSeconds)s") $(if($read -eq $scanTotal){$palette.Good}else{$palette.Warn})
     $rows=@(Get-IdentifierRows $report)
     return [pscustomobject]@{Inventory=$report;Warnings=$warnings;Identifiers=$rows;Completed=$true}
 } finally {

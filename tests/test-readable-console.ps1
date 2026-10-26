@@ -136,6 +136,31 @@ try {
     [Console]::SetBufferSize(100,34)
     [Console]::SetWindowSize(100,34)
     $report.Remove('Extended scan info');$report.Remove('Extended device inventory')
+    $reviewPreviousReport=$report;$reviewPreviousWarnings=$warnings;$reviewPreviousIds=$identifiers
+    $report=[ordered]@{'PnP hardware IDs'=@([pscustomobject]@{Name='Unknown status fixture';DeviceInstanceId='TEST\NODE';ConfigManagerErrorCode=$null})}
+    $warnings=New-Object 'System.Collections.Generic.List[string]'
+    foreach($n in 1..15){$warnings.Add(('Unread fixture '+$n+': Invalid namespace'))}
+    $identifiers=@([pscustomobject]@{Section='CPU';Device='CPU0';Field='ProcessorId';Quality='Missing'})
+    Show-Attention
+    $script:reviewKeyStep=0
+    Wait-UiPage -KeyReader {
+        $script:reviewKeyStep++
+        if($script:reviewKeyStep -eq 1){
+            if([Console]::WindowTop -ne 0){throw 'Review page did not open at its counts and controls.'}
+            return (New-Object ConsoleKeyInfo([char]'3',[ConsoleKey]::D3,$false,$false,$false))
+        }
+        if($script:reviewKeyStep -eq 2){
+            $expected=[math]::Min($script:reportBookmarks['3'],[Console]::BufferHeight-[Console]::WindowHeight)
+            if([Console]::WindowTop -ne $expected){throw 'Unread-section shortcut missed its section.'}
+            return (New-Object ConsoleKeyInfo([char]'4',[ConsoleKey]::D4,$false,$false,$false))
+        }
+        $expected=[math]::Min($script:reportBookmarks['4'],[Console]::BufferHeight-[Console]::WindowHeight)
+        if([Console]::WindowTop -ne $expected){throw 'Missing-ID shortcut missed its section.'}
+        New-Object ConsoleKeyInfo([char]'0',[ConsoleKey]::D0,$false,$false,$false)
+    }
+    if([Console]::BufferHeight -ne (Get-ReportHistoryRows 34 ([Console]::CursorTop))){throw 'Review page retained oversized blank history.'}
+    $result | Add-Member NoteProperty UnreadReviewNavigation $true
+    $report=$reviewPreviousReport;$warnings=$reviewPreviousWarnings;$identifiers=$reviewPreviousIds
     $report['Report info'].Version='3.23'
     $report['CPU']=@([pscustomobject]@{DeviceID='CPU0';ProcessorId='AFTER'})
     $previous=[pscustomobject]@{'Report info'=[pscustomobject]@{Version='3.23';Computer='TEST';Generated='2026-01-01T00:00:00Z'};CPU=@([pscustomobject]@{DeviceID='CPU0';ProcessorId='BEFORE'})}

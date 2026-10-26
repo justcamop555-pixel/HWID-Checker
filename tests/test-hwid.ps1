@@ -843,6 +843,35 @@ Assert ((Get-ScanFailureHint 'Access is denied') -eq 'Access blocked') 'Scan err
 Assert ((Get-ScanFailureHint 'Operation timed out') -eq 'Provider timed out') 'Scan errors identify provider timeouts'
 Assert ((Get-ScanFailureHint 'No data returned by Windows.') -eq 'No records returned') 'Empty provider results have an understandable scan status'
 Assert ((Get-ScanFailureHint 'Invalid namespace') -eq 'Provider unavailable') 'Unsupported providers are distinguished from missing identifiers'
+Assert ((Get-ScanFailureInfo ([UnauthorizedAccessException]::new('LOCALIZED'))).Code -eq 'READ-01') 'Typed access failures do not depend on English Windows messages'
+Assert ((Get-ScanFailureInfo ([Exception]::new('Outer message',[TimeoutException]::new('LOCALIZED')))).Code -eq 'READ-02') 'Wrapped provider timeouts retain their actual failure category'
+$localizedClass=[Runtime.InteropServices.COMException]::new('LOCALIZED',[Convert]::ToInt32('80041010',16))
+Assert ((Get-ScanFailureInfo $localizedClass).Code -eq 'READ-03') 'WMI invalid-class HRESULT is recognized without translated message matching'
+$localizedPermission=New-Object System.Management.Automation.ErrorRecord ([Exception]::new('LOCALIZED')),'TestPermission',([System.Management.Automation.ErrorCategory]::PermissionDenied),$null
+Assert ((Get-ScanFailureInfo $localizedPermission).Code -eq 'READ-01') 'PowerShell error categories preserve localized permission failures'
+Assert ((Get-ScanFailureInfo 'Device access path could not be read').Code -eq 'READ-05') 'The word access alone does not produce misleading administrator advice'
+Assert ((Get-ScanFailureInfo 'No data returned by Windows.').Code -eq 'READ-04') 'Empty query results have a separate code from blocked reads'
+Assert ((Get-ScanFailureInfo 'Invalid namespace').Action -notmatch 'administrator') 'Unavailable provider advice does not promise that elevation fixes it'
+Assert ((Get-ScanFailureInfo 'Operation timed out').Action -match 'Retry') 'Timeouts provide a practical rescan action'
+Assert ((Get-ScanFailureInfo 'Raw provider message').Details -eq 'Raw provider message') 'Technical failure text stays available without being substituted by advice'
+$missingNode=[pscustomobject]@{Name='No instance';DeviceInstanceId='';ConfigManagerErrorCode=0;HardwareID=@('MODEL')}
+Assert (@(Get-PnpIssues @($missingNode) | Where-Object Kind -eq 'MissingInstance').Count -eq 1) 'A working status does not hide an unreadable device instance ID'
+$nodeInfo=Get-SectionIdentifierInfo 'PnP hardware IDs' @($missingNode,$usbKeyboard)
+Assert ($nodeInfo.Tag -eq 'CHECK' -and $nodeInfo.Missing -eq 1 -and $nodeInfo.Text -match '1 instance IDs missing') 'PnP scan counts missing instance IDs instead of reporting a false zero'
+$failurePreserved=@{Report=$report;Warnings=$warnings;Step=$script:scanStep;Timings=$script:scanTimings}
+try {
+    $report=[ordered]@{};$warnings=New-Object 'System.Collections.Generic.List[string]';$script:scanTimings=New-Object 'System.Collections.Generic.List[object]'
+    Section 'Unavailable sentinel test' {[pscustomobject]@{Unavailable='Invalid namespace'}}
+    Assert ($script:scanTimings[0].Status -eq 'UNAVAILABLE' -and $script:scanTimings[0].Results -eq 0 -and -not (Test-SectionReadable $report['Unavailable sentinel test'])) 'Returned unavailable markers cannot masquerade as successful scan records'
+    Assert ($report['Unavailable sentinel test'].FailureCode -eq 'READ-03' -and $script:scanTimings[0].FailureCode -eq 'READ-03') 'Scan rows and report metadata preserve the same failure code'
+    Assert ($warnings.Count -eq 1 -and $warnings[0] -match 'Invalid namespace') 'Unavailable-marker failures retain their raw diagnostic warning'
+    Section 'Localized timeout test' {throw [TimeoutException]::new('LOCALIZED')}
+    Assert ($report['Localized timeout test'].FailureCode -eq 'READ-02' -and $report['Localized timeout test'].NextStep -match 'Retry') 'Section capture records typed failure guidance alongside the original message'
+    $script:rendered.Clear();Show-Attention
+    Assert (@($script:rendered | Where-Object Text -match '^  SECTIONS NOT READ$').Count -eq 1 -and @($script:rendered | Where-Object Text -match 'Provider timed out.*READ-02').Count -eq 1) 'Review groups unreadable sections and reuses stored localized failure reasons'
+    Section 'Readable after failure test' {[pscustomobject]@{SerialNumber='REAL'}}
+    Assert ($script:scanTimings[2].Status -eq 'READ' -and $null -eq $script:scanTimings[2].FailureCode -and $null -eq $script:scanTimings[2].NextStep) 'A successful scan row cannot inherit a previous failure reason or action'
+} finally {$report=$failurePreserved.Report;$warnings=$failurePreserved.Warnings;$script:scanStep=$failurePreserved.Step;$script:scanTimings=$failurePreserved.Timings}
 $cloneSource=[ordered]@{Empty=@();One=@('00123');Values=@($null,$false,0);DateText='2026-01-02T03:04:05Z';Nested=[pscustomobject]@{ID='ABC';Paths=@('A','B')}}
 $clone=Copy-InventorySnapshot $cloneSource
 $cloneSource.Nested.Paths[0]='CHANGED'
