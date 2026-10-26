@@ -1,4 +1,21 @@
-# Ignore generated HWID reports (contains sensitive serial numbers)
+# Local reports contain device identifiers.
 HWID-Reports/
-*.txt
-*.json
+
+# Keep loose backups and generated diagnostics out of commits.
+backups/
+*.bak
+*.backup
+hwid.v*-backup-*.bat
+tests/test-output-*/
+tests/test-launch*/
+tests/test-runtime*/
+tests/display-diagnostic-*.ps1
+tests/display-test-result.json
+*.log
+
+# Local editor and operating-system files.
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store
