@@ -120,6 +120,25 @@ try {
     Wait-UiPage -KeyReader {New-Object ConsoleKeyInfo([char]13,[ConsoleKey]::Enter,$false,$false,$false)}
     if([Console]::WindowTop -ne 0 -or [Console]::CursorTop -ge 34 -or [Console]::BufferHeight -ne 34){throw 'Failed extended overview did not fit the standard viewport.'}
     $result | Add-Member NoteProperty FailedOverviewCursorRow ([Console]::CursorTop)
+    $report['Extended scan info'].Remove('Error')
+    $report['Report info']['ExtendedStatus']='Unavailable'
+    $savedOverviewIds=$identifiers
+    $identifiers=@([pscustomobject]@{Quality='Missing'},[pscustomobject]@{Quality='Placeholder'})
+    $overviewWarningIndex=$warnings.Count;$warnings.Add('Extended device inventory: Synthetic timeout')
+    Show-Overview
+    Wait-UiPage -KeyReader {New-Object ConsoleKeyInfo([char]13,[ConsoleKey]::Enter,$false,$false,$false)}
+    if([Console]::WindowTop -ne 0 -or [Console]::CursorTop -ge 34 -or [Console]::BufferHeight -ne 34){throw 'Stale catalog overview did not fit the standard viewport.'}
+    $result | Add-Member NoteProperty StaleOverviewCursorRow ([Console]::CursorTop)
+    $savedOverviewInfo=$report['Extended scan info'];$savedOverviewDevices=$report['Extended device inventory']
+    $report.Remove('Extended scan info');$report.Remove('Extended device inventory')
+    $report['Report info']['ExtendedAttempted']='2026-10-25T11:02:04-04:00'
+    Show-Overview
+    Wait-UiPage -KeyReader {New-Object ConsoleKeyInfo([char]13,[ConsoleKey]::Enter,$false,$false,$false)}
+    if([Console]::WindowTop -ne 0 -or [Console]::CursorTop -ge 34 -or [Console]::BufferHeight -ne 34){throw 'First failed extended attempt overview did not fit the standard viewport.'}
+    $result | Add-Member NoteProperty FirstExtendedFailureCursorRow ([Console]::CursorTop)
+    $report['Extended scan info']=$savedOverviewInfo;$report['Extended device inventory']=$savedOverviewDevices
+    $report['Report info'].Remove('ExtendedStatus');$report['Report info'].Remove('ExtendedAttempted')
+    $warnings.RemoveAt($overviewWarningIndex);$identifiers=$savedOverviewIds
     [Console]::SetWindowSize(50,20)
     Show-Overview
     $overviewKeys=New-Object 'System.Collections.Generic.Queue[ConsoleKeyInfo]'
@@ -138,6 +157,7 @@ try {
     $report.Remove('Extended scan info');$report.Remove('Extended device inventory')
     $reviewPreviousReport=$report;$reviewPreviousWarnings=$warnings;$reviewPreviousIds=$identifiers
     $report=[ordered]@{'PnP hardware IDs'=@([pscustomobject]@{Name='Unknown status fixture';DeviceInstanceId='TEST\NODE';ConfigManagerErrorCode=$null})}
+    $report['Physical disks']=@([pscustomobject]@{Index=0;SerialNumber='A'},[pscustomobject]@{Index=0;SerialNumber='B'})
     $warnings=New-Object 'System.Collections.Generic.List[string]'
     foreach($n in 1..15){$warnings.Add(('Unread fixture '+$n+': Invalid namespace'))}
     $identifiers=@([pscustomobject]@{Section='CPU';Device='CPU0';Field='ProcessorId';Quality='Missing'})
@@ -147,9 +167,14 @@ try {
         $script:reviewKeyStep++
         if($script:reviewKeyStep -eq 1){
             if([Console]::WindowTop -ne 0){throw 'Review page did not open at its counts and controls.'}
-            return (New-Object ConsoleKeyInfo([char]'3',[ConsoleKey]::D3,$false,$false,$false))
+            return (New-Object ConsoleKeyInfo([char]'5',[ConsoleKey]::D5,$false,$false,$false))
         }
         if($script:reviewKeyStep -eq 2){
+            $expected=[math]::Min($script:reportBookmarks['5'],[Console]::BufferHeight-[Console]::WindowHeight)
+            if([Console]::WindowTop -ne $expected){throw 'Conflict shortcut missed its section.'}
+            return (New-Object ConsoleKeyInfo([char]'3',[ConsoleKey]::D3,$false,$false,$false))
+        }
+        if($script:reviewKeyStep -eq 3){
             $expected=[math]::Min($script:reportBookmarks['3'],[Console]::BufferHeight-[Console]::WindowHeight)
             if([Console]::WindowTop -ne $expected){throw 'Unread-section shortcut missed its section.'}
             return (New-Object ConsoleKeyInfo([char]'4',[ConsoleKey]::D4,$false,$false,$false))
@@ -160,6 +185,7 @@ try {
     }
     if([Console]::BufferHeight -ne (Get-ReportHistoryRows 34 ([Console]::CursorTop))){throw 'Review page retained oversized blank history.'}
     $result | Add-Member NoteProperty UnreadReviewNavigation $true
+    $result | Add-Member NoteProperty ConflictReviewNavigation $true
     $report=$reviewPreviousReport;$warnings=$reviewPreviousWarnings;$identifiers=$reviewPreviousIds
     $report['Report info'].Version='3.23'
     $report['CPU']=@([pscustomobject]@{DeviceID='CPU0';ProcessorId='AFTER'})

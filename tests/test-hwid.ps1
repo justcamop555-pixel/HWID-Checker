@@ -410,7 +410,7 @@ Write-PnpValue ("Device`nname") ("ID`r`nVALUE") $palette.Text
 Assert (@($script:rendered | Where-Object {$_.Text -match '[\r\n\t]'}).Count -eq 0) 'Device names and values cannot inject console lines'
 $script:rendered.Clear()
 Show-Overview
-Assert (@($script:rendered | Where-Object Text -match 'deep-device review').Count -eq 1) 'Summary shows deep-device review items as well as the dashboard'
+Assert (@($script:rendered | Where-Object Text -match 'Review: .*findings / \d+ device / \d+ conflicts').Count -eq 1) 'Summary shows review totals and device findings as well as the dashboard'
 $script:rendered.Clear()
 Show-Help
 Assert (@($script:rendered | Where-Object Text -match 'UNDERSTAND YOUR IDs|REPORTS & REVIEW').Count -eq 2) 'Help separates controls, identifiers, and report guidance'
@@ -452,7 +452,7 @@ Assert ((Format-ScanTime $null) -eq '(not provided)') 'Missing timestamps retain
 $report['PnP hardware IDs']=@($usbKeyboard,$unknownDevice)
 $script:rendered.Clear(); Show-Overview
 Assert (@($script:rendered | Where-Object Text -match '(?m)^  RESULTS$|^  COVERAGE / QUERIES$|^  NEXT$').Count -eq 3) 'Overview separates results, coverage, and next actions'
-Assert (@($script:rendered | Where-Object Text -match '2 nodes / 1 classes / 1 with model IDs').Count -eq 1) 'Device-node and hardware-ID coverage counts use distinct units'
+Assert (@($script:rendered | Where-Object Text -match '2 records / 1 classes / 1 with hardware IDs').Count -eq 1) 'Device records and hardware-ID coverage counts use distinct units'
 Assert (@($script:rendered | Where-Object Text -match 'not unique PC counts').Count -eq 1) 'Overview explains that identifier fields are not unique computer counts'
 $overviewFixture=[ordered]@{'Report info'=[ordered]@{Generated='NORMAL-TIME'}}
 foreach($sectionName in @($sectionGroups.Values | ForEach-Object {$_})) {$overviewFixture[$sectionName]=@([pscustomobject]@{Name='Fixture'})}
@@ -1046,6 +1046,10 @@ try {
     function Get-CimInstance {param($ClassName,$OperationTimeoutSec,$Property) $script:extendedFixtures}
     $fallbackCatalog=Get-ExtendedDeviceInventory
     Assert ($fallbackCatalog.Devices.Count -eq 6 -and $fallbackCatalog.Info.Source -match 'unfiltered fallback') 'Missing PnpDevice enumeration falls back to unfiltered CIM without a present-only filter'
+    function Get-PnpDevice {return $null}
+    $emptyPrimaryCatalog=Get-ExtendedDeviceInventory
+    Assert ($emptyPrimaryCatalog.Devices.Count -eq 6 -and $emptyPrimaryCatalog.Info.Source -match 'unfiltered fallback') 'Empty primary device enumeration retries the unfiltered fallback instead of abandoning the scan'
+    Assert ($emptyPrimaryCatalog.Info.FallbackReason -match 'No device records returned by Get-PnpDevice') 'Recovered extended scans retain the reason for selecting their fallback reader'
     function Get-PnpDeviceProperty {throw 'Simulated property access blocked'}
     $partialCatalog=Get-ExtendedDeviceInventory
     Assert ($partialCatalog.Info.NodeFlagsRead -eq 0 -and $partialCatalog.Info.PropertyReadErrors -gt 0 -and $partialCatalog.Devices.Count -eq 6) 'Unavailable hiding-flag reads preserve the catalog and expose incomplete coverage'
@@ -1061,13 +1065,20 @@ try {
     Assert ($extendedTxt -match 'Extended scan / separate capture' -and $extendedTxt -match 'MODEL-A' -and $extendedTxt -match 'GENERAL-A') 'TXT export includes the extended catalog and every model ID'
     Set-Item Function:Get-CimInstance -Value $extendedPreserved.Cim
     function Get-ExtendedDeviceInventory {[pscustomobject]@{Devices=@([pscustomobject]@{Name='Refreshed hidden';Present=$true;DeviceInstanceId='USB\FRESH';HardwareID=@('FRESH-ID');HiddenByNodeFlag=$true});Info=[ordered]@{Captured='NEW-CAPTURE';Records=1;Source='Synthetic refresh'}}}
+    $script:rendered.Clear()
     $fullWithExtended=Invoke-HardwareScan 7 -IncludeExtended $true
     Assert ($fullWithExtended.Inventory['Extended device inventory'][0].DeviceInstanceId -eq 'USB\FRESH' -and $fullWithExtended.Inventory['Report info'].ExtendedStatus -eq 'Refreshed') 'Full rescans refresh the optional extended catalog instead of silently dropping it'
     Assert ($fullWithExtended.Inventory['Scan timing'].Count -eq 17 -and $scanStep -eq 17) 'Refreshing an extended catalog does not corrupt normal seventeen-query timing and progress'
+    Assert (@($script:rendered | Where-Object {$_.Text -match '^\s+Finished:.*extended READ'}).Count -eq 1) 'The scan finish line explicitly confirms a requested extended read'
     function Get-ExtendedDeviceInventory {throw 'Simulated extended refresh failure'}
-    $fullPartial=Invoke-HardwareScan 8 -IncludeExtended $true
+    $completionCim=(Get-Item Function:Get-CimInstance).ScriptBlock
+    function Get-CimInstance {param($ClassName,$Filter,$OperationTimeoutSec,$Property,$Namespace) [pscustomobject]@{Name='Completion fixture';DeviceID='MOCK';PNPDeviceID='USB\COMPLETE';UUID='MOCK';SerialNumber='MOCK';TotalPhysicalMemory=8GB}}
+    $script:rendered.Clear()
+    try {$fullPartial=Invoke-HardwareScan 8 -IncludeExtended $true}finally {Set-Item Function:Get-CimInstance -Value $completionCim}
     Assert ($fullPartial.Completed -and -not $fullPartial.Inventory.Contains('Extended device inventory') -and $fullPartial.Inventory['Report info'].ExtendedStatus -eq 'Unavailable') 'A failed extended refresh keeps new normal data and cannot attach stale extended records'
     Assert ($fullPartial.Inventory['Extended scan info'].Error -and @($fullPartial.Warnings | Where-Object {$_ -match '^Extended device inventory:'}).Count -eq 1) 'Failed extended refresh diagnostics are captured once with the new snapshot'
+    Assert (@($script:rendered | Where-Object {$_.Text -match '^\s+Finished:.*extended NOT READ' -and $_.Color -eq $palette.Warn}).Count -eq 1) 'A failed optional scan ends with an amber extended NOT READ completion line'
+    Assert (@($fullPartial.Inventory['Scan timing'] | Where-Object Status -ne 'UNAVAILABLE').Count -eq 17 -and $fullPartial.Warnings.Count -eq 1) 'Extended failure stays visible even when every normal section was read successfully'
     $report=$fullPartial.Inventory;$warnings=$fullPartial.Warnings
     $script:rendered.Clear()
     Show-ControlDeck
@@ -1138,6 +1149,189 @@ try {
     $report=$compatPreserved.Report
 }
 # Count actual main-loop page waits, so cancellation cannot hide behind redirected output.
+$summaryPreserved=@{Report=$report;Warnings=$warnings;Ids=$identifiers;Extended=(Get-Item Function:Get-ExtendedDeviceInventory).ScriptBlock;Scan=(Get-Item Function:Invoke-HardwareScan).ScriptBlock}
+try {
+    $fixture=[ordered]@{'Report info'=[ordered]@{Computer='SUMMARY';Generated='2026-10-26T12:00:00Z';ScanSeconds=1.2;ScanNumber=1}}
+    foreach($name in @($sectionGroups.Values | ForEach-Object {$_})){$fixture[$name]=@([pscustomobject]@{Name='Fixture'})}
+    $fixture['PnP hardware IDs']=@(
+        [pscustomobject]@{DeviceInstanceId='TEST\A';PNPClass=' Net ';ConfigManagerErrorCode=0;HardwareID=@('MODEL')},
+        [pscustomobject]@{DeviceInstanceId='TEST\B';PNPClass='NET';ConfigManagerErrorCode=0},
+        [pscustomobject]@{DeviceInstanceId='TEST\C';PNPClass='net';ConfigManagerErrorCode=0},
+        [pscustomobject]@{DeviceInstanceId='TEST\D';PNPClass='Display';ConfigManagerErrorCode=0}
+    )
+    $ids=@([pscustomobject]@{Quality='Missing';Section='BIOS';Field='SerialNumber';Device=''},[pscustomobject]@{Quality='Placeholder';Section='Motherboard';Field='SerialNumber';Device='';Value='OEM'},[pscustomobject]@{Quality='Reported';Section='CPU';Field='ProcessorId';Device='CPU0';Value='FOUND'})
+    $summary=Get-OverviewSummary $fixture $ids @()
+    Assert ($summary.Classes -eq 2 -and $summary.Nodes -eq 4) 'Summary class totals ignore casing and edge spaces while record counts remain distinct'
+    Assert ($fixture['PnP hardware IDs'][0].PNPClass -ceq ' Net ') 'Summary normalization leaves the raw captured class text intact'
+    Assert ($summary.ReviewTotal -eq 2 -and $summary.Complete -and $summary.NotRead -eq 0) 'Summary separates successful query reads from missing/default identifier findings'
+    $report=$fixture;$identifiers=$ids;$warnings=New-Object 'System.Collections.Generic.List[string]'
+    $script:rendered.Clear();Show-Overview
+    Assert (@($script:rendered | Where-Object {$_.Text -match 'Review: 2 findings' -and $_.Color -eq $palette.Warn}).Count -eq 1) 'Missing/default IDs keep the summary review line amber rather than a false green zero'
+    Assert (($script:rendered.Text -join ' ') -match '4 records / 2 classes / 1 with hardware IDs') 'Summary states record and hardware-ID units explicitly'
+    $fixture['CPU']=@{Unavailable='Synthetic blocked read'}
+    Assert ((Get-OverviewSummary $fixture $ids @('CPU: Synthetic blocked read')).NotRead -eq 1) 'Summary shows explicit unread normal-query counts'
+    $fixture['CPU']=@([pscustomobject]@{Name='Fixture'})
+    $fixture['Report info']['ExtendedStatus']='Unavailable';$fixture['Report info']['ExtendedAttempted']='2026-10-26T13:00:00Z'
+    $summary=Get-OverviewSummary $fixture $ids @()
+    Assert ($summary.ExtendedState -eq 'NOT READ' -and -not $summary.Complete -and $summary.ExtendedCaptured -eq '2026-10-26T13:00:00Z') 'A first extended failure is not mislabeled as never scanned'
+    $fixture['Extended scan info']=[ordered]@{Captured='2026-10-26T12:30:00Z';Error='Older failed attempt'}
+    Assert ((Get-OverviewSummary $fixture $ids @()).ExtendedCaptured -eq '2026-10-26T13:00:00Z') 'A newer failed attempt does not display the timestamp from an older failed capture'
+    $fixture['Extended scan info']=[ordered]@{Captured='2026-10-26T12:30:00Z';Source='Previous fixture'}
+    $fixture['Extended device inventory']=@(
+        [pscustomobject]@{Present=$false;HiddenByNodeFlag=$true;HiddenByClass=$true},
+        [pscustomobject]@{Present=$true;HiddenByNodeFlag=$false;HiddenByClass=$false},
+        [pscustomobject]@{Present=$null;HiddenByNodeFlag=$null;HiddenByClass=$null}
+    )
+    $summary=Get-OverviewSummary $fixture $ids @()
+    Assert ($summary.ExtendedState -eq 'STALE' -and -not $summary.Complete -and $summary.Known -eq 3) 'Retained extended records are labeled stale when the latest attempt failed'
+    Assert ($summary.PresenceUnknown -eq 1 -and $summary.Remembered -eq 1 -and $summary.Hidden -eq 1) 'Extended summary keeps unknown presence separate from remembered and overlapping hiding flags'
+    $script:rendered.Clear();Show-Overview
+    Assert (($script:rendered.Text -join ' ') -match 'PREVIOUS catalog.*refresh NOT READ' -and ($script:rendered.Text -join ' ') -match '2026-10-26 12:30:00') 'Summary displays the older capture time with a clear refresh-failed label'
+    $oldCatalog=$fixture['Extended device inventory'];$oldInfo=$fixture['Extended scan info']
+    function Get-ExtendedDeviceInventory {throw [TimeoutException]::new('Synthetic timeout')}
+    Start-ExtendedDeviceScan;Start-ExtendedDeviceScan
+    Assert ([object]::ReferenceEquals($oldCatalog,$report['Extended device inventory']) -and [object]::ReferenceEquals($oldInfo,$report['Extended scan info'])) 'Repeated manual failures preserve the last good extended catalog and capture together'
+    Assert (@($warnings | Where-Object {$_ -like 'Extended device inventory: *'}).Count -eq 1 -and $report['Warnings'].Count -eq 1) 'Repeated extended failures produce one current review warning rather than duplicates'
+    Assert ($report['Report info'].ExtendedFailureCode -eq 'READ-02' -and $report['Report info'].ExtendedAttempted) 'Manual failure metadata retains its typed reason and attempt timestamp'
+    $script:rendered.Clear();Show-Attention
+    Assert (($script:rendered.Text -join ' ') -match 'Provider timed out.*READ-02' -and ($script:rendered.Text -join ' ') -match '\[9\] > \[4\]') 'Review uses the stored extended failure category and extended retry action'
+    function Get-ExtendedDeviceInventory {[pscustomobject]@{Devices=@([pscustomobject]@{DeviceInstanceId='EXT\NEW';Present=$true;HiddenByNodeFlag=$false;HiddenByClass=$false;ConfigManagerErrorCode=0});Info=[ordered]@{Captured='2026-10-26T14:00:00Z';Source='Recovered fixture'}}}
+    Start-ExtendedDeviceScan
+    Assert ($report['Report info'].ExtendedStatus -eq 'Refreshed' -and -not $report['Report info'].ExtendedFailureCode -and -not $report['Report info'].ExtendedAttempted -and $warnings.Count -eq 0) 'Successful extended refresh clears stale failure metadata and warnings'
+    Assert ((Get-OverviewSummary $report $ids $warnings).ExtendedState -eq 'READ' -and (Get-OverviewSummary $report $ids $warnings).Complete) 'Recovered summary returns to current readable catalog status'
+    $fixture.Remove('Extended scan info');$fixture.Remove('Extended device inventory');$fixture['Report info']['ExtendedStatus']='Unavailable'
+    function Invoke-HardwareScan {param($ScanNumber,[bool]$UseWorker,[bool]$IncludeExtended) $script:summaryExtendedRequested=$IncludeExtended;throw 'Synthetic scan stop'}
+    Start-HardwareRescan -UseWorker $false
+    Assert $script:summaryExtendedRequested 'PC rescan retries an explicitly requested extended scan even if the first attempt produced no catalog'
+} finally {$report=$summaryPreserved.Report;$warnings=$summaryPreserved.Warnings;$identifiers=$summaryPreserved.Ids;Set-Item Function:Get-ExtendedDeviceInventory -Value $summaryPreserved.Extended;Set-Item Function:Invoke-HardwareScan -Value $summaryPreserved.Scan}
+$unreadPreserved=@{Report=$report;Warnings=$warnings;Step=$script:scanStep;Timings=$script:scanTimings;Worker=$script:scanQueryWorker}
+try {
+    $report=[ordered]@{};$warnings=New-Object 'System.Collections.Generic.List[string]';$script:scanTimings=New-Object 'System.Collections.Generic.List[object]'
+    foreach($mode in @('Direct','Worker')) {
+        $script:scanQueryWorker=if($mode -eq 'Worker'){New-ScanQueryWorker}else{$null}
+        try {
+            $queryFailure=$null;$partialOutput=@()
+            try {$partialOutput=@(Invoke-ScanQuery {[pscustomobject]@{SerialNumber='PARTIAL'};Write-Error -Message 'Synthetic denied read' -Category PermissionDenied -ErrorAction Continue;[pscustomobject]@{SerialNumber='AFTER-ERROR'}})}catch{$queryFailure=$_}
+            Assert ($null -ne $queryFailure -and $partialOutput.Count -eq 0) ($mode+' queries reject partial output when an uncaught non-terminating error occurs')
+            Assert ((Get-ScanFailureInfo $queryFailure).Code -eq 'READ-01') ($mode+' non-terminating errors retain their permission category')
+            Section ($mode+' partial read') {[pscustomobject]@{SerialNumber='PARTIAL'};Write-Error -Message 'Synthetic denied read' -Category PermissionDenied -ErrorAction Continue}
+            Assert ($report[$mode+' partial read'].FailureCode -eq 'READ-01' -and $script:scanTimings[-1].Status -eq 'UNAVAILABLE' -and $script:scanTimings[-1].Results -eq 0) ($mode+' scans never count partial error output as successfully captured records')
+            $fallback=@(Invoke-ScanQuery {try{throw [UnauthorizedAccessException]::new('Synthetic primary failure')}catch{};[pscustomobject]@{SerialNumber='FALLBACK'}})
+            Assert ($fallback.Count -eq 1 -and $fallback[0].SerialNumber -eq 'FALLBACK') ($mode+' queries keep successful fallbacks after internally handled failures')
+            $recovered=@(Invoke-ScanQuery {[pscustomobject]@{SerialNumber='CLEAN'}})
+            Assert ($recovered.Count -eq 1 -and $recovered[0].SerialNumber -eq 'CLEAN') ($mode+' query failure does not leak errors or partial data into the next query')
+        } finally {if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose();$script:scanQueryWorker=$null}}
+    }
+    $invalidCases=@(
+        @{Name='Scalar string';Query={'Unusable provider text'}},
+        @{Name='Scalar boolean';Query={$false}},
+        @{Name='Scalar number';Query={0}},
+        @{Name='Empty object';Query={[pscustomobject]@{}}},
+        @{Name='Empty dictionary';Query={@{}}},
+        @{Name='Mixed malformed';Query={[pscustomobject]@{SerialNumber='PARTIAL'};'Unusable provider text'}}
+    )
+    foreach($case in $invalidCases) {
+        Section $case.Name $case.Query
+        Assert ($report[$case.Name].FailureCode -eq 'READ-06' -and $script:scanTimings[-1].Status -eq 'UNAVAILABLE' -and $script:scanTimings[-1].Results -eq 0) ($case.Name+' is invalid scan data rather than a successful hardware record')
+    }
+    Section 'Missing ID valid record' {[pscustomobject]@{SerialNumber=$null;Name='Known component'}}
+    Assert ((Test-SectionReadable $report['Missing ID valid record']) -and $script:scanTimings[-1].Status -eq 'CHECK') 'A valid record with a missing ID remains readable and distinct from malformed query output'
+    Section 'False zero and list values' {[pscustomobject]@{Name='Fixture';Enabled=$false;Capacity=0;Paths=@()}}
+    Assert ($script:scanTimings[-1].Status -eq 'READ' -and $report['False zero and list values'][0].Enabled -eq $false -and $report['False zero and list values'][0].Capacity -eq 0 -and $report['False zero and list values'][0].Paths.Count -eq 0) 'Valid false zero and empty-list property values survive unreadable-data validation'
+    Assert (-not (Test-SectionReadable @([pscustomobject]@{Unavailable=''})) -and -not (Test-SectionReadable @(@{Unavailable=$null}))) 'Empty unavailable-marker messages cannot masquerade as readable sections'
+    Section 'Blank unavailable marker' {[pscustomobject]@{Unavailable=''}}
+    Assert ($report['Blank unavailable marker'].Unavailable -match 'without a diagnostic message' -and $script:scanTimings[-1].Status -eq 'UNAVAILABLE') 'Blank unavailable markers receive an explicit failure explanation'
+    Assert ((Get-ScanFailureInfo ([IO.InvalidDataException]::new('Synthetic invalid record'))).Code -eq 'READ-06') 'Invalid-data exceptions receive a specific scan code and next step'
+} finally {$report=$unreadPreserved.Report;$warnings=$unreadPreserved.Warnings;$script:scanStep=$unreadPreserved.Step;$script:scanTimings=$unreadPreserved.Timings;$script:scanQueryWorker=$unreadPreserved.Worker}
+$fallbackScanWorker=$script:scanQueryWorker
+try {
+    foreach($mode in @('Direct','Worker')) {
+        $script:scanQueryWorker=if($mode -eq 'Worker'){New-ScanQueryWorker}else{$null}
+        try {
+            $fallback=@(Invoke-ScanQuery {
+                function Get-NetAdapter {return $null}
+                function Get-CimInstance {[pscustomobject]@{Name='Recovered NIC';InterfaceGuid='NIC-NULL';NetworkAddresses=@('001122334455')}}
+                Get-NetworkIdentifiers
+            })
+            Assert ($fallback.Count -eq 1 -and $fallback[0].Name -eq 'Recovered NIC' -and $fallback[0].CollectionSource -match 'fallback') ($mode+' network scan retries after null-only primary output')
+            $failure=$null
+            try {Invoke-ScanQuery {
+                function Get-NetAdapter {throw 'Access denied by primary reader'}
+                function Get-CimInstance {return $null}
+                Get-NetworkIdentifiers
+            } | Out-Null}catch{$failure=$_}
+            Assert ($null -ne $failure -and (Get-ScanFailureInfo $failure).Code -eq 'READ-04') ($mode+' null-only network fallback is no records rather than a blank successful adapter or primary access error')
+            foreach($reader in @('Network','Extended')) {
+                foreach($case in @('Permission','Timeout','Category','Provider')) {
+                    $query=[scriptblock]::Create((@'
+function Get-NetAdapter {throw 'Access denied by primary reader'}
+function Get-PnpDevice {throw 'Access denied by primary reader'}
+function Get-CimInstance {
+    switch('__CASE__') {
+        'Permission' {throw [UnauthorizedAccessException]::new('Acces refuse - test')}
+        'Timeout' {throw [TimeoutException]::new('Delai depasse - test')}
+        'Category' {Write-Error -Message 'Lecture refusee - test' -Category PermissionDenied -ErrorAction Stop}
+        'Provider' {throw 'Invalid class in fallback reader'}
+    }
+}
+__READER__
+'@).Replace('__CASE__',$case).Replace('__READER__',$(if($reader -eq 'Network'){'Get-NetworkIdentifiers'}else{'Get-ExtendedDeviceInventory'})))
+                    $failure=$null
+                    try {Invoke-ScanQuery $query | Out-Null}catch{$failure=$_}
+                    $info=Get-ScanFailureInfo $failure
+                    $expected=switch($case){'Permission'{'READ-01'};'Timeout'{'READ-02'};'Category'{'READ-01'};'Provider'{'READ-03'}}
+                    Assert ($null -ne $failure -and $info.Code -eq $expected -and $info.Details -match 'Primary:.*Fallback:') ($mode+' '+$reader+' fallback retains both diagnostics and the final '+$case+' failure classification')
+                }
+            }
+        }finally {if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose();$script:scanQueryWorker=$null}}
+    }
+}finally {$script:scanQueryWorker=$fallbackScanWorker}
+$reviewPreserved=@{Report=$report;Warnings=$warnings;Ids=$identifiers}
+try {
+    $ambiguousDisks=[ordered]@{
+        'Physical disks'=@([pscustomobject]@{Index=0;SerialNumber='A'},[pscustomobject]@{Index=0;SerialNumber='B'})
+        'Storage identifiers'=@([pscustomobject]@{Number=0;SerialNumber='A'})
+    }
+    $ambiguousQuick=@(Get-QuickDisks $ambiguousDisks)
+    Assert (@($ambiguousQuick | Where-Object Quality -eq 'Conflict').Count -eq 0) 'Duplicate primary disk indices cannot create a false cross-source serial clash'
+    Assert ($ambiguousQuick.Count -eq 3 -and @($ambiguousQuick | Where-Object Note -match 'sources not joined').Count -eq 2) 'Ambiguous disk records are retained separately with matching explanation'
+    $ambiguousDisks['Physical disks']=@([pscustomobject]@{Index=0;SerialNumber=''},[pscustomobject]@{Index=0;SerialNumber=''})
+    Assert (@(Get-QuickDisks $ambiguousDisks | Where-Object Quality -eq 'Missing').Count -eq 2) 'Ambiguous indices cannot fill two missing serials from one alternate record'
+    $duplicateSecondary=[ordered]@{'Physical disks'=@([pscustomobject]@{Index=0;SerialNumber='A'});'Storage identifiers'=@([pscustomobject]@{Number=0;SerialNumber='B'},[pscustomobject]@{Number=0;SerialNumber='C'})}
+    Assert (@(Get-QuickDisks $duplicateSecondary).Count -eq 3 -and @(Get-QuickDisks $duplicateSecondary | Where-Object Quality -eq 'Conflict').Count -eq 0) 'Duplicate alternate disk numbers are not joined by guesswork'
+    $badNumbers=[ordered]@{'Physical disks'=@($null,[pscustomobject]@{Index='bad';SerialNumber='A'});'Storage identifiers'=@($null,[pscustomobject]@{Number='bad';SerialNumber='B'})}
+    Assert (@(Get-QuickDisks $badNumbers).Count -eq 2 -and @(Get-QuickDisks $badNumbers | Where-Object Quality -eq 'Conflict').Count -eq 0) 'Invalid disk indices and null rows cannot crash or create fake disk clashes'
+    Assert ($null -eq (Get-DiskNumber -1) -and $null -eq (Get-DiskNumber '') -and $null -eq (Get-DiskNumber $false)) 'Negative blank and boolean disk numbers are not reliable matching keys'
+    Assert ((Get-DiskNumber 0) -eq 0 -and (Get-DiskNumber '4294967295') -eq [uint32]::MaxValue) 'Disk matching supports zero and the full Windows unsigned disk-number range'
+    $wideDisk=[ordered]@{'Physical disks'=@([pscustomobject]@{Index=[uint32]::MaxValue;SerialNumber='A'});'Storage identifiers'=@([pscustomobject]@{Number=[uint32]::MaxValue;SerialNumber='B'})}
+    Assert (@(Get-QuickDisks $wideDisk | Where-Object Quality -eq 'Conflict').Count -eq 1) 'Large valid disk numbers do not overflow the matching set'
+    $clash=[ordered]@{'Physical disks'=@([pscustomobject]@{Index=0;SerialNumber='A / literal'});'Storage identifiers'=@([pscustomobject]@{Number=0;SerialNumber='B'})}
+    $clashRow=@(Get-QuickDisks $clash)[0]
+    Assert ($clashRow.PrimaryValue -ceq 'A / literal' -and $clashRow.AlternateValue -ceq 'B') 'Conflict details preserve source serials separately even when serials contain delimiters'
+    $conflictSummary=Get-ReviewSummary $clash @() @()
+    Assert ($conflictSummary.ConflictCount -eq 1 -and $conflictSummary.Total -eq 1 -and $conflictSummary.DeviceCount -eq 0) 'A serial-only clash appears in the review summary even with no missing IDs'
+    $pnpDuplicate=[ordered]@{'PnP hardware IDs'=@($usbKeyboard,$duplicateKeyboard)}
+    $pnpSummary=Get-ReviewSummary $pnpDuplicate @() @($null,'')
+    Assert ($pnpSummary.ConflictCount -eq 1 -and $pnpSummary.DeviceCount -eq 0 -and $pnpSummary.Total -eq 1 -and $pnpSummary.UnreadCount -eq 0) 'Repeated instance IDs count once as a conflict and do not inflate device findings'
+    $summaryIds=@([pscustomobject]@{Quality='Missing'},[pscustomobject]@{Quality='Placeholder'},[pscustomobject]@{Quality='Reported'})
+    $combined=Get-ReviewSummary $pnpDuplicate $summaryIds @('CPU: Invalid class')
+    Assert ($combined.Total -eq 4 -and $combined.MissingCount -eq 1 -and $combined.DefaultCount -eq 1 -and $combined.UnreadCount -eq 1) 'Combined finding totals equal their displayed category counts'
+    Assert ((Get-OverviewSummary $pnpDuplicate @() @()).Conflicts -eq 1 -and (Get-OverviewSummary $pnpDuplicate @() @()).DeviceIssues -eq 0) 'Overview classifies duplicate instance IDs consistently with review'
+    Assert ((Get-DeviceReviewAction ([pscustomobject]@{Kind='Status';Code=22})) -match 'intentionally disabled') 'Disabled devices receive intent-aware advice rather than a repair claim'
+    Assert ((Get-DeviceReviewAction ([pscustomobject]@{Kind='Status';Code=28})) -match 'driver') 'Missing-driver status has a specific next step'
+    Assert ((Get-PnpStatus 45).Text -eq 'Not connected (code 45)') 'Disconnected status is named explicitly rather than a generic device failure'
+    $report=$clash;$identifiers=@();$warnings=New-Object 'System.Collections.Generic.List[string]'
+    $script:rendered.Clear();Show-Attention
+    $reviewText=$script:rendered.Text -join ' '
+    Assert ($reviewText -match '1 findings / 1 conflicts' -and $reviewText -match 'CONFLICTS / VERIFY BEFORE COMPARING') 'Review summary and section expose a conflict-only report clearly'
+    Assert ($reviewText -match 'Physical disks: A / literal' -and $reviewText -match 'Storage identifiers: B') 'Review displays both actual serial values with source labels'
+    $report=[ordered]@{'PnP hardware IDs'=@([pscustomobject]@{Name='';DeviceInstanceId='USB\NO-NAME';ConfigManagerErrorCode=22})}
+    $script:rendered.Clear();Show-Attention
+    Assert (($script:rendered.Text -join ' ') -match 'USB\\NO-NAME / Disabled' -and ($script:rendered.Text -join ' ') -match 'intentionally disabled') 'Unnamed device findings identify their instance and show the relevant next step'
+    $identifiers=@([pscustomobject]@{Section='BIOS';Device='';Field='SerialNumber';Quality='Placeholder';Value=('OEM'+[char]27+'[31m')})
+    $script:rendered.Clear();Show-Attention
+    Assert (-not (($script:rendered.Text -join '')).Contains([string][char]27)) 'Untrusted placeholder values cannot inject console escape controls into review'
+} finally {$report=$reviewPreserved.Report;$warnings=$reviewPreserved.Warnings;$identifiers=$reviewPreserved.Ids}
 $script:pageWaits=0
 function Wait-UiPage { $script:pageWaits++ }
 $script:answers.Clear()

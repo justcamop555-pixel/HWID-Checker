@@ -18,9 +18,24 @@ Use **[1]** for the overview. It separates normal query coverage, identifier fie
 
 Found does not prove that an identifier is unique or authentic. Missing/default values are different from failed queries. **[4]** explains findings; **[5]** shows full values and sources. Extended records have their own capture time and are not added to the normal identifier-field total.
 
+## Read the summary clearly
+
+| Summary item | What it counts |
+| --- | --- |
+| Read status | Normal queries read versus not read; this is not a hardware-health guarantee |
+| Identifier fields | Found, missing and default values supplied for individual fields |
+| Review | All findings, including missing/default IDs; **[4]** explains them |
+| Present devices | Windows records, distinct classes and records with hardware IDs; physical and virtual nodes are included |
+| Extended devices | A separate catalog of known records, including hidden and remembered records |
+| Uncertainty | Extended records with unread hiding flags or unknown presence; these groups can overlap |
+
+**PREVIOUS catalog / refresh NOT READ** means the latest extended refresh failed and the older catalog was retained. The displayed extended capture time belongs to that older data. Check **[4]** for the latest failure and retry **[9] > [4]**. If the first attempt failed before a catalog existed, the summary says **NOT READ**, rather than Not scanned. A later successful refresh clears that failure status.
+
+The summary can show all normal queries read while an optional extended refresh failed. Read status remains partial in that case. Class counts ignore casing/edge-space differences, while the full report preserves original provider text.
+
 ## Understand unreadable results
 
-The scan's **NOT READ** label means the query did not supply usable records. **CHECK** means records were read but some fields or device records need review. The finish line counts read and not-read sections separately.
+The scan's **NOT READ** label means the query did not supply usable records. **CHECK** means records were read but some fields or device records need review. The finish line counts read and not-read sections separately. When an extended catalog was requested, the same line also says **extended READ** or **extended NOT READ**. A failed extended read keeps the finish line amber even if all 17 normal queries succeeded.
 
 | Code | Reason | Suggested action |
 | --- | --- | --- |
@@ -29,10 +44,30 @@ The scan's **NOT READ** label means the query did not supply usable records. **C
 | READ-03 | Provider unavailable | Check runtime/provider details in **[5]**; the Windows version may not expose it |
 | READ-04 | No records returned | Check whether the device is expected or connected, then rescan |
 | READ-05 | Other Windows read failure | Retry and inspect technical details in **[5]** or saved reports |
+| READ-06 | Invalid scan data | Rescan; the provider returned unusable records rather than valid hardware data |
 
-Main **[4]** groups device findings, unreadable sections, and missing/default IDs separately. Use **1** for the top, **2** for devices, **3** for unreadable sections, and **4** for ID fields. Missing instance IDs and unread device status are review findings; they do not establish that hardware is broken. Raw technical messages remain in the full report and exports.
+Main **[4]** groups conflicts, device findings, unreadable sections, and missing/default IDs separately. Use **1** for the top, **2** for devices, **3** for unreadable sections, **4** for ID fields, and **5** for conflicts. Missing instance IDs and unread device status are review findings; they do not establish that hardware is broken. Raw technical messages remain in the full report and exports.
 
 Failure classification uses available typed errors/codes first, then known message patterns. An unfamiliar localized message without a recognized code remains READ-05. A timeout setting does not guarantee an overall scan deadline.
+
+If a query emits an uncaught error after returning some records, that section is marked NOT READ rather than presented as a complete list. This prevents incomplete data from appearing as confirmed hardware removals during comparison. Successful fallbacks that handle their own errors remain usable. A missing serial within an otherwise valid record remains a missing-ID finding, separate from invalid scan data.
+
+Network and extended-device readers retry their fallback when the primary reader fails or returns no records, including null-only results. Extended fallback enumeration stays unfiltered so remembered records can be included. The full report records which reader succeeded; extended capture information also records why fallback was needed. If both readers fail, technical details retain both messages; the failure reason describes the final reader. Direct and live-progress scans preserve the same error categories.
+
+## Understand warnings and conflicts
+
+The review summary counts findings, not unique devices. A device can have an unread status and a missing instance ID, producing two findings. Repeated instance IDs belong to the Conflicts group and are not counted again as ordinary device findings.
+
+| Finding | What it means | Next step |
+| --- | --- | --- |
+| Source clash | Two unambiguously matched Windows storage records report different serials | Review both displayed values, rescan, and inspect the sources in **[5]** |
+| Duplicate device key | More than one record has the same matching key | Rescan and inspect records in **[5]**; comparisons skip ambiguous keys |
+| Repeated instance ID | Multiple PnP records claim the same instance ID | Rescan before comparing; this does not prove two physical devices share a factory serial |
+| Disabled | Windows reports code 22 | Check whether disabling was intentional in Device Manager |
+| Disconnected | Windows reports code 45 | Check the connection and refresh the scan |
+| Unknown status | Windows supplied no readable status | Rescan and inspect device details; do not assume working or broken |
+
+Disk sources are joined only when each has one valid record for the same disk number. Duplicate disk numbers remain separate records, preventing guessed matches from producing false serial clashes or filling the wrong device's missing serial. A source disagreement alone does not prove disk failure.
 
 ## Save a baseline
 

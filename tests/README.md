@@ -11,7 +11,7 @@ Tests are optional for users. Run them from the repository root in a Windows Pow
 
 | File | Checks | Reads actual hardware? |
 | --- | --- | --- |
-| `test-hwid.ps1` | 501 synthetic regression checks: menu, scanning failures, rescan state, overview, IDs, export/import and comparisons | No |
+| `test-hwid.ps1` | 585 synthetic regression checks: menu, scanning failures and fallback recovery, rescan state, overview, IDs, export/import and comparisons | No |
 | `test-runtime-launchers.ps1` | Eight launcher/runtime cases, including missing/old/restricted engines and the PS1 loader | No |
 | `test-readable-console.ps1` | Native console layout, scrolling, history, input modes, overview states and animation restoration | No; opens a temporary console |
 | `test-readable-startup.ps1` | Actual launcher, display setup, invalid input and held Enter | Yes; opens a temporary console |

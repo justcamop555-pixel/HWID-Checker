@@ -2,6 +2,50 @@
 
 [Back to the main README](../README.md)
 
+## 3.46
+
+- Fixed empty extended-device enumeration skipping its fallback reader. Empty and null-only results now retry the unfiltered CIM/WMI reader; recovered catalogs record the fallback reason.
+- Fixed null-only network output being accepted as a blank adapter instead of triggering fallback or a no-records failure.
+- Preserved typed exceptions and PowerShell error categories when both network or extended readers fail. Technical details keep both messages while classification describes the final reader, so an earlier access error cannot hide a later provider failure.
+- Fixed live-progress query invocation wrapping errors and losing categories. The original error record now reaches the scan checker, consistently with direct queries.
+- Added extended READ / NOT READ to the scan finish line. An optional extended failure keeps that line amber even when all 17 normal sections were read.
+- Validation: 585 synthetic regression checks under Windows PowerShell 5.1 and PowerShell 7.6.5, plus native console checks and an actual read-only scan/rescan with extended collection.
+
+The extended scan uses the all-known-device scope described in [Microsoft's Get-PnpDevice documentation](https://learn.microsoft.com/en-us/powershell/module/pnpdevice/get-pnpdevice), including non-present records that Windows exposes.
+
+## 3.45
+
+- Clarified summary read status and added explicit unread normal-query counts. Read completion is distinct from identifier/device findings.
+- Fixed the summary Review line appearing clear when only missing/default IDs needed review. Its total now matches the review page and keeps the warning color when findings exist.
+- Renamed device totals as records and hardware-ID coverage, avoiding an implied count of unique physical devices. Class totals ignore casing and surrounding spaces without changing raw data.
+- Added unknown-presence counts alongside unread visibility flags for extended catalogs.
+- Fixed failed manual extended refreshes leaving the old catalog apparently current. Summary labels retained data PREVIOUS, keeps its capture time, and makes the latest failure available in review. A first failed attempt is NOT READ rather than Not scanned.
+- Successful extended recovery clears stale failure warnings/metadata. Repeated failures keep one current warning, and a PC rescan retries a previously requested extended scan even when its first attempt produced no catalog.
+- Validation: 560 synthetic regression checks under Windows PowerShell 5.1 and PowerShell 7.6.5, plus native overview, review and full-report navigation checks.
+
+The class-count fix avoids the default case-sensitive behavior of [Select-Object -Unique](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/select-object?view=powershell-5.1), and works on both supported PowerShell engine families.
+
+## 3.44
+
+- Fixed partial query output being accepted after an uncaught non-terminating error. Direct and live-progress query modes now reject those incomplete results and preserve the failure category.
+- Added READ-06 for unusable scan data. Scalar/list output and records with no fields no longer count as successfully read hardware.
+- Fixed empty unavailable-marker messages being mistaken for readable records; those markers now receive a clear diagnostic fallback.
+- Preserved valid missing-ID records, false/zero/empty-list field values, and successful fallbacks that handle their own primary errors. Failed query state does not leak into the next query.
+- Validation: 542 synthetic regression checks under Windows PowerShell 5.1 and PowerShell 7.6.5. A read-only actual scan and rescan each read 17/17 sections without rescan warnings, and the extended catalog refreshed successfully.
+
+PowerShell commands can explicitly override the error preference; see [Microsoft's common-parameter documentation](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_commonparameters). The checker distinguishes an error that escapes a query from an error deliberately handled by a successful fallback.
+
+## 3.43
+
+- Added conflicts to the review summary, with separate totals for conflicts, unreadable sections, device findings, missing IDs and default IDs. The dashboard and overview use the same classification.
+- Added a dedicated Conflicts section and shortcut 5. Duplicate instance IDs appear there once rather than also inflating device findings. Counts describe findings, not unique devices.
+- Confirmed disk serial clashes show the actual values separately under Physical disks and Storage identifiers, with next steps.
+- Fixed ambiguous disk matching: joins require one valid disk number in each source. Duplicate/malformed numbers cannot create false serial clashes or fill multiple missing serials from one alternate record. Null rows are ignored and the full unsigned Windows disk-number range is supported.
+- Added context-specific device advice, instance-ID labels for unnamed devices, and an explicit disconnected status. Placeholder text is sanitized before display.
+- Validation: 521 synthetic regression checks under Windows PowerShell 5.1 and PowerShell 7.6.5, plus native console checks for conflict/unread/ID shortcuts and full-report navigation.
+
+Windows code 22 means [the device is disabled](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/cm-prob-disabled); this alone does not establish hardware failure. [Storage identification guidance](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/device-unique-identifiers--duids--for-storage-devices) also describes limits of relying on a single storage identifier.
+
 ## 3.42
 
 - Corrected unavailable-marker results that could appear as successful scan rows. Failed reads now report zero captured records consistently.
