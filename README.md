@@ -2,13 +2,13 @@
 
 Read local Windows hardware identifiers, save a snapshot, and see which IDs changed between scans. The checker is read-only: it does not change hardware identifiers or device settings.
 
-**Current version: 3.46** · Windows · PowerShell 5.1 or newer
+**Current version: 3.51** · Windows · PowerShell 5.1 or newer
 
 ## Start here
 
 1. Download the repository using **Code > Download ZIP**, then extract it. If you cloned it with Git, open the cloned folder.
 2. Double-click **`hwid.bat`**. Keep `Start-HWID.ps1` beside it if you use the alternative PowerShell launcher.
-3. Wait for the scan, then choose **[1] Summary** or **[2] ID numbers**.
+3. Wait for the scan, press **Enter** to continue, then choose **[1] Summary** or **[2] ID numbers**.
 
 Start as a standard user. If a section reports access denied, you can run it as administrator and rescan. Administrator access does not guarantee that firmware exposes every serial number.
 

@@ -11,10 +11,14 @@ Tests are optional for users. Run them from the repository root in a Windows Pow
 
 | File | Checks | Reads actual hardware? |
 | --- | --- | --- |
-| `test-hwid.ps1` | 585 synthetic regression checks: menu, scanning failures and fallback recovery, rescan state, overview, IDs, export/import and comparisons | No |
+| `test-hwid.ps1` | 603 synthetic regression checks: menu, scan continuation, fallback recovery, rescan state, overview, IDs, export/import and comparisons | No |
+| `test-snapshot-catalog.ps1` | 26 checks: older-file detection, renamed/damaged reports, capture ordering, pagination, TXT companion lookup and save fallback/rollback | No |
+| `test-id-view.ps1` | 28 checks: malformed scalar IDs, valid strings/lists/zero values, serial/MAC labels, null rows, adapter metadata and safe display | No |
+| `test-review.ps1` | 24 checks: warning deduplication/recovery, stored failures, extended failures, duplicate statuses, resource conflicts and consistent review totals | No |
+| `test-scan-metadata.ps1` | 41 checks: optional storage/partition/memory/monitor conversions, raw-value retention, direct/worker scan agreement and report round trips | No |
 | `test-runtime-launchers.ps1` | Eight launcher/runtime cases, including missing/old/restricted engines and the PS1 loader | No |
-| `test-readable-console.ps1` | Native console layout, scrolling, history, input modes, overview states and animation restoration | No; opens a temporary console |
-| `test-readable-startup.ps1` | Actual launcher, display setup, invalid input and held Enter | Yes; opens a temporary console |
+| `test-readable-console.ps1` | Native console layout, snapshot picker, comparison navigation, scan continuation, scrolling, history, input modes, overview states and animation restoration | No; opens a temporary console |
+| `test-readable-startup.ps1` | Actual launcher, scan continuation, display setup, invalid input and held Enter | Yes; opens a temporary console |
 | `test-live-rescan.ps1` | Initial scan, rescan and snapshot publication; optional `-LiveProgress` and `-Extended` | Yes |
 | `test-live-extended.ps1` | Actual extended-device catalog and property coverage | Yes |
 

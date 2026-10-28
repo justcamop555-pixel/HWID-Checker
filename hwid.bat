@@ -167,6 +167,8 @@ public static class HwidConsoleDisplay {
     [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
     [DllImport("user32.dll")] static extern uint GetMenuState(IntPtr menu, uint item, uint flags);
     [DllImport("user32.dll")] static extern bool RemoveMenu(IntPtr menu, uint item, uint flags);
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+    public static bool EnterIsDown() { return (GetAsyncKeyState(13) & 0x8000) != 0; }
     static IntPtr editMenu=IntPtr.Zero;
     static IntPtr FindEditMenu() {
         if(editMenu!=IntPtr.Zero) return editMenu;
@@ -476,26 +478,46 @@ function Move-ReportBookmark($Key) {
         }catch{}
     }
 }
-function Wait-UiPage([scriptblock]$KeyReader) {
+function Wait-UiPage([scriptblock]$KeyReader,[string]$ContinueTo) {
     if ($ownedConsole -and -not $redirected) {
         Start-UiReport
-        Write-Host '  Scroll: mouse wheel / Up Down / PgUp PgDn / Home End. Enter = menu.' -ForegroundColor $palette.Muted
+        if($ContinueTo) {
+            Write-PnpValue 'Continue' ('Press Enter for '+$ContinueTo+'. Release Enter first if held during scanning.') $palette.Heading
+            Write-PnpValue 'Scroll' 'Mouse wheel / Up Down / PgUp PgDn / Home End.' $palette.Muted
+        }else {Write-Host '  Scroll: mouse wheel / Up Down / PgUp PgDn / Home End. Enter = menu.' -ForegroundColor $palette.Muted}
         Complete-UiReport
         $bookmarked=$null -ne $script:reportBookmarks -and $script:reportBookmarks.Count -gt 0
-        if($bookmarked){Move-UiReportView 'Home'}
+        if($bookmarked -and -not $ContinueTo){Move-UiReportView 'Home'}
+        if($ContinueTo -and -not $KeyReader){Clear-ScanTypeAhead}
         while($true) {
             $key=if($KeyReader){& $KeyReader}else{[Console]::ReadKey($true)}
             if($null -eq $key){return}
             if($key.Key -eq [ConsoleKey]::Enter){return}
-            if($bookmarked) {
+            if($bookmarked -and -not $ContinueTo) {
                 if($key.KeyChar -eq '0'){return}
                 Move-ReportBookmark ([string]$key.KeyChar)
             }
             Move-UiReportView ($key.Key.ToString())
         }
     } elseif(-not $redirected) {
-        Read-CheckerLine 'Press Enter to return to the menu' | Out-Null
+        $prompt=if($ContinueTo){'Scan finished. Press Enter to continue to '+$ContinueTo}else{'Press Enter to return to the menu'}
+        Read-CheckerLine $prompt | Out-Null
     }
+}
+function Clear-ScanTypeAhead([scriptblock]$HeldReader,[scriptblock]$AvailableReader,[scriptblock]$DrainReader) {
+    try {
+        # Wait without repainting while Enter is held, then discard scan-time keys.
+        while($(if($HeldReader){& $HeldReader}else{[HwidConsoleDisplay]::EnterIsDown()})){Start-Sleep -Milliseconds 40}
+        $clock=[Diagnostics.Stopwatch]::StartNew()
+        while($clock.ElapsedMilliseconds -lt 250 -and $(if($AvailableReader){& $AvailableReader}else{[Console]::KeyAvailable})) {
+            if($DrainReader){& $DrainReader | Out-Null}else{[void][Console]::ReadKey($true)}
+        }
+    }catch{}
+}
+function Wait-ScanContinue([string]$Destination='main menu',[scriptblock]$KeyReader) {
+    # Keep scan collection usable by diagnostics and redirected launchers.
+    if($redirected){return}
+    Wait-UiPage -ContinueTo $Destination -KeyReader $KeyReader
 }
 function Read-CheckerLine($Prompt) {
     if ([Console]::IsInputRedirected) {
@@ -631,9 +653,7 @@ function Show-CompactDeck($Width) {
     $size=[math]::Max(8,$Width-1)
     Write-Host (Limit-TableText '  HWID / MAIN MENU' $size) -ForegroundColor $palette.Heading
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
-    $review=@($identifiers | Where-Object Quality -ne 'Reported').Count+$warnings.Count+@(Get-QuickDisks $report | Where-Object Quality -eq 'Conflict').Count+@(Get-PnpIssues $report['PnP hardware IDs']).Count
-    $duplicateCount=@(Get-InventoryConflicts $report).Count
-    $review+=$duplicateCount
+    $review=(Get-ReviewSummary $report $identifiers $warnings).Total
     Write-Host (Limit-TableText ("  Found: $found / Review: $review") $size) -ForegroundColor $palette.Text
     Write-Host ''
     foreach($entry in @(@('1','Summary'),@('2','ID numbers'),@('3','Browse devices'),@('4','Check warnings'),@('5','Full inventory'),@('6','Save reports'),@('7','Compare IDs'),@('8','Saved reports'),@('9','Rescan / help'),@('0','Exit'))) {
@@ -651,7 +671,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.46' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.51' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -705,6 +725,11 @@ function Get-FieldLabel($Name) {
         MaxClockSpeed='Maximum CPU clock (MHz)'; Speed='Rated speed (MHz)'; ConfiguredClockSpeed='Configured speed (MHz)'
         MacAddress='Current MAC address'; PermanentAddress='Permanent MAC address'; InterfaceGuid='Network interface ID'
         CollectionSource='Read using'; UniqueIdFormat='Storage ID format (Windows code)'
+        RawPartitionStyle='Raw partition-style code';RawBusType='Raw bus-type code';RawHealthStatus='Raw disk-health code'
+        RawDriveLetter='Raw drive-letter value';DriveLetterReadStatus='Drive-letter read status'
+        TotalPhysicalMemory='Raw installed memory (bytes)';Capacity='Raw module capacity (bytes)';Size='Raw size (bytes)';FreeSpace='Raw free space (bytes)'
+        ManufacturerName='Raw monitor maker codes';UserFriendlyName='Raw monitor name codes';ProductCodeID='Raw monitor product codes';SerialNumberID='Raw monitor serial codes'
+        SerialNumberReadStatus='Monitor serial read status';NameReadStatus='Monitor name read status';RawLinkSpeedBps='Raw link speed (bits/s)';ReceiveLinkSpeed='Raw receive link speed (bits/s)'
         VolumeSerialNumber='Volume serial number'; Guid='GPT disk ID'; UniqueId='Storage unique ID'; Signature='MBR disk signature'
         DeviceLocator='Memory slot'; BankLabel='Memory bank'; DeviceID='Device / drive'; NumberOfCores='CPU cores'; NumberOfLogicalProcessors='CPU threads'
     }
@@ -715,8 +740,24 @@ function Get-FieldQuality($Name, $Value, $Record) {
     if ($Name -eq 'Guid' -and $null -ne $Record.PartitionStyle -and [string]$Record.PartitionStyle -in @('MBR','RAW','0','1')) { return 'Not applicable' }
     $Value=Normalize-IdentifierText $Value
     if($Name -eq 'VolumeSerialNumber' -and -not $Value -and [string]$Record.DriveType -in @('2','5') -and [string]::IsNullOrWhiteSpace([string]$Record.FileSystem) -and ($null -eq $Record.Size_GiB -or $Record.Size_GiB -eq 0)){return 'Not applicable'}
-    if ($Name -in @('PermanentAddress','MacAddress','PNPDeviceID') -and [string]::IsNullOrWhiteSpace([string]$Value) -and $null -ne $Record.HardwareInterface -and $Record.HardwareInterface -eq $false) { return 'Not applicable' }
+    if ($Name -in @('PermanentAddress','MacAddress','PNPDeviceID') -and [string]::IsNullOrWhiteSpace([string]$Value) -and $Record.HardwareInterface -is [bool] -and -not $Record.HardwareInterface) { return 'Not applicable' }
     return (Get-Quality $Value)
+}
+function Test-IdentityFieldValue($Name,$Value) {
+    if($Name -notmatch $identifierPattern -and $Name -notin @('DeviceID','DeviceInstanceId','ClassGuid','Index','Number','DeviceLocator','BankLabel','InstanceName')){return $true}
+    if($null -eq $Value){return $true}
+    # Calculated properties can wrap even strings in PSObject. Test scalar types first.
+    if($Value -is [string] -or $Value -is [char]){return $true}
+    return ($Value -is [ValueType] -and $Value -isnot [bool] -and $Value -isnot [datetime] -and $Value -isnot [datetimeoffset] -and $Value -isnot [timespan])
+}
+function Get-QuickIdGroup($Section) {
+    switch($Section) {
+        {$_ -in @('System identity','Motherboard','BIOS','Chassis')} {return '1'}
+        {$_ -in @('CPU','Memory modules')} {return '2'}
+        {$_ -in @('Physical disks','Storage identifiers','Disk summary','Volumes')} {return '3'}
+        {$_ -in @('Monitors','Network adapters')} {return '4'}
+        default {return '5'}
+    }
 }
 function Get-StatusLabel($Quality) {
     switch ($Quality) {
@@ -756,19 +797,26 @@ function Get-PlainRecords($Records) {
 function Get-QuickIds($Inventory) {
     $fields = @(
         @('System identity','IdentifyingNumber','System serial'), @('System identity','UUID','System UUID'),
-        @('Motherboard','SerialNumber','Board serial'), @('BIOS','SerialNumber','BIOS serial'),
-        @('CPU','ProcessorId','CPU'), @('Memory modules','SerialNumber','RAM'),
+        @('Motherboard','SerialNumber','Board serial'), @('BIOS','SerialNumber','BIOS serial'), @('Chassis','SerialNumber','Chassis serial'),
+        @('CPU','ProcessorId','CPU ID'), @('Memory modules','SerialNumber','RAM'),
         @('Disk summary','',''), @('Volumes','VolumeSerialNumber','Volume'),
-        @('Monitors','SerialNumber','Monitor'), @('Network adapters','MacAddress','Net'), @('Windows Machine GUID','MachineGuid','Windows ID')
+        @('Monitors','SerialNumber','Monitor'), @('Network adapters','MacAddress','Net current'), @('Network adapters','PermanentAddress','Net permanent'), @('Windows Machine GUID','MachineGuid','Windows ID')
     )
     foreach ($entry in $fields) {
         $section = $entry[0]; $field = $entry[1]; $label = $entry[2]
-        if ($section -eq 'Disk summary') { Get-QuickDisks $Inventory; continue }
+        if ($section -eq 'Disk summary') {
+            foreach($disk in (Get-QuickDisks $Inventory)){$disk | Add-Member NoteProperty Group '3';$disk}
+            continue
+        }
         $records = if ($Inventory -is [System.Collections.IDictionary]) { $Inventory[$section] } else { $Inventory.$section }
         if (-not (Test-SectionReadable $records)) { continue }
+        $records=@($records | Where-Object {$null -ne $_})
         $index = 0
         foreach ($record in $records) {
             $index++
+            # Older snapshots may not contain the permanent-address field at all.
+            $hasField=if($record -is [System.Collections.IDictionary]){@($record.Keys) -contains $field}else{$null -ne $record.PSObject.Properties[$field]}
+            if($field -eq 'PermanentAddress' -and -not $hasField){continue}
             $suffix = switch ($section) {
                 'Monitors' { " $index" }
                 'CPU' { if (@($records).Count -gt 1) { " $index" } }
@@ -777,12 +825,12 @@ function Get-QuickIds($Inventory) {
                 'Storage identifiers' { if ($null -ne $record.Number) { ' ' + $record.Number } else { " $index" } }
                 'Volumes' { ' ' + $record.DeviceID }
                 'Network adapters' { if ($record.Name) { " $index " + $record.Name } else { " $index" } }
-                default { '' }
+                default { if($records.Count -gt 1){" $index"}else{''} }
             }
             $value = Normalize-IdentifierText $record.$field
             $quality=Get-FieldQuality $field $value $record
             if($quality -eq 'Not applicable'){continue}
-            [pscustomobject]@{Label=($label + $suffix);Value=$value;Quality=$quality}
+            [pscustomobject]@{Label=($label + $suffix);Value=$value;Quality=$quality;Group=(Get-QuickIdGroup $section);Section=$section;Field=$field}
         }
     }
 }
@@ -835,17 +883,30 @@ function Get-QuickLayout($Width) {
     [pscustomobject]@{LabelWidth=$label;ValueWidth=[math]::Max(8,[math]::Min(60,$Width-$label-14))}
 }
 function Limit-TableText($Text, $Width) {
-    $clean = ([string]$Text -replace '[\r\n\t]', ' ')
+    $clean = ([string]$Text -replace '[\x00-\x1f\x7f]', ' ')
     if ($Width -le 0) { return '' }
     if ($clean.Length -le $Width) { return $clean }
     if ($Width -le 3) { return ('.' * $Width) }
     return $clean.Substring(0, $Width - 3) + '...'
 }
 function Show-QuickIds {
+    Reset-UiPage
     Start-UiReport
     Write-Heading 'DEVICE IDs / QUICK VIEW'
+    Write-PnpValue 'Snapshot' ('#'+$report.'Report info'.ScanNumber+' / '+(Format-ScanTime $report.'Report info'.Generated)) $palette.Muted
     $rows = @(Get-QuickIds $report)
-    if (-not $rows.Count) { Write-Host '  No IDs available. Use [4] to check why.' -ForegroundColor $palette.Warn; return }
+    $unread=@(foreach($section in @('System identity','Motherboard','BIOS','Chassis','CPU','Memory modules','Physical disks','Storage identifiers','Volumes','Monitors','Network adapters','Windows Machine GUID')) {
+        $exists=if($report -is [System.Collections.IDictionary]){$report.Contains($section)}else{$null -ne $report.PSObject.Properties[$section]}
+        if($exists -and -not (Test-SectionReadable $report.$section)){$section}
+    })
+    if (-not $rows.Count) {
+        Write-Host '  No IDs available. Main [4] explains why.' -ForegroundColor $palette.Warn
+        if($unread.Count){Write-PnpValue 'NOT READ' ($unread -join ', ') $palette.Warn}
+        return
+    }
+    $nav=[ordered]@{'1'='PC & firmware';'2'='CPU & RAM';'3'='Storage';'4'='Monitor/network';'5'='Windows'}
+    $jumps=@(foreach($key in $nav.Keys){if(@($rows | Where-Object Group -eq $key).Count){$key+' '+$nav[$key]}})
+    Write-PnpValue 'Jump' ($jumps -join ' / ') $palette.Muted
     $windowWidth = 72
     try { if ([Console]::WindowWidth -gt 0) { $windowWidth = [Console]::WindowWidth } } catch { }
     $stacked=$windowWidth -lt 45
@@ -853,7 +914,13 @@ function Show-QuickIds {
     $valueWidth = $layout.ValueWidth; $labelWidth=$layout.LabelWidth
     $format = '  {0,-' + $labelWidth + '}  {1,-' + $valueWidth + '}  {2}'
     if(-not $stacked){Write-Host ($format -f 'DEVICE', 'ID / SERIAL', 'STATUS') -ForegroundColor $palette.Muted}
-    foreach ($row in $rows) {
+    $groups=[ordered]@{'1'='PC & FIRMWARE';'2'='CPU & RAM';'3'='DISK SERIALS & VOLUME IDs';'4'='MONITORS & NETWORK ADDRESSES';'5'='WINDOWS INSTALLATION ID'}
+    foreach($group in $groups.Keys) {
+        $items=@($rows | Where-Object Group -eq $group)
+        if(-not $items.Count){continue}
+        Add-ReportBookmark $group
+        Write-Host ("`n  [$group] "+$groups[$group]) -ForegroundColor $palette.Heading
+    foreach ($row in $items) {
         $status = switch ($row.Quality) { 'Reported' { if ($row.Note -eq 'Alternate source') { 'OK*' } else { 'OK' } }; 'Missing' { 'Missing' }; 'Conflict' { 'Clash' }; default { 'Default' } }
         $value = if ($row.Quality -eq 'Missing') { '-' } elseif ($row.Quality -eq 'Placeholder') { '(default value)' } else { $row.Value }
         $color = if ($row.Quality -eq 'Reported') { $palette.Good } else { $palette.Warn }
@@ -862,10 +929,13 @@ function Show-QuickIds {
         Write-Host (('{0,-' + $valueWidth + '}  ') -f (Limit-TableText $value $valueWidth)) -ForegroundColor $color -NoNewline
         Write-Host $status -ForegroundColor $color
     }
-    Write-Host "`n  ... = shortened. [5] All details / full IDs   [6] Save report" -ForegroundColor $palette.Muted
+    }
+    if($unread.Count){Write-PnpValue 'NOT READ' (($unread -join ', ')+'. Main [4] explains why.') $palette.Warn}
+    Write-Host "`n  ... = shortened. Main [5] All details / full IDs   Main [6] Save report" -ForegroundColor $palette.Muted
     if (@($rows | Where-Object Note -eq 'Alternate source').Count) { Write-Host '  * Serial from the alternate Windows storage source.' -ForegroundColor $palette.Muted }
-    if (@($rows | Where-Object Quality -eq 'Conflict').Count) { Write-Host '  Clash = Windows sources disagree. [4] Review / [5] Both sources' -ForegroundColor $palette.Warn }
-    if ($warnings.Count) { Write-Host '  Some sections could not be read. [4] Review issues' -ForegroundColor $palette.Warn }
+    if (@($rows | Where-Object Quality -eq 'Conflict').Count) { Write-Host '  Clash = Windows sources disagree. Main [4] Review / Main [5] Both sources' -ForegroundColor $palette.Warn }
+    if ($warnings.Count) { Write-Host '  Some sections could not be read. Main [4] Review issues' -ForegroundColor $palette.Warn }
+    Write-PnpValue 'Meaning' 'OK = supplied by Windows. CPU, volume and network IDs are not factory serials.' $palette.Muted
 }
 function Get-ScanCoverage($Inventory) {
     $labels=@{'SYSTEM & FIRMWARE'='System & firmware';'CPU & MEMORY'='CPU & memory';'STORAGE'='Storage';'GRAPHICS & NETWORK'='Graphics / network / monitors';'WINDOWS'='Windows'}
@@ -1033,18 +1103,63 @@ function Show-FullReport {
     Write-PnpValue 'Timing scope' 'Startup queries only; refreshed device views do not retime the original scan.' $palette.Muted
     Show-Records $report['Scan timing']
 }
+function Get-ReviewReadFailures($Inventory,$QueryWarnings) {
+    $entries=New-Object 'System.Collections.Generic.List[object]'
+    $seen=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $names=if($Inventory -is [System.Collections.IDictionary]){@($Inventory.Keys)}else{@($Inventory.PSObject.Properties.Name)}
+    $known=@($sectionGroups.Values | ForEach-Object {$_})+@('PnP hardware IDs','Extended device inventory')
+    $extra=$Inventory.'Report info'
+    $extraInfo=$Inventory.'Extended scan info'
+    $extraFailed=$extra.ExtendedStatus -eq 'Unavailable' -or $extraInfo.Error
+    $add={param($Section,$Message,$Stored,$Key)
+        if(-not $Key){$Key=$Section}
+        if(-not $seen.Add($Key)){return}
+        if([string]::IsNullOrWhiteSpace([string]$Message)){$Message='Windows returned an unavailable section without a diagnostic message.'}
+        $failure=Get-ScanFailureInfo $Message
+        if($Stored.FailureCode -and $Stored.FailureReason -and $Stored.NextStep){$failure=[pscustomobject]@{Code=$Stored.FailureCode;Reason=$Stored.FailureReason;Action=$Stored.NextStep}}
+        if($Section -eq 'Extended device inventory' -and $extra.ExtendedFailureCode -and $extra.ExtendedFailureReason -and $extra.ExtendedNextStep){$failure=[pscustomobject]@{Code=$extra.ExtendedFailureCode;Reason=$extra.ExtendedFailureReason;Action=$extra.ExtendedNextStep}}
+        $action=if($Section -eq 'Extended device inventory'){$failure.Action.Replace('[9] > [1]','[9] > [4]')}else{$failure.Action}
+        $entries.Add([pscustomobject]@{Section=$Section;Message=[string]$Message;Code=$failure.Code;Reason=$failure.Reason;Action=$action})
+    }
+    foreach($name in $known | Select-Object -Unique) {
+        if($name -notin $names){continue}
+        if($name -eq 'Extended device inventory' -and $extraFailed){continue}
+        $records=$Inventory.$name
+        if(Test-SectionReadable $records){continue}
+        $stored=@($records | Where-Object {Test-UnavailableRecord $_} | Select-Object -First 1)
+        if($stored.Count){& $add $name $stored[0].Unavailable $stored[0]}
+        else{& $add $name 'No records returned by Windows.' $null}
+    }
+    if($extraFailed) {
+        $message=if($extraInfo.Error){$extraInfo.Error}else{(@($QueryWarnings | Where-Object {$_ -like 'Extended device inventory: *'} | Select-Object -First 1) -join '') -ireplace '^Extended device inventory: ',''}
+        if(-not $message){$message='The latest extended refresh did not complete.'}
+        & $add 'Extended device inventory' $message $extraInfo
+    }
+    foreach($warning in $QueryWarnings) {
+        $text=([string]$warning).Trim()
+        if(-not $text){continue}
+        $parts=$text -split ': ',2
+        $name=$parts[0].Trim()
+        if($parts.Count -lt 2){& $add 'Query warning' $text $null ('Unclassified: '+$text);continue}
+        if($name -in $names -and (Test-SectionReadable $Inventory.$name) -and -not ($name -eq 'Extended device inventory' -and $extraFailed)){continue}
+        $stored=@($Inventory.$name | Where-Object {Test-UnavailableRecord $_} | Select-Object -First 1)
+        & $add $name $parts[1] $(if($stored.Count){$stored[0]}else{$null})
+    }
+    $entries.ToArray()
+}
 function Get-ReviewSummary($Inventory,$IdRows,$QueryWarnings) {
     $ids=@($IdRows | Where-Object {$null -ne $_ -and $_.Quality -in @('Missing','Placeholder')})
     $disk=@(Get-QuickDisks $Inventory | Where-Object Quality -eq 'Conflict')
     $records=@(Get-InventoryConflicts $Inventory)
     $pnp=if($Inventory -is [System.Collections.IDictionary]){$Inventory['PnP hardware IDs']}else{$Inventory.'PnP hardware IDs'}
     $pnpFindings=@(Get-PnpIssues $pnp)
-    $pnpConflicts=@($pnpFindings | Where-Object Kind -eq 'Duplicate')
-    $devices=@($pnpFindings | Where-Object Kind -ne 'Duplicate')
-    $unread=@($QueryWarnings | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_)})
+    $pnpConflicts=@($pnpFindings | Where-Object Kind -in @('Duplicate','ResourceConflict'))
+    $devices=@($pnpFindings | Where-Object Kind -notin @('Duplicate','ResourceConflict'))
+    $unreadDetails=@(Get-ReviewReadFailures $Inventory $QueryWarnings)
+    $unread=@($unreadDetails | ForEach-Object {$_.Section+': '+$_.Message})
     $conflictCount=$disk.Count+$records.Count+$pnpConflicts.Count
     [pscustomobject]@{
-        IdIssues=$ids;DiskClashes=$disk;RecordConflicts=$records;PnpConflicts=$pnpConflicts;DeviceIssues=$devices;Unread=$unread
+        IdIssues=$ids;DiskClashes=$disk;RecordConflicts=$records;PnpConflicts=$pnpConflicts;DeviceIssues=$devices;Unread=$unread;UnreadDetails=$unreadDetails
         ConflictCount=$conflictCount;UnreadCount=$unread.Count;DeviceCount=$devices.Count
         MissingCount=@($ids | Where-Object Quality -eq 'Missing').Count
         DefaultCount=@($ids | Where-Object Quality -eq 'Placeholder').Count
@@ -1053,7 +1168,7 @@ function Get-ReviewSummary($Inventory,$IdRows,$QueryWarnings) {
 }
 function Get-DeviceReviewAction($Issue) {
     switch($Issue.Kind) {
-        'UnknownStatus' {return 'Rescan [9] > [1]. If still unknown, inspect this device in [5] or Device Manager.'}
+        'UnknownStatus' {return 'Rescan [9] > [1]. If still unknown, inspect this device in Main [5] or Device Manager.'}
         'MissingInstance' {return 'Rescan. A device instance ID is needed to match this node reliably.'}
         'Duplicate' {return 'Rescan before comparing. Repeated instance IDs cannot be matched reliably.'}
     }
@@ -1072,55 +1187,62 @@ function Show-Attention([switch]$Inline) {
     if(-not $Inline){Add-ReportBookmark '1'}
     Write-Heading 'ITEMS TO REVIEW'
     $review=Get-ReviewSummary $report $identifiers $warnings
-    Write-PnpValue 'Review counts' ("$($review.Total) findings / $($review.ConflictCount) conflicts / $($review.UnreadCount) sections not read") $palette.Text
+    Write-PnpValue 'Review counts' ("$($review.Total) findings / $($review.ConflictCount) conflicts / $($review.UnreadCount) sections not read") $(if($review.Total){$palette.Warn}else{$palette.Good})
     Write-PnpValue 'Other findings' ("$($review.DeviceCount) device findings / $($review.MissingCount) missing IDs / $($review.DefaultCount) default IDs") $palette.Text
-    if(-not $Inline){Write-PnpValue 'Jump' '1 Top / 2 Devices / 3 Not read / 4 IDs / 5 Conflicts. Enter = menu.' $palette.Muted}
+    if(-not $Inline){Write-PnpValue 'Jump' '1 Top / 2 Devices / 3 Not read / 4 IDs / 5 Conflicts. 0 or Enter = menu.' $palette.Muted}
+    if(-not $Inline -and $review.Total) {
+        $first=if($review.ConflictCount){'[5] Conflicts: verify repeated or disagreeing readings first.'}elseif($review.UnreadCount){'[3] Not read: check which readers failed.'}elseif($review.DeviceCount){'[2] Devices: inspect the Windows-reported status.'}else{'[4] IDs: missing/default values can be normal.'}
+        Write-PnpValue 'Start with' $first $palette.Heading
+    }
     Write-PnpValue 'Meaning' 'Counts are findings, not unique devices. A finding alone does not prove hardware failure.' $palette.Muted
     if(-not $review.Total){Write-PnpValue 'OK' 'No missing identifiers, placeholders, failed sections or conflicts detected.' $palette.Good}
     if(-not $Inline){Add-ReportBookmark '5'}
-    if($review.ConflictCount){Write-Host '';Write-Host '  CONFLICTS / VERIFY BEFORE COMPARING' -ForegroundColor $palette.Heading}
+    Write-Host '';Write-Host ('  CONFLICTS / VERIFY BEFORE COMPARING / '+$review.ConflictCount) -ForegroundColor $palette.Heading
+    if(-not $review.ConflictCount){Write-PnpValue 'Result' 'No conflicts detected.' $palette.Muted}
     foreach($conflict in $review.RecordConflicts) {
         Write-PnpValue 'SCAN CONFLICT' ($conflict.Section+' / '+$conflict.DeviceKey) $palette.Warn
         Write-PnpValue 'Why' $conflict.Message $palette.Text
-        Write-PnpValue 'Next' 'Rescan [9] > [1]. Check the duplicate records in [5]; do not guess which record matches.' $palette.Muted
+        Write-PnpValue 'Next' 'Rescan [9] > [1]. Check the duplicate records in Main [5]; do not guess which record matches.' $palette.Muted
     }
     foreach($conflict in $review.DiskClashes) {
         Write-PnpValue '[SOURCE CLASH]' ($conflict.Label+' / Windows storage sources report different serials') $palette.Warn
         Write-PnpValue 'Physical disks' $conflict.PrimaryValue $palette.Text
         Write-PnpValue 'Storage identifiers' $conflict.AlternateValue $palette.Text
-        Write-PnpValue 'Next' 'Rescan [9] > [1] and check both sources in [5]. This disagreement is not proof of a failing disk.' $palette.Muted
+        Write-PnpValue 'Next' 'Rescan [9] > [1] and check both sources in Main [5]. This disagreement is not proof of a failing disk.' $palette.Muted
     }
     foreach($conflict in $review.PnpConflicts) {
-        Write-PnpValue 'DEVICE CONFLICT' $conflict.Message $palette.Warn
+        $label=if($conflict.Kind -eq 'ResourceConflict' -and $conflict.Device){$conflict.Device+' / '+$conflict.Message}else{$conflict.Message}
+        Write-PnpValue 'DEVICE CONFLICT' $label $palette.Warn
+        if($conflict.InstanceId -and $conflict.Kind -ne 'Duplicate'){Write-PnpValue 'Instance' $conflict.InstanceId $palette.Muted}
+        if($conflict.Statuses){Write-PnpValue 'Status readings' ($conflict.Statuses -join ' / ') $palette.Text}
         Write-PnpValue 'Next' (Get-DeviceReviewAction $conflict) $palette.Muted
     }
     if(-not $Inline){Add-ReportBookmark '2'}
-    if($review.DeviceCount){Write-Host '';Write-Host '  DEVICE STATUS & RECORDS' -ForegroundColor $palette.Heading}
+    Write-Host '';Write-Host ('  DEVICE STATUS & RECORDS / '+$review.DeviceCount) -ForegroundColor $palette.Heading
+    if(-not $review.DeviceCount){Write-PnpValue 'Result' 'No device-status findings.' $palette.Muted}
     foreach($problem in $review.DeviceIssues) {
         $name=if(-not [string]::IsNullOrWhiteSpace([string]$problem.Device)){$problem.Device}elseif($problem.InstanceId){$problem.InstanceId}else{'Unnamed device'}
         Write-PnpValue 'DEVICE REVIEW' ($name+' / '+$problem.Message) $palette.Warn
+        if($problem.InstanceId -and $name -ne $problem.InstanceId){Write-PnpValue 'Instance' $problem.InstanceId $palette.Muted}
         Write-PnpValue 'Next' (Get-DeviceReviewAction $problem) $palette.Muted
     }
     if(-not $Inline){Add-ReportBookmark '3'}
-    if($review.UnreadCount){Write-Host '';Write-Host '  SECTIONS NOT READ' -ForegroundColor $palette.Heading}
-    foreach($warning in $review.Unread) {
-        $split=$warning -split ': ',2
-        $failure=Get-ScanFailureInfo $split[1]
-        $stored=if($report.Contains($split[0])){@($report[$split[0]])[0]}else{$null}
-        if($stored.FailureCode -and $stored.FailureReason -and $stored.NextStep){$failure=[pscustomobject]@{Code=$stored.FailureCode;Reason=$stored.FailureReason;Action=$stored.NextStep}}
-        if($split[0] -eq 'Extended device inventory' -and $report['Report info'].ExtendedFailureCode){$failure=[pscustomobject]@{Code=$report['Report info'].ExtendedFailureCode;Reason=$report['Report info'].ExtendedFailureReason;Action=$report['Report info'].ExtendedNextStep}}
-        Write-PnpValue ('NOT READ / '+$split[0]) ($failure.Reason+' ['+$failure.Code+']') $palette.Warn
-        Write-PnpValue 'Next' $failure.Action $palette.Muted
+    Write-Host '';Write-Host ('  SECTIONS NOT READ / '+$review.UnreadCount) -ForegroundColor $palette.Heading
+    if(-not $review.UnreadCount){Write-PnpValue 'Result' 'No unread sections reported.' $palette.Muted}
+    foreach($failure in $review.UnreadDetails) {
+        Write-PnpValue ('NOT READ / '+$failure.Section) ($failure.Reason+' ['+$failure.Code+']') $palette.Warn
+        Write-PnpValue 'Next' ($failure.Action -ireplace '(?<!Main )\[5\]','Main [5]') $palette.Muted
     }
     if(-not $Inline){Add-ReportBookmark '4'}
-    if($review.IdIssues.Count){Write-Host '';Write-Host '  IDENTIFIERS NOT SUPPLIED / DEFAULT' -ForegroundColor $palette.Heading}
+    Write-Host '';Write-Host ('  IDENTIFIERS NOT SUPPLIED / DEFAULT / '+$review.IdIssues.Count) -ForegroundColor $palette.Heading
+    if(-not $review.IdIssues.Count){Write-PnpValue 'Result' 'No missing/default identifier findings.' $palette.Muted}
     foreach($row in $review.IdIssues) {
         $device=if($row.Device){' ('+$row.Device+')'}else{''}
         $status=if($row.Quality -eq 'Missing'){'NOT SUPPLIED'}else{'DEFAULT VALUE'}
         Write-PnpValue $status ($row.Section+$device+' / '+(Get-FieldLabel $row.Field)) $palette.Warn
         if($row.Quality -eq 'Placeholder'){Write-PnpValue 'Windows supplied' $row.Value $palette.Muted}
     }
-    if($review.IdIssues.Count){Write-PnpValue 'Next' 'Check full values in [5]. Missing/default IDs can be firmware limitations; rescanning may not supply them.' $palette.Muted}
+    if($review.IdIssues.Count){Write-PnpValue 'Next' 'Check full values in Main [5]. Missing/default IDs can be firmware limitations; rescanning may not supply them.' $palette.Muted}
 }
 
 function Show-Categories {
@@ -1153,7 +1275,9 @@ function Get-StorageCodeName($Kind,$Code) {
         HealthStatus=@{0='Healthy';1='Warning';2='Unhealthy'}
         BusType=@{0='Unknown';1='SCSI';2='ATAPI';3='ATA';4='IEEE 1394';5='SSA';6='Fibre Channel';7='USB';8='RAID';9='iSCSI';10='SAS';11='SATA';12='SD';13='MMC';14='Virtual';15='File Backed Virtual';16='Storage Spaces';17='NVMe';18='SCM';19='UFS'}
     }
-    $number=[int]$Code
+    $number=[uint16]0
+    if($Code -is [bool] -or -not [uint16]::TryParse([string]$Code,[ref]$number)){return 'Unknown (invalid Windows code)'}
+    $number=[int]$number
     if($maps.ContainsKey($Kind) -and $maps[$Kind].ContainsKey($number)){return $maps[$Kind][$number]}
     return "Windows code $number"
 }
@@ -1162,27 +1286,50 @@ function Get-StorageIdentifiers {
         Select-Object Number,FriendlyName,SerialNumber,UniqueId,UniqueIdFormat,Guid,Signature,
             @{n='PartitionStyle';e={Get-StorageCodeName 'PartitionStyle' $_.PartitionStyle}},
             @{n='BusType';e={Get-StorageCodeName 'BusType' $_.BusType}},
-            @{n='HealthStatus';e={Get-StorageCodeName 'HealthStatus' $_.HealthStatus}}
+            @{n='HealthStatus';e={Get-StorageCodeName 'HealthStatus' $_.HealthStatus}},
+            @{n='RawPartitionStyle';e={$_.PartitionStyle}},@{n='RawBusType';e={$_.BusType}},@{n='RawHealthStatus';e={$_.HealthStatus}}
+}
+function Get-PartitionLetterInfo($Value) {
+    if($null -eq $Value -or [string]$Value -in @('',[string][char]0,'0')){return [pscustomobject]@{Text=$null;Status='Not assigned'}}
+    $text=[string]$Value;$number=[uint16]0
+    if($Value -isnot [bool] -and [uint16]::TryParse($text,[ref]$number)){$text=[string][char]$number}
+    if($text -cmatch '^[A-Za-z]$'){return [pscustomobject]@{Text=$text.ToUpperInvariant();Status='Read'}}
+    return [pscustomobject]@{Text=$null;Status='Invalid value'}
 }
 function Get-PartitionIdentifiers {
     Get-HwidInstance -Namespace 'root/Microsoft/Windows/Storage' -ClassName MSFT_Partition -OperationTimeoutSec 30 -Property DiskNumber,PartitionNumber,DriveLetter,Guid,GptType,MbrType,AccessPaths,Size |
-        Select-Object DiskNumber,PartitionNumber,@{n='DriveLetter';e={if(-not [string]::IsNullOrEmpty([string]$_.DriveLetter) -and [int][char]$_.DriveLetter -ne 0){[string][char]$_.DriveLetter}}},@{n='PartitionGuid';e={$_.Guid}},GptType,MbrType,AccessPaths,@{n='Size_GiB';e={GiB $_.Size}}
+        Select-Object DiskNumber,PartitionNumber,@{n='DriveLetter';e={(Get-PartitionLetterInfo $_.DriveLetter).Text}},@{n='DriveLetterReadStatus';e={(Get-PartitionLetterInfo $_.DriveLetter).Status}},@{n='RawDriveLetter';e={$_.DriveLetter}},@{n='PartitionGuid';e={$_.Guid}},GptType,MbrType,AccessPaths,Size,@{n='Size_GiB';e={GiB $_.Size}}
+}
+function Format-NetworkLinkSpeed($Value) {
+    $bits=[uint64]0
+    if($null -eq $Value -or $Value -is [bool] -or -not [uint64]::TryParse([string]$Value,[ref]$bits)){return $null}
+    return ('{0:0.##} Mbps' -f ($bits/1000000.0))
 }
 function Get-NetworkIdentifiers {
     try {
         $adapters=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop | Where-Object {$null -ne $_})
         if(-not $adapters.Count){throw 'No adapters returned by Get-NetAdapter.'}
-        $adapters | Select-Object Name,InterfaceDescription,InterfaceGuid,MacAddress,PermanentAddress,PNPDeviceID,Status,LinkSpeed,HardwareInterface,@{n='CollectionSource';e={'Get-NetAdapter'}}
-        return
+        $rows=@($adapters | Select-Object Name,InterfaceDescription,InterfaceGuid,MacAddress,PermanentAddress,PNPDeviceID,Status,LinkSpeed,HardwareInterface,@{n='CollectionSource';e={'Get-NetAdapter'}})
+        return $rows
     } catch {$primaryError=$_.Exception.Message}
     try {
         $adapters=@(Get-HwidInstance -Namespace 'root/StandardCimv2' -ClassName MSFT_NetAdapter -OperationTimeoutSec 20 -Property Name,InterfaceDescription,InterfaceGuid,NetworkAddresses,PermanentAddress,PNPDeviceID,InterfaceOperationalStatus,ReceiveLinkSpeed,HardwareInterface | Where-Object {$null -ne $_})
         if(-not $adapters.Count){throw 'No adapters returned by the CIM fallback.'}
-        $adapters | Select-Object Name,InterfaceDescription,InterfaceGuid,@{n='MacAddress';e={$addresses=@($_.NetworkAddresses | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_)});if($addresses.Count){$addresses[0]}else{$_.MacAddress}}},PermanentAddress,PNPDeviceID,NetworkAddresses,
+        $rows=@($adapters | Select-Object Name,InterfaceDescription,InterfaceGuid,@{n='MacAddress';e={$addresses=@($_.NetworkAddresses | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_)});if($addresses.Count){$addresses[0]}else{$_.MacAddress}}},PermanentAddress,PNPDeviceID,NetworkAddresses,
             @{n='Status';e={if($null -eq $_.InterfaceOperationalStatus){$null}elseif($_.InterfaceOperationalStatus -eq 1){'Up'}elseif($_.InterfaceOperationalStatus -eq 2){'Down'}else{'Windows status '+$_.InterfaceOperationalStatus}}},
-            @{n='LinkSpeed';e={if($null -ne $_.ReceiveLinkSpeed){'{0:0.##} Mbps' -f ($_.ReceiveLinkSpeed/1000000.0)}}},HardwareInterface,@{n='CollectionSource';e={'MSFT_NetAdapter CIM fallback'}}
+            @{n='LinkSpeed';e={Format-NetworkLinkSpeed $_.ReceiveLinkSpeed}},ReceiveLinkSpeed,HardwareInterface,@{n='CollectionSource';e={'MSFT_NetAdapter CIM fallback'}})
+        return $rows
+    } catch {$modernError=$_.Exception.Message}
+    try {
+        # Last resort for older Windows/provider installations; never infer a permanent MAC.
+        $adapters=@(Get-HwidInstance -ClassName Win32_NetworkAdapter -OperationTimeoutSec 20 -Property Name,NetConnectionID,GUID,MACAddress,PNPDeviceID,PhysicalAdapter,NetConnectionStatus,NetEnabled,Speed | Where-Object {$null -ne $_})
+        if(-not $adapters.Count){throw 'No adapters returned by the Win32 fallback.'}
+        $rows=@($adapters | Select-Object @{n='Name';e={if(-not [string]::IsNullOrWhiteSpace([string]$_.NetConnectionID)){$_.NetConnectionID}else{$_.Name}}},@{n='InterfaceDescription';e={$_.Name}},@{n='InterfaceGuid';e={$_.GUID}},MacAddress,@{n='PermanentAddress';e={$null}},PNPDeviceID,
+            @{n='Status';e={if($null -eq $_.NetConnectionStatus){$null}elseif($_.NetConnectionStatus -eq 2){'Up'}elseif($_.NetConnectionStatus -in @(0,7)){'Down'}else{'Windows network status '+$_.NetConnectionStatus}}},
+            @{n='LinkSpeed';e={Format-NetworkLinkSpeed $_.Speed}},@{n='RawLinkSpeedBps';e={$_.Speed}},@{n='HardwareInterface';e={$_.PhysicalAdapter}},NetConnectionStatus,NetEnabled,@{n='CollectionSource';e={'Win32_NetworkAdapter fallback'}})
+        return $rows
     } catch {
-        $message="Network identifiers unavailable. Primary: $primaryError / Fallback: "+$_.Exception.Message
+        $message="Network identifiers unavailable. Primary: $primaryError / CIM fallback: $modernError / Fallback: "+$_.Exception.Message
         # Keep the final reader's type/category, including localized Windows errors.
         $exception=[Exception]::new($message,$_.Exception)
         $exception.Data['HwidFallbackFailure']=$_.Exception.Message
@@ -1496,24 +1643,29 @@ function Get-PnpGroup($Device) {
 }
 function Get-PnpIssues($Devices) {
     if(-not (Test-SectionReadable $Devices)){return}
+    $duplicates=@($Devices | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_.DeviceInstanceId)} |
+        Group-Object -Property {([string]$_.DeviceInstanceId).Trim().ToUpperInvariant()} | Where-Object Count -gt 1)
+    $duplicateKeys=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach($duplicate in $duplicates){[void]$duplicateKeys.Add(([string]$duplicate.Group[0].DeviceInstanceId).Trim())}
     foreach($device in $Devices) {
         if($null -eq $device){continue}
+        # Repeated node rows are one conflict; keep their status observations below.
+        if($duplicateKeys.Contains(([string]$device.DeviceInstanceId).Trim())){continue}
         if([string]::IsNullOrWhiteSpace([string]$device.DeviceInstanceId)) {
             [pscustomobject]@{Device=$device.Name;InstanceId=$device.DeviceInstanceId;Code=$null;Message='Device instance ID was not supplied; this node cannot be matched reliably.';Kind='MissingInstance'}
         }
         $status=Get-PnpStatus $device.ConfigManagerErrorCode
         if($status.Quality -eq 'Review') {
-            [pscustomobject]@{Device=$device.Name;InstanceId=$device.DeviceInstanceId;Code=$status.Code;Message=$status.Text;Kind='Status'}
+            [pscustomobject]@{Device=$device.Name;InstanceId=$device.DeviceInstanceId;Code=$status.Code;Message=$status.Text;Kind=$(if($status.Code -eq 12){'ResourceConflict'}else{'Status'})}
         } elseif($status.Quality -eq 'Unknown') {
             [pscustomobject]@{Device=$device.Name;InstanceId=$device.DeviceInstanceId;Code=$null;Message='Windows device status was not read; condition is unknown.';Kind='UnknownStatus'}
         }
     }
     # Hardware IDs describe models, so sharing them is expected. Only instance IDs
     # should identify a unique device node within this single scan.
-    $duplicates=@($Devices | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_.DeviceInstanceId)} |
-        Group-Object -Property {([string]$_.DeviceInstanceId).Trim().ToUpperInvariant()} | Where-Object Count -gt 1)
     foreach($duplicate in $duplicates) {
-        [pscustomobject]@{Device=$duplicate.Group[0].Name;Message=('Repeated instance ID in scan ('+$duplicate.Count+' records): '+$duplicate.Group[0].DeviceInstanceId);Kind='Duplicate'}
+        $statuses=@($duplicate.Group | ForEach-Object {(Get-PnpStatus $_.ConfigManagerErrorCode).Text} | Select-Object -Unique)
+        [pscustomobject]@{Device=$duplicate.Group[0].Name;InstanceId=$duplicate.Group[0].DeviceInstanceId;Statuses=$statuses;Message=('Repeated instance ID in scan ('+$duplicate.Count+' records): '+$duplicate.Group[0].DeviceInstanceId);Kind='Duplicate'}
     }
 }
 function Write-PnpLine($Text,$Color) {
@@ -1529,9 +1681,9 @@ function Write-PnpLine($Text,$Color) {
 function Write-PnpValue($Label,$Value,$Color) {
     $width=96
     try {if([Console]::WindowWidth -gt 0){$width=[math]::Max(8,[Console]::WindowWidth-2)}}catch{}
-    $text=([string]$Value -replace '[\r\n\t\x00-\x1f]',' ')
+    $text=([string]$Value -replace '[\x00-\x1f\x7f]',' ')
     if([string]::IsNullOrWhiteSpace($text)){$text='(not supplied)'}
-    $safeLabel=([string]$Label -replace '[\r\n\t\x00-\x1f]',' ')
+    $safeLabel=([string]$Label -replace '[\x00-\x1f\x7f]',' ')
     $text='    '+$safeLabel+': '+$text
     while($text.Length -gt $width) {
         Write-PnpLine ($text.Substring(0,$width)) $Color
@@ -1701,8 +1853,8 @@ function Show-Records($Records,$SectionName='') {
             } elseif ($property.Name -eq 'Unavailable') { $color = $palette.Warn }
             if ($value -eq '(not provided)') { $color = $palette.Warn }
             if($SectionName -eq 'Disk partitions' -and $property.Name -eq 'DriveLetter' -and $value -eq '(not provided)') {
-                $value='None assigned (normal for some system/recovery partitions)'
-                $color=$palette.Muted
+                if($record.DriveLetterReadStatus -eq 'Invalid value'){$value='Unknown / invalid provider value; inspect Raw drive-letter value';$color=$palette.Warn}
+                else{$value='None assigned (normal for some system/recovery partitions)';$color=$palette.Muted}
             }
             Write-PnpValue (Get-FieldLabel $property.Name) ($value+$status) $color
         }
@@ -1733,6 +1885,7 @@ function Get-SectionIdentifierInfo($Name,$Records) {
     $text="IDs: $found found"
     if($missing){$text+=", $missing missing"}
     if($defaults){$text+=", $defaults default"}
+    if($Name -eq 'Network adapters' -and @($Records | Where-Object CollectionSource -match 'fallback').Count){$text+=' / fallback reader'}
     $review=$missing+$defaults
     [pscustomobject]@{Text=$text;Tag=$(if($review){'CHECK'}else{'READ'});Color=$(if($review){'Warn'}else{'Good'});Found=$found;Missing=$missing;Default=$defaults}
 }
@@ -1799,7 +1952,7 @@ function New-ScanQueryWorker {
         $setup=New-Object Text.StringBuilder
         [void]$setup.AppendLine('$ErrorActionPreference="Stop"')
         # Only collection helpers run here; UI and snapshot state stay on the main thread.
-        foreach($name in @('GiB','Convert-MonitorText','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionIdentifiers','Get-NetworkIdentifiers','Get-DriverHardwareIds','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
+        foreach($name in @('GiB','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Get-NetworkIdentifiers','Get-DriverHardwareIds','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
             $function=Get-Item -LiteralPath ('Function:\'+$name) -ErrorAction SilentlyContinue
             if($null -ne $function -and -not $function.ModuleName){[void]$setup.AppendLine(('function '+$name+' {'+$function.Definition+'}'))}
         }
@@ -1913,6 +2066,7 @@ function Section($Name, [scriptblock]$Query) {
                 foreach($key in $record.Keys){[pscustomobject]@{Name=$key;Value=$record[$key]}}
             }else{$record.PSObject.Properties}
             foreach ($property in $properties) {
+                if(-not (Test-IdentityFieldValue $property.Name $property.Value)){throw [IO.InvalidDataException]::new(('Windows returned an invalid scalar ID or device key: '+$property.Name))}
                 if ($property.Value -is [datetime]) { $normalized[$property.Name]=$property.Value.ToString('o') }
                 elseif ($property.Value -is [enum]) { $normalized[$property.Name]=$property.Value.ToString() }
                 else { $normalized[$property.Name]=$property.Value }
@@ -1940,10 +2094,49 @@ function Section($Name, [scriptblock]$Query) {
         Update-ScanProgress
     }
 }
-function Convert-MonitorText($Codes) {
-    return ((@($Codes | Where-Object {$_ -gt 0 -and $_ -le 65535} | ForEach-Object {[char][int]$_}) -join '').Trim())
+function Get-MonitorTextResult($Codes,$Length=$null) {
+    $items=@()
+    if($null -ne $Codes){$items=@($Codes)}
+    $count=$items.Count
+    if($null -ne $Length) {
+        $size=[uint16]0
+        if($Length -is [bool] -or -not [uint16]::TryParse([string]$Length,[ref]$size) -or $size -gt $count){return [pscustomobject]@{Text='';Status='Invalid length'}}
+        $count=[int]$size
+    }
+    $text=New-Object Text.StringBuilder
+    for($index=0;$index -lt $count;$index++) {
+        $number=[uint16]0
+        if($null -eq $items[$index] -or $items[$index] -is [bool] -or -not [uint16]::TryParse([string]$items[$index],[ref]$number)){return [pscustomobject]@{Text='';Status='Invalid text codes'}}
+        if($number -ne 0){[void]$text.Append([char]$number)}
+    }
+    $value=$text.ToString().Trim()
+    [pscustomobject]@{Text=$value;Status=$(if($value){'Read'}else{'Not supplied'})}
 }
-function GiB($Bytes) { if ($null -eq $Bytes) { return $null }; [math]::Round($Bytes / 1GB, 2) }
+function Convert-MonitorText($Codes) {return (Get-MonitorTextResult $Codes).Text}
+function Get-MonitorIdentifiers {
+    # Some providers reject a projected query containing an optional length field.
+    # Read this small class as exposed and use length metadata only when present.
+    foreach($monitor in (Get-HwidInstance -OperationTimeoutSec 20 -Namespace 'root\wmi' -ClassName WmiMonitorID)) {
+        if($null -eq $monitor){continue}
+        $serial=Get-MonitorTextResult $monitor.SerialNumberID
+        $name=Get-MonitorTextResult $monitor.UserFriendlyName $monitor.UserFriendlyNameLength
+        [pscustomobject][ordered]@{
+            InstanceName=$monitor.InstanceName;Active=$monitor.Active
+            Manufacturer=(Get-MonitorTextResult $monitor.ManufacturerName $monitor.ManufacturerNameLength).Text
+            Name=$name.Text;ProductCode=(Convert-MonitorText $monitor.ProductCodeID);SerialNumber=$serial.Text
+            SerialNumberReadStatus=$serial.Status;NameReadStatus=$name.Status
+            WeekOfManufacture=$monitor.WeekOfManufacture;YearOfManufacture=$monitor.YearOfManufacture
+            ManufacturerName=$monitor.ManufacturerName;ManufacturerNameLength=$monitor.ManufacturerNameLength
+            UserFriendlyName=$monitor.UserFriendlyName;UserFriendlyNameLength=$monitor.UserFriendlyNameLength
+            ProductCodeID=$monitor.ProductCodeID;SerialNumberID=$monitor.SerialNumberID
+        }
+    }
+}
+function GiB($Bytes) {
+    $number=[uint64]0
+    if($null -eq $Bytes -or $Bytes -is [bool] -or -not [uint64]::TryParse([string]$Bytes,[ref]$number)){return $null}
+    return [math]::Round($number / 1GB,2)
+}
 function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole -and -not $redirected),[bool]$IncludeExtended=$false) {
     $scanCursorVisible=$null
     if($ownedConsole -and -not $redirected) {
@@ -1960,7 +2153,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-Host '  Hardware identity and Windows inventory. Read-only scan.' -ForegroundColor $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.46'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.51'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-Host "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" -ForegroundColor $palette.Muted
@@ -1987,7 +2180,7 @@ Section 'System identity' {
     Get-HwidInstance -OperationTimeoutSec 20 Win32_ComputerSystemProduct -Property Vendor,Name,Version,IdentifyingNumber,UUID | Select-Object Vendor, Name, Version, IdentifyingNumber, UUID
 }
 Section 'System hardware' {
-    Get-HwidInstance -OperationTimeoutSec 20 Win32_ComputerSystem -Property Manufacturer,Model,SystemType,TotalPhysicalMemory | Select-Object Manufacturer, Model, SystemType, @{n='TotalRAM_GiB';e={GiB $_.TotalPhysicalMemory}}
+    Get-HwidInstance -OperationTimeoutSec 20 Win32_ComputerSystem -Property Manufacturer,Model,SystemType,TotalPhysicalMemory | Select-Object Manufacturer, Model, SystemType, TotalPhysicalMemory,@{n='TotalRAM_GiB';e={GiB $_.TotalPhysicalMemory}}
 }
 Section 'CPU' {
     Get-HwidInstance -OperationTimeoutSec 20 Win32_Processor -Property DeviceID,Name,Manufacturer,ProcessorId,SocketDesignation,NumberOfCores,NumberOfLogicalProcessors,MaxClockSpeed | Select-Object DeviceID, Name, Manufacturer, ProcessorId, SocketDesignation, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed
@@ -2002,16 +2195,16 @@ Section 'Chassis' {
     Get-HwidInstance -OperationTimeoutSec 20 Win32_SystemEnclosure -Property Manufacturer,SerialNumber,SMBIOSAssetTag,ChassisTypes | Select-Object Manufacturer, SerialNumber, SMBIOSAssetTag, ChassisTypes
 }
 Section 'Memory modules' {
-    Get-HwidInstance -OperationTimeoutSec 20 Win32_PhysicalMemory -Property DeviceLocator,BankLabel,Manufacturer,PartNumber,SerialNumber,Capacity,Speed,ConfiguredClockSpeed | Select-Object DeviceLocator, BankLabel, Manufacturer, PartNumber, SerialNumber, @{n='Capacity_GiB';e={GiB $_.Capacity}}, Speed, ConfiguredClockSpeed
+    Get-HwidInstance -OperationTimeoutSec 20 Win32_PhysicalMemory -Property DeviceLocator,BankLabel,Manufacturer,PartNumber,SerialNumber,Capacity,Speed,ConfiguredClockSpeed | Select-Object DeviceLocator, BankLabel, Manufacturer, PartNumber, SerialNumber,Capacity,@{n='Capacity_GiB';e={GiB $_.Capacity}}, Speed, ConfiguredClockSpeed
 }
 Section 'Physical disks' {
-    Get-HwidInstance -OperationTimeoutSec 20 Win32_DiskDrive -Property Index,Model,SerialNumber,FirmwareRevision,InterfaceType,MediaType,Size,PNPDeviceID | Select-Object Index, Model, SerialNumber, FirmwareRevision, InterfaceType, MediaType, @{n='Size_GiB';e={GiB $_.Size}}, PNPDeviceID
+    Get-HwidInstance -OperationTimeoutSec 20 Win32_DiskDrive -Property Index,Model,SerialNumber,FirmwareRevision,InterfaceType,MediaType,Size,PNPDeviceID | Select-Object Index, Model, SerialNumber, FirmwareRevision, InterfaceType, MediaType,Size,@{n='Size_GiB';e={GiB $_.Size}}, PNPDeviceID
 }
 Section 'Storage identifiers' {
     Get-StorageIdentifiers
 }
 Section 'Volumes' {
-    Get-HwidInstance -OperationTimeoutSec 20 Win32_LogicalDisk -Filter 'DriveType=2 OR DriveType=3 OR DriveType=5' -Property DeviceID,DriveType,VolumeName,VolumeSerialNumber,FileSystem,Size,FreeSpace | Select-Object DeviceID, DriveType, VolumeName, VolumeSerialNumber, FileSystem, @{n='Size_GiB';e={GiB $_.Size}}, @{n='Free_GiB';e={GiB $_.FreeSpace}}
+    Get-HwidInstance -OperationTimeoutSec 20 Win32_LogicalDisk -Filter 'DriveType=2 OR DriveType=3 OR DriveType=5' -Property DeviceID,DriveType,VolumeName,VolumeSerialNumber,FileSystem,Size,FreeSpace | Select-Object DeviceID, DriveType, VolumeName, VolumeSerialNumber, FileSystem,Size,FreeSpace,@{n='Size_GiB';e={GiB $_.Size}}, @{n='Free_GiB';e={GiB $_.FreeSpace}}
 }
 Section 'Disk partitions' {
     Get-PartitionIdentifiers
@@ -2020,8 +2213,7 @@ Section 'Graphics adapters' {
     Get-HwidInstance -OperationTimeoutSec 20 Win32_VideoController -Property Name,VideoProcessor,PNPDeviceID,DriverVersion,DriverDate,CurrentHorizontalResolution,CurrentVerticalResolution | Select-Object Name, VideoProcessor, PNPDeviceID, DriverVersion, DriverDate, CurrentHorizontalResolution, CurrentVerticalResolution
 }
 Section 'Monitors' {
-    Get-HwidInstance -OperationTimeoutSec 20 -Namespace 'root\wmi' -ClassName WmiMonitorID -Property InstanceName,Active,ManufacturerName,UserFriendlyName,ProductCodeID,SerialNumberID,WeekOfManufacture,YearOfManufacture |
-        Select-Object InstanceName, Active, @{n='Manufacturer';e={Convert-MonitorText $_.ManufacturerName}}, @{n='Name';e={Convert-MonitorText $_.UserFriendlyName}}, @{n='ProductCode';e={Convert-MonitorText $_.ProductCodeID}}, @{n='SerialNumber';e={Convert-MonitorText $_.SerialNumberID}}, WeekOfManufacture, YearOfManufacture
+    Get-MonitorIdentifiers
 }
 Section 'Network adapters' {
     Get-NetworkIdentifiers
@@ -2330,7 +2522,7 @@ function Read-SavedReport($Path) {
         foreach ($record in @($property.Value)) {
             if ($null -eq $record -or $record -isnot [pscustomobject]) { throw "Invalid data in section: $($property.Name)" }
             foreach($field in $record.PSObject.Properties) {
-                if(($field.Name -match $identifierPattern -or $field.Name -in @('DeviceID','DeviceInstanceId','ClassGuid','Index','Number','DeviceLocator','BankLabel','InstanceName')) -and $null -ne $field.Value -and ($field.Value -is [array] -or $field.Value -is [pscustomobject] -or $field.Value -is [bool])){throw "Invalid identifier or device-key value: $($property.Name) / $($field.Name)"}
+                if(-not (Test-IdentityFieldValue $field.Name $field.Value)){throw "Invalid identifier or device-key value: $($property.Name) / $($field.Name)"}
             }
         }
     }
@@ -2366,6 +2558,92 @@ function Get-RecentReports($Folder) {
         Get-ChildItem -LiteralPath $Folder -Filter 'HWID-*.json' -File | Sort-Object LastWriteTimeUtc,Name -Descending | Select-Object -First 5
     }
 }
+function Get-ReportLocations([string]$ScriptPath=$env:HWID_SCRIPT,[string]$LocalRoot=$env:LOCALAPPDATA) {
+    $base=Split-Path -Parent ([IO.Path]::GetFullPath($ScriptPath))
+    $primary=Join-Path $base 'HWID-Reports'
+    if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}
+    $fallback=if($LocalRoot){Join-Path $LocalRoot 'HWID Checker\HWID-Reports'}else{$null}
+    $folders=New-Object 'System.Collections.Generic.List[string]'
+    $seen=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $parent=Split-Path -Parent $base
+    $adjacent=$null
+    try {if($parent -and (Test-Path -LiteralPath (Join-Path $parent 'hwid.bat') -PathType Leaf)){$adjacent=Join-Path $parent 'HWID-Reports'}}catch{}
+    foreach($folder in @($primary,$fallback,$adjacent)) {
+        if($folder -and $seen.Add([IO.Path]::GetFullPath($folder))){$folders.Add([IO.Path]::GetFullPath($folder))}
+    }
+    [pscustomobject]@{Primary=$primary;Fallback=$fallback;Search=@($folders.ToArray())}
+}
+function Get-ReportCaptureTime($Info) {
+    $stamp=[datetimeoffset]::MinValue
+    if([datetimeoffset]::TryParse([string]$Info.Generated,[cultureinfo]::InvariantCulture,([Globalization.DateTimeStyles]::AllowWhiteSpaces -bor [Globalization.DateTimeStyles]::AssumeUniversal),[ref]$stamp)){return $stamp.ToUniversalTime()}
+    return $null
+}
+function Get-SavedSnapshotCatalog([string[]]$Folders,$Current) {
+    $entries=New-Object 'System.Collections.Generic.List[object]'
+    $skipped=New-Object 'System.Collections.Generic.List[object]'
+    $seen=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $currentInfo=$Current.'Report info';$now=Get-ReportCaptureTime $currentInfo
+    foreach($folder in $Folders) {
+        try {
+            if(-not (Test-Path -LiteralPath $folder -PathType Container)){continue}
+            $files=@(Get-ChildItem -LiteralPath $folder -Filter '*.json' -File -ErrorAction Stop)
+        }catch{$skipped.Add([pscustomobject]@{Path=$folder;Reason=$_.Exception.Message});continue}
+        foreach($file in $files) {
+            if(-not $seen.Add($file.FullName)){continue}
+            try {
+                $saved=Read-SavedReport $file.FullName
+                $info=$saved.'Report info';$captured=Get-ReportCaptureTime $info
+                $samePc=-not [string]::IsNullOrWhiteSpace([string]$info.Computer) -and [string]::Equals([string]$info.Computer,[string]$currentInfo.Computer,[StringComparison]::OrdinalIgnoreCase)
+                $usable=@(Get-IdentifierRows $saved | Where-Object Quality -eq 'Reported').Count
+                $rank=4;$relation='TIME UNKNOWN'
+                if($null -ne $captured -and $null -ne $now) {
+                    if($captured -lt $now){$relation='OLDER';$rank=if($samePc){0}else{2}}
+                    elseif($captured -eq $now){$relation='SAME CAPTURE TIME';$rank=1}
+                    else{$relation='NEWER';$rank=3}
+                }
+                if(-not $samePc){$relation+=' / OTHER OR UNKNOWN PC';$rank=[math]::Max(2,$rank)}
+                if(-not $usable){$relation+=' / NO USABLE IDs';$rank=5}
+                $entries.Add([pscustomobject]@{FullName=$file.FullName;Name=$file.Name;Computer=[string]$info.Computer;Generated=$info.Generated;Relation=$relation;SamePc=$samePc;Older=($null -ne $captured -and $null -ne $now -and $captured -lt $now);UsableIds=$usable;Rank=$rank;SortTicks=$(if($null -ne $captured){$captured.UtcDateTime.Ticks}else{$file.LastWriteTimeUtc.Ticks})})
+            }catch{$skipped.Add([pscustomobject]@{Path=$file.FullName;Reason=$_.Exception.Message})}
+        }
+    }
+    [pscustomobject]@{Entries=@($entries.ToArray() | Sort-Object Rank,@{Expression='SortTicks';Descending=$true},FullName);Skipped=@($skipped.ToArray())}
+}
+function Test-ReportWriteFailure($Failure) {
+    if($Failure -is [System.Management.Automation.ErrorRecord] -and $Failure.CategoryInfo.Category -eq 'PermissionDenied'){return $true}
+    $exception=if($Failure -is [System.Management.Automation.ErrorRecord]){$Failure.Exception}else{$Failure}
+    for($depth=0;$null -ne $exception -and $depth -lt 16;$depth++) {
+        if($exception -is [UnauthorizedAccessException] -or ($exception -is [IO.IOException] -and $exception -isnot [IO.InvalidDataException])){return $true}
+        $exception=$exception.InnerException
+    }
+    return $false
+}
+function Write-SnapshotWithFallback($Primary,$Fallback,$Name,$Text,$Json,[scriptblock]$Writer) {
+    $primaryFailure=$null
+    $folders=@($Primary)
+    if($Fallback -and -not [string]::Equals([IO.Path]::GetFullPath($Primary),[IO.Path]::GetFullPath($Fallback),[StringComparison]::OrdinalIgnoreCase)){$folders+=@($Fallback)}
+    foreach($folder in $folders) {
+        try {
+            [void][IO.Directory]::CreateDirectory($folder)
+            $stem=Join-Path $folder $Name
+            if($Writer){& $Writer $stem $Text $Json | Out-Null}else{Write-ReportPair $stem $Text $Json}
+            return [pscustomobject]@{Folder=$folder;Stem=$stem;UsedFallback=($null -ne $primaryFailure);PrimaryFailure=$primaryFailure}
+        }catch {
+            if(-not (Test-ReportWriteFailure $_)){throw}
+            if($folder -eq $Primary -and $folders.Count -gt 1){$primaryFailure=$_.Exception.Message;continue}
+            if($primaryFailure){throw [IO.IOException]::new(('Snapshot save failed. Primary: '+$primaryFailure+' / Fallback: '+$_.Exception.Message),$_.Exception)}
+            throw
+        }
+    }
+}
+function Resolve-ComparisonReportPath($Path) {
+    if([IO.Path]::GetExtension($Path) -ieq '.txt') {
+        $json=[IO.Path]::ChangeExtension($Path,'.json')
+        if(Test-Path -LiteralPath $json -PathType Leaf){Write-PnpValue 'JSON companion' 'Using the matching JSON snapshot for this TXT report.' $palette.Muted;return $json}
+        throw 'This TXT report has no matching JSON snapshot. Compare requires the JSON saved by [6].'
+    }
+    return $Path
+}
 function Resolve-CompareInput($Value,$Recent) {
     $text=([string]$Value).Trim()
     if(-not $text -or $text -eq '0'){return $null}
@@ -2387,15 +2665,36 @@ function Resolve-CompareInput($Value,$Recent) {
     return $text
 }
 function Read-CompareReportPath {
-    $folder=Join-Path (Split-Path -Parent $env:HWID_SCRIPT) 'HWID-Reports'
-    $recent=@(Get-RecentReports $folder)
-    if($recent.Count) {
-        Write-Host '  RECENT REPORTS / newest files first' -ForegroundColor $palette.Heading
-        for($i=0;$i -lt $recent.Count;$i++){Write-PnpValue ("["+($i+1)+"]") $recent[$i].Name $palette.Text}
-    } else {Write-Host '  No saved reports here yet. Paste a JSON report path.' -ForegroundColor $palette.Muted}
-    Write-Host '  Choose a listed number or paste a JSON path. [0] / blank = Back.' -ForegroundColor $palette.Muted
-    Complete-UiReport
-    return (Resolve-CompareInput (Read-CheckerLine 'Report') $recent)
+    $locations=Get-ReportLocations
+    $catalog=Get-SavedSnapshotCatalog $locations.Search $report
+    $page=0
+    while($true) {
+        Reset-UiPage;Start-UiReport
+        Write-Heading 'COMPARE / CHOOSE A SAVED BASELINE'
+        Write-PnpValue 'Current scan' ($report.'Report info'.Computer+' / '+(Format-ScanTime $report.'Report info'.Generated)) $palette.Text
+        $pages=[math]::Max(1,[math]::Ceiling($catalog.Entries.Count/5.0))
+        $page=[math]::Max(0,[math]::Min($page,$pages-1))
+        $recent=@($catalog.Entries | Select-Object -Skip ($page*5) -First 5)
+        Write-PnpValue 'Saved snapshots' ("$($catalog.Entries.Count) detected / page $($page+1) of $pages / older captures from this PC first") $palette.Muted
+        for($i=0;$i -lt $recent.Count;$i++) {
+            Write-PnpValue ('['+($i+1)+'] '+$recent[$i].Relation) ($recent[$i].Computer+' / '+(Format-ScanTime $recent[$i].Generated)) $palette.Heading
+            Write-PnpValue 'File' $recent[$i].Name $palette.Text
+        }
+        if(-not $recent.Count){Write-PnpValue 'No snapshots found' 'Save with [6], or use [9] to choose a report elsewhere.' $palette.Muted}
+        if($catalog.Skipped.Count){Write-PnpValue 'Not listed' ("$($catalog.Skipped.Count) unreadable/unsupported files or folders. Paste a path to inspect one.") $palette.Warn}
+        Write-PnpValue 'Controls' '[1-5] Select / [6] Next page / [7] Previous / [8] Refresh / [9] Path / [0] Back' $palette.Muted
+        Write-PnpValue 'Path' 'You can also paste a JSON path directly. TXT uses its matching JSON. Blank = Back.' $palette.Muted
+        Complete-UiReport
+        $value=Read-CheckerLine 'Report'
+        $command=([string]$value).Trim()
+        if($command -eq '6'){$page++;continue}
+        if($command -eq '7'){$page--;continue}
+        if($command -eq '8'){$catalog=Get-SavedSnapshotCatalog $locations.Search $report;continue}
+        if($command -eq '9'){$value=Read-CheckerLine 'JSON or TXT report path (0 = Back)'}
+        $path=Resolve-CompareInput $value $recent
+        if(-not $path){return $null}
+        return (Resolve-ComparisonReportPath $path)
+    }
 }
 function Get-ComparisonDetails($Comparison) {
     $groups=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
@@ -2440,11 +2739,18 @@ function Get-IdentifierChangeText($Before,$After) {
 function Show-ComparisonResult($Previous,$Current,$Comparison,$SourcePath) {
     if($null -eq $Comparison){$Comparison=Compare-Inventories $Previous $Current}
     Reset-UiPage;Start-UiReport
+    Add-ReportBookmark '1'
     Write-Heading 'COMPARE RESULTS / PREVIOUS -> CURRENT'
+    Write-PnpValue 'Controls' '1 Summary / 2 ID changes / 3 Not compared. 0 or Enter = menu.' $palette.Muted
     if($SourcePath){Write-PnpValue 'Baseline file' $SourcePath $palette.Muted}
     Write-PnpValue 'Previous' ($Previous.'Report info'.Computer+' / '+(Format-ScanTime $Previous.'Report info'.Generated)) $palette.Muted
     Write-PnpValue 'Current' ($Current['Report info'].Computer+' / '+(Format-ScanTime $Current['Report info'].Generated)) $palette.Text
     if($Previous.'Report info'.Computer -ne $Current['Report info'].Computer){Write-PnpValue 'REVIEW' 'These reports have different computer names; verify that this is the intended comparison.' $palette.Warn}
+    $oldTime=Get-ReportCaptureTime $Previous.'Report info';$newTime=Get-ReportCaptureTime $Current.'Report info'
+    if($null -ne $oldTime -and $null -ne $newTime) {
+        if($oldTime -eq $newTime){Write-PnpValue 'Same capture time' 'This may be a save of the active scan. Choose an OLDER snapshot to check changes over time.' $palette.Warn}
+        elseif($oldTime -gt $newTime){Write-PnpValue 'Time order' 'The selected baseline is newer than this active scan. OLD means selected file; NEW means active scan.' $palette.Warn}
+    }
     if($Comparison.AmbiguousDevices.Count){
         Write-PnpValue 'SCAN CONFLICT' ("$($Comparison.AmbiguousDevices.Count) duplicate device key(s); ambiguous IDs are not compared.") $palette.Warn
         foreach($conflict in $Comparison.AmbiguousDevices){Write-PnpValue 'Skipped device' ($conflict.Section+' / '+$conflict.DeviceKey+' / '+($conflict.Sources -join ' + ')+' report') $palette.Warn}
@@ -2454,6 +2760,7 @@ function Show-ComparisonResult($Previous,$Current,$Comparison,$SourcePath) {
     if(-not $Comparison.PreviousCount -and -not $Comparison.CurrentCount){throw 'No usable IDs in sections readable in both reports.'}
     $details=@(Get-ComparisonDetails $Comparison)
     $incomplete=$Comparison.SkippedSections.Count -or $Comparison.SkippedFields
+    Add-ReportBookmark '2'
     if(-not $details.Count) {
         if($incomplete){Write-PnpValue 'RESULT' 'No differences found in available data. Some IDs could not be checked.' $palette.Warn}
         else {Write-PnpValue 'RESULT' 'No identifier differences found in the saved scan.' $palette.Good}
@@ -2474,12 +2781,13 @@ function Show-ComparisonResult($Previous,$Current,$Comparison,$SourcePath) {
             }
         }
     }
+    Add-ReportBookmark '3'
+    Write-Heading 'NOT COMPARED'
     if($incomplete) {
-        Write-Heading 'NOT COMPARED'
         if($Comparison.SkippedSections.Count){Write-PnpValue 'Sections' ($Comparison.SkippedSections -join ', ') $palette.Warn}
         if($Comparison.UnkeyedSections.Count){Write-PnpValue 'Reason / device keys' 'Slot or instance keys were missing; no device match was guessed.' $palette.Warn}
         if($Comparison.SkippedFields){Write-PnpValue 'Fields' ("$($Comparison.SkippedFields) missing/default or absent in one report schema") $palette.Warn}
-    }
+    }else{Write-PnpValue 'Coverage' 'No identifier fields were skipped by this comparison.' $palette.Good}
     Write-PnpValue 'Scope' 'Basic identifier fields, including monitor serials. Full PnP lists and partition paths are inventory details.' $palette.Muted
     Write-PnpValue 'Positions' 'Character positions start at 1. IDs keep leading zeros and letter case.' $palette.Muted
     Write-PnpValue 'Note' 'Moving devices between slots or ports can produce differences; current/previous-only does not prove a physical device was added or removed.' $palette.Muted
@@ -2580,7 +2888,7 @@ function Show-RescanResult($Previous,$Current) {
     Write-PnpValue 'Scope' 'Basic ID fields; full PnP lists and partition paths are inventory details. Device counts include virtual nodes.' $palette.Muted
     Write-PnpValue 'Save this scan' 'Main [6] saves the current snapshot. Saved reports are never overwritten by a rescan.' $palette.Text
 }
-function Start-HardwareRescan([bool]$UseWorker=($ownedConsole -and -not $redirected)) {
+function Start-HardwareRescan([bool]$UseWorker=($ownedConsole -and -not $redirected),[scriptblock]$ContinueReader) {
     try {
         $next=1+[int]$report['Report info'].ScanNumber
         $snapshot=Invoke-HardwareScan $next -UseWorker $UseWorker -IncludeExtended ($report.Contains('Extended scan info') -or $report['Report info'].ExtendedStatus -eq 'Unavailable')
@@ -2604,7 +2912,7 @@ function Start-HardwareRescan([bool]$UseWorker=($ownedConsole -and -not $redirec
         Write-PnpValue 'Previous snapshot kept' 'The earlier scan is still active. Try [9] > [1] again.' $palette.Warn
         return
     }
-    try {Show-RescanResult $lastScanPrevious $lastScanCurrent}
+    try {Wait-ScanContinue 'snapshot changes' -KeyReader $ContinueReader;Show-RescanResult $lastScanPrevious $lastScanCurrent}
     catch {Write-PnpValue 'RESCAN-02 / summary unavailable' ($_.Exception.Message+' The new snapshot is active; use [1] or [5] from the main menu.') $palette.Warn}
 }
 function Show-ScanTools {
@@ -2639,9 +2947,8 @@ function Save-Reports {
         foreach($command in @('ConvertTo-Json','ConvertFrom-Json')) {
             if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw ('JSON reports are unavailable: missing '+$command+'. Repair Microsoft.PowerShell.Utility for this runtime.')}
         }
-        $folder = Join-Path (Split-Path -Parent $env:HWID_SCRIPT) 'HWID-Reports'
-        New-Item -ItemType Directory -Path $folder -Force | Out-Null
-        $stem = Join-Path $folder ('HWID-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8))
+        $locations=Get-ReportLocations
+        $name='HWID-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8)
         $lines = @(
             'HWID CHECKER - HARDWARE REPORT'
             '========== Report info =========='
@@ -2673,19 +2980,29 @@ function Save-Reports {
         )
         $json=$report | ConvertTo-Json -Depth 12 -ErrorAction Stop -WarningAction Stop
         $text=($lines -join [Environment]::NewLine)+[Environment]::NewLine
-        Write-ReportPair $stem $text $json
+        $saved=Write-SnapshotWithFallback $locations.Primary $locations.Fallback $name $text $json
+        $folder=$saved.Folder;$stem=$saved.Stem
+        $script:lastSavedReportPath=$stem+'.json'
         Write-PnpValue 'SAVED' 'TXT + JSON created; JSON verified.' $palette.Good
+        if($saved.UsedFallback){Write-PnpValue 'Fallback location' 'The normal report folder could not be written. The snapshot was saved in your local app-data folder.' $palette.Warn;Write-PnpValue 'Primary save issue' $saved.PrimaryFailure $palette.Muted}
         Write-PnpValue 'Computer / scan' ($report['Report info'].Computer+' / '+(Format-ScanTime $report['Report info'].Generated)) $palette.Text
         Write-PnpValue 'Folder' $folder $palette.Muted
         Write-PnpValue 'TXT / read' ([IO.Path]::GetFileName($stem)+'.txt') $palette.Text
         Write-PnpValue 'JSON / compare' ([IO.Path]::GetFileName($stem)+'.json') $palette.Heading
-        Write-PnpValue 'Next' '[7] Compare a JSON report / [8] Open reports folder' $palette.Muted
+        try {
+            $catalog=Get-SavedSnapshotCatalog $locations.Search $report
+            $older=@($catalog.Entries | Where-Object {$_.SamePc -and $_.Older -and $_.UsableIds -gt 0}).Count
+            Write-PnpValue 'Older snapshots' ("$older usable baselines from this PC detected / $($catalog.Entries.Count) saved JSON snapshots total") $palette.Text
+            if($catalog.Skipped.Count){Write-PnpValue 'Not listed' ("$($catalog.Skipped.Count) unreadable/unsupported files or folders; other snapshots remain available.") $palette.Warn}
+        }catch{Write-PnpValue 'Snapshot lookup' 'Save succeeded. Automatic lookup was unavailable; [7] also accepts a path.' $palette.Warn}
+        Write-PnpValue 'Next' '[7] Choose an older snapshot to compare IDs / [8] Open reports folder' $palette.Muted
     } catch {
         Write-PnpValue 'SAVE-01 / not completed' $_.Exception.Message $palette.Error
     }
 }
 $script:lastScanPrevious=$null
 $script:lastScanCurrent=$null
+$script:lastSavedReportPath=$null
 $admin=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $initialScan=Invoke-HardwareScan
 $script:report=$initialScan.Inventory
@@ -2693,6 +3010,7 @@ $script:warnings=$initialScan.Warnings
 $script:identifiers=$initialScan.Identifiers
 $initialScan=$null
 if ($redirected -or -not $ownedConsole) { Show-Overview }
+Wait-ScanContinue 'main menu'
 :MainMenu while ($true) {
     Show-ControlDeck
     $choice = Read-MenuChoice
@@ -2712,9 +3030,6 @@ if ($redirected -or -not $ownedConsole) { Show-Overview }
         '9' { if(-not (Show-ScanTools)){Show-UiTransition 'Back';continue MainMenu} }
         '1' { Show-Overview }
         '7' {
-            Write-Heading 'COMPARE REPORTS'
-            Write-Host '  Compare a saved snapshot with this scan.' -ForegroundColor $palette.Muted
-            Complete-UiReport
             try {
                 $previousPath=Read-CompareReportPath
                 if (-not $previousPath) { Show-UiTransition 'Back'; continue MainMenu }
@@ -2724,7 +3039,11 @@ if ($redirected -or -not $ownedConsole) { Show-Overview }
         }
         '8' {
             Write-Heading 'REPORTS FOLDER'
-            $folder = Join-Path (Split-Path -Parent $env:HWID_SCRIPT) 'HWID-Reports'
+            $locations=Get-ReportLocations
+            $folder=if($lastSavedReportPath -and (Test-Path -LiteralPath (Split-Path -Parent $lastSavedReportPath) -PathType Container)){Split-Path -Parent $lastSavedReportPath}else{
+                $available=@($locations.Search | Where-Object {(Test-Path -LiteralPath $_ -PathType Container) -and @(Get-ChildItem -LiteralPath $_ -Filter '*.json' -File -ErrorAction SilentlyContinue).Count})
+                if($available.Count){$available[0]}else{$locations.Primary}
+            }
             try {
                 if (Test-Path -LiteralPath $folder -PathType Container) { Start-Process explorer.exe -ArgumentList ('"' + $folder + '"'); Write-PnpValue 'Opened folder' $folder $palette.Good }
                 else { Write-Host 'Save a report first to create the reports folder.' }

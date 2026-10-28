@@ -53,6 +53,7 @@ Assert ((Format-ComparisonKey $upper[0]) -eq '[CPU] CPU identifier (CPU0): ABC')
 $testFolder = Join-Path $PSScriptRoot ('test-output-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $testFolder | Out-Null
 $env:HWID_SCRIPT = Join-Path $testFolder 'hwid.bat'
+$env:LOCALAPPDATA = Join-Path $testFolder 'appdata'
 $report = $sample
 Save-Reports
 $exportFolder = Join-Path $testFolder 'HWID-Reports'
@@ -220,6 +221,19 @@ Assert ($script:answers.Count -eq 0) 'Owned-console result pages wait for Enter 
 $redirected=$true
 Wait-UiPage
 Assert ($script:answers.Count -eq 0) 'Redirected execution does not add result-page prompts'
+$script:continueReads=0
+Wait-ScanContinue 'main menu' -KeyReader {$script:continueReads++;throw 'Unexpected redirected prompt'}
+Assert ($script:continueReads -eq 0) 'Redirected scans continue without waiting for interactive input'
+$redirected=$false
+$script:continueKeys=New-Object 'System.Collections.Generic.Queue[System.ConsoleKeyInfo]'
+foreach($key in @('A','D0','Home','End','Enter')){$script:continueKeys.Enqueue((New-Object ConsoleKeyInfo([char]$(if($key -eq 'D0'){48}elseif($key -eq 'Enter'){13}else{0}),[ConsoleKey]::$key,$false,$false,$false)))}
+$script:rendered.Clear()
+Wait-ScanContinue 'snapshot changes' -KeyReader {$script:continueReads++;$script:continueKeys.Dequeue()}
+Assert ($script:continueReads -eq 5 -and $script:continueKeys.Count -eq 0) 'Scan completion ignores unrelated keys and zero, permits scrolling, and continues only on Enter'
+Assert (($script:rendered.Text -join ' ') -match 'Press Enter for snapshot changes' -and ($script:rendered.Text -join ' ') -match 'Scroll:') 'Scan completion displays its destination and scrolling controls'
+$script:heldReads=0;$script:pendingScanKeys=1000;$script:drainedScanKeys=0
+Clear-ScanTypeAhead -HeldReader {$script:heldReads++;$script:heldReads -le 3} -AvailableReader {$script:pendingScanKeys -gt 0} -DrainReader {$script:pendingScanKeys--;$script:drainedScanKeys++}
+Assert ($script:heldReads -eq 4 -and $script:drainedScanKeys -eq 1000 -and $script:pendingScanKeys -eq 0) 'Continue waits for held Enter to be released and drains scan-time input without repainting'
 $ownedConsole=$priorOwned; $redirected=$priorRedirected
 foreach($digit in @('0','1','2','3','4','5','6','7','8','9')) {
     Assert ((Read-MenuChoice -Reader { $digit }) -ceq $digit) "Main menu accepts digit $digit"
@@ -582,7 +596,7 @@ $script:rendered.Clear()
 Show-ComparisonResult ($comparisonOld | ConvertTo-Json -Depth 8 | ConvertFrom-Json) $comparisonNew
 Assert (@($script:rendered | Where-Object Text -match '1 changed / 0 current only / 0 previous only').Count -eq 1) 'Comparison summary counts changed fields rather than two raw difference rows'
 Assert (@($script:rendered | Where-Object Text -match 'OLD ID / saved: BEFORE|NEW ID / now: AFTER').Count -eq 2) 'Comparison displays previous and current values together'
-Assert (@($script:rendered | Where-Object Text -match 'NOT COMPARED').Count -eq 1) 'Partial comparisons disclose skipped data in a separate section'
+Assert (@($script:rendered | Where-Object Text -cmatch '\|NOT COMPARED\s*\|').Count -eq 1) 'Partial comparisons disclose skipped data in a separate section'
 $plainArray=@(Get-PlainRecords @([pscustomobject]@{HardwareID=@('FIRST-ID','SECOND-ID');CompatibleID=@()}))
 Assert (($plainArray -join "`n").Contains('[1] FIRST-ID') -and ($plainArray -join "`n").Contains('[2] SECOND-ID')) 'TXT export puts long identifier arrays on separate numbered lines in provider order'
 Assert (($plainArray -join "`n").Contains('(none reported)')) 'TXT export distinguishes empty arrays from truncated data'
@@ -868,7 +882,7 @@ try {
     Section 'Localized timeout test' {throw [TimeoutException]::new('LOCALIZED')}
     Assert ($report['Localized timeout test'].FailureCode -eq 'READ-02' -and $report['Localized timeout test'].NextStep -match 'Retry') 'Section capture records typed failure guidance alongside the original message'
     $script:rendered.Clear();Show-Attention
-    Assert (@($script:rendered | Where-Object Text -match '^  SECTIONS NOT READ$').Count -eq 1 -and @($script:rendered | Where-Object Text -match 'Provider timed out.*READ-02').Count -eq 1) 'Review groups unreadable sections and reuses stored localized failure reasons'
+    Assert (@($script:rendered | Where-Object Text -match '^  SECTIONS NOT READ / 2$').Count -eq 1 -and @($script:rendered | Where-Object Text -match 'Provider timed out.*READ-02').Count -eq 1) 'Review groups unreadable sections and reuses stored localized failure reasons'
     Section 'Readable after failure test' {[pscustomobject]@{SerialNumber='REAL'}}
     Assert ($script:scanTimings[2].Status -eq 'READ' -and $null -eq $script:scanTimings[2].FailureCode -and $null -eq $script:scanTimings[2].NextStep) 'A successful scan row cannot inherit a previous failure reason or action'
 } finally {$report=$failurePreserved.Report;$warnings=$failurePreserved.Warnings;$script:scanStep=$failurePreserved.Step;$script:scanTimings=$failurePreserved.Timings}
@@ -1254,6 +1268,36 @@ try {
                 Get-NetworkIdentifiers
             })
             Assert ($fallback.Count -eq 1 -and $fallback[0].Name -eq 'Recovered NIC' -and $fallback[0].CollectionSource -match 'fallback') ($mode+' network scan retries after null-only primary output')
+            $legacy=@(Invoke-ScanQuery {
+                function Get-NetAdapter {throw 'Primary reader unavailable'}
+                function Get-CimInstance {
+                    param($ClassName)
+                    if($ClassName -eq 'MSFT_NetAdapter'){throw 'Invalid class in modern reader'}
+                    if($ClassName -ne 'Win32_NetworkAdapter'){throw 'Unexpected fallback class'}
+                    [pscustomobject]@{Name='Physical model';NetConnectionID='Ethernet old';GUID='{NIC-LEGACY}';MACAddress='AA:BB:CC:DD:EE:01';PNPDeviceID='PCI\LEGACY';PhysicalAdapter=$true;NetConnectionStatus=2;NetEnabled=$true;Speed=1000000000}
+                    [pscustomobject]@{Name='Virtual adapter';NetConnectionID=' ';GUID='VIRTUAL';MACAddress=$null;PhysicalAdapter=$false;NetConnectionStatus=7;NetEnabled=$false;Speed=0}
+                    [pscustomobject]@{Name='Unknown adapter';GUID='UNKNOWN';PhysicalAdapter=$null;NetConnectionStatus=$null;Speed=$null}
+                }
+                Get-NetworkIdentifiers
+            })
+            Assert ($legacy.Count -eq 3 -and @($legacy | Where-Object CollectionSource -eq 'Win32_NetworkAdapter fallback').Count -eq 3) ($mode+' network scan reaches the final Win32 reader when modern providers fail')
+            Assert ($legacy[0].Name -eq 'Ethernet old' -and $legacy[0].InterfaceDescription -eq 'Physical model' -and $legacy[0].InterfaceGuid -ceq '{NIC-LEGACY}' -and $legacy[0].PNPDeviceID -ceq 'PCI\LEGACY') ($mode+' Win32 fallback preserves interface identity and readable names')
+            Assert ($legacy[0].MacAddress -ceq 'AA:BB:CC:DD:EE:01' -and @($legacy | Where-Object {$null -ne $_.PermanentAddress}).Count -eq 0) ($mode+' Win32 fallback never invents a permanent MAC from the current address')
+            Assert ($legacy[0].Status -eq 'Up' -and $legacy[0].LinkSpeed -eq '1000 Mbps' -and $legacy[1].Name -eq 'Virtual adapter' -and $legacy[1].Status -eq 'Down' -and $legacy[1].LinkSpeed -eq '0 Mbps' -and $legacy[1].HardwareInterface -eq $false -and $legacy[1].NetEnabled -eq $false) ($mode+' Win32 fallback keeps virtual and disabled records with real zero and false values')
+            Assert ($null -eq $legacy[2].HardwareInterface -and $null -eq $legacy[2].Status -and $null -eq $legacy[2].LinkSpeed) ($mode+' Win32 fallback keeps unread fields unknown')
+            Assert ((Get-SectionIdentifierInfo 'Network adapters' $legacy).Text -match 'fallback reader') ($mode+' scan row identifies recovered network results as coming from a fallback reader')
+            $unreadSpeed=@(Invoke-ScanQuery {
+                function Get-NetAdapter {throw 'Primary reader unavailable'}
+                function Get-CimInstance {
+                    param($ClassName)
+                    if($ClassName -eq 'MSFT_NetAdapter') {
+                        [pscustomobject]@{Name='Partial modern row';ReceiveLinkSpeed=1000000}
+                        [pscustomobject]@{Name='Broken modern row';ReceiveLinkSpeed='invalid speed'}
+                    }else{[pscustomobject]@{Name='Complete Win32 fallback';GUID='FALLBACK-ONLY';PhysicalAdapter=$true;Speed=1000000}}
+                }
+                Get-NetworkIdentifiers
+            })
+            Assert ($unreadSpeed.Count -eq 2 -and $unreadSpeed[0].LinkSpeed -eq '1 Mbps' -and $null -eq $unreadSpeed[1].LinkSpeed -and $unreadSpeed[1].ReceiveLinkSpeed -ceq 'invalid speed') ($mode+' an unread optional link speed keeps the adapter and raw value without conversion errors or invented speed')
             $failure=$null
             try {Invoke-ScanQuery {
                 function Get-NetAdapter {throw 'Access denied by primary reader'}

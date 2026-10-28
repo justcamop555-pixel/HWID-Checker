@@ -99,6 +99,39 @@ try {
     [Console]::SetWindowSize(100,34)
     Reset-UiPage
     $sectionGroups=[ordered]@{'SYSTEM & FIRMWARE'=@('System identity');'CPU & MEMORY'=@('CPU');'STORAGE'=@('Physical disks');'GRAPHICS & NETWORK'=@('Graphics adapters');'WINDOWS'=@('Windows')}
+    $quickPreviousReport=$report
+    $report=[ordered]@{
+        'Report info'=@{Computer='TEST';Generated='2026-10-27T12:00:00Z';ScanNumber=1}
+        'Chassis'=@([pscustomobject]@{SerialNumber='CHASSIS0001'})
+        'CPU'=@([pscustomobject]@{ProcessorId='CPU0001'})
+        'Memory modules'=@([pscustomobject]@{DeviceLocator='A1';SerialNumber='0000123'})
+        'Physical disks'=@([pscustomobject]@{Index=0;SerialNumber='DISK0001'})
+        'Monitors'=@(foreach($i in 1..25){[pscustomobject]@{SerialNumber=('MONITOR'+$i)}})
+        'Network adapters'=@([pscustomobject]@{Name='Ethernet';MacAddress='001122334455';PermanentAddress='001122334466';HardwareInterface=$true})
+        'Windows Machine GUID'=@([pscustomobject]@{MachineGuid='12345678-1234-1234-1234-123456789012'})
+    }
+    Show-QuickIds
+    $script:quickNavigationStep=0
+    Wait-UiPage -KeyReader {
+        $script:quickNavigationStep++
+        if($script:quickNavigationStep -eq 1){
+            if([Console]::WindowTop -ne 0 -or $script:reportBookmarks.Count -ne 5){throw 'Quick ID view did not start at its header with five section shortcuts.'}
+            return (New-Object ConsoleKeyInfo([char]'3',[ConsoleKey]::D3,$false,$false,$false))
+        }
+        $target=if($script:quickNavigationStep -eq 2){'3'}else{'5'}
+        $expected=[math]::Min($script:reportBookmarks[$target],[Console]::BufferHeight-[Console]::WindowHeight)
+        if([Console]::WindowTop -ne $expected){throw 'Quick ID shortcut missed its group.'}
+        if($script:quickNavigationStep -eq 2){return (New-Object ConsoleKeyInfo([char]'5',[ConsoleKey]::D5,$false,$false,$false))}
+        New-Object ConsoleKeyInfo([char]'0',[ConsoleKey]::D0,$false,$false,$false)
+    }
+    $result | Add-Member NoteProperty QuickIdGroupNavigation $true
+    [Console]::SetWindowPosition(0,0);[Console]::SetWindowSize(40,34);[Console]::SetBufferSize(40,[Console]::BufferHeight)
+    Show-QuickIds
+    Wait-UiPage -KeyReader {New-Object ConsoleKeyInfo([char]13,[ConsoleKey]::Enter,$false,$false,$false)}
+    if([Console]::BufferHeight -ne (Get-ReportHistoryRows ([Console]::WindowHeight) ([Console]::CursorTop))){throw 'Narrow ID view history did not include its stacked fields.'}
+    $result | Add-Member NoteProperty NarrowQuickIdView $true
+    [Console]::SetWindowPosition(0,0);[Console]::SetBufferSize(100,[Console]::BufferHeight);[Console]::SetWindowSize(100,34)
+    $report=$quickPreviousReport
     $report['Report info'].Generated='2026-10-25T10:38:04.4334337-04:00'
     $report['Report info'].ScanSeconds=25.39;$scanTotal=17
     $report['Scan timing']=@([pscustomobject]@{Section='Storage identifiers';Seconds=11.6;Status='READ';Results=2;Summary='IDs: 6 found'})
@@ -191,9 +224,41 @@ try {
     $report['CPU']=@([pscustomobject]@{DeviceID='CPU0';ProcessorId='AFTER'})
     $previous=[pscustomobject]@{'Report info'=[pscustomobject]@{Version='3.23';Computer='TEST';Generated='2026-01-01T00:00:00Z'};CPU=@([pscustomobject]@{DeviceID='CPU0';ProcessorId='BEFORE'})}
     Show-ComparisonResult $previous $report -SourcePath 'C:\Reports\baseline.json'
-    Wait-UiPage -KeyReader {New-Object ConsoleKeyInfo([char]13,[ConsoleKey]::Enter,$false,$false,$false)}
+    $script:comparisonStep=0
+    Wait-UiPage -KeyReader {
+        $script:comparisonStep++
+        if($script:comparisonStep -eq 1){
+            if([Console]::WindowTop -ne 0 -or $script:reportBookmarks.Count -ne 3){throw 'Comparison did not open at its summary with section shortcuts.'}
+            return (New-Object ConsoleKeyInfo([char]'2',[ConsoleKey]::D2,$false,$false,$false))
+        }
+        $targetKey=if($script:comparisonStep -eq 2){'2'}else{'3'}
+        $expected=[math]::Min($script:reportBookmarks[$targetKey],[Console]::BufferHeight-[Console]::WindowHeight)
+        if([Console]::WindowTop -ne $expected){throw 'Comparison shortcut did not reach its section.'}
+        if($script:comparisonStep -eq 2){return (New-Object ConsoleKeyInfo([char]'3',[ConsoleKey]::D3,$false,$false,$false))}
+        New-Object ConsoleKeyInfo([char]'0',[ConsoleKey]::D0,$false,$false,$false)
+    }
     if([Console]::BufferHeight -ne (Get-ReportHistoryRows ([Console]::WindowHeight) ([Console]::CursorTop))){throw 'Comparison history did not match its rendered content.'}
+    $result | Add-Member NoteProperty ComparisonSectionNavigation $true
     $result | Add-Member NoteProperty ComparisonHistoryRows ([Console]::BufferHeight)
+    $catalogFunction=(Get-Item Function:Get-SavedSnapshotCatalog).ScriptBlock
+    $locationsFunction=(Get-Item Function:Get-ReportLocations).ScriptBlock
+    $lineFunction=(Get-Item Function:Read-CheckerLine).ScriptBlock
+    try {
+        function Get-ReportLocations {[pscustomobject]@{Search=@('C:\Reports')}}
+        function Get-SavedSnapshotCatalog {
+            [pscustomobject]@{Entries=@(foreach($i in 1..6){[pscustomobject]@{FullName=('C:\Reports\older-'+$i+'.json');Name=('older-'+$i+'.json');Relation='OLDER';Computer='TEST';Generated='2026-01-01T00:00:00Z'}});Skipped=@()}
+        }
+        $script:pickerReads=0
+        function Read-CheckerLine {
+            param($Prompt)
+            $script:pickerReads++
+            if([Console]::CursorTop -ge 32 -or [Console]::WindowTop -ne 0){throw 'Snapshot picker does not fit the standard console.'}
+            if($script:pickerReads -eq 1){return '6'}
+            return '1'
+        }
+        if((Read-CompareReportPath) -ne 'C:\Reports\older-6.json' -or $script:pickerReads -ne 2){throw 'Native snapshot picker lost its page selection.'}
+        $result | Add-Member NoteProperty SnapshotPickerPagination $true
+    }finally{Set-Item Function:Get-SavedSnapshotCatalog -Value $catalogFunction;Set-Item Function:Get-ReportLocations -Value $locationsFunction;Set-Item Function:Read-CheckerLine -Value $lineFunction}
 
     Reset-UiPage
     Start-UiReport
@@ -275,6 +340,22 @@ try {
     $result | Add-Member NoteProperty RepeatedNativeScans 3
     $result | Add-Member NoteProperty ScanCursorHiddenDuringQueries $true
     $result | Add-Member NoteProperty ScanCursorVisibilityRestored $true
+    $script:scanContinueStep=0
+    $scanBottom=[Console]::CursorTop
+    Wait-ScanContinue 'main menu' -KeyReader {
+        $script:scanContinueStep++
+        if($script:scanContinueStep -eq 1) {
+            if([Console]::CursorTop -le $scanBottom){throw 'Continue prompt was not written after the finished scan.'}
+            $scanCells=[HwidConsoleDisplay]::CaptureRegion(0,0,99,([Console]::CursorTop))
+            $scanText=-join @($scanCells.Cells | ForEach-Object {[char]$_.Character})
+            if($scanText -notmatch 'SCANNING 17 SECTIONS' -or $scanText -notmatch 'Finished:' -or $scanText -notmatch 'Press Enter for main menu'){throw 'Finished scan was cleared before the user could continue.'}
+            return (New-Object ConsoleKeyInfo([char]'0',[ConsoleKey]::D0,$false,$false,$false))
+        }
+        if($script:scanContinueStep -eq 2){return (New-Object ConsoleKeyInfo([char]0,[ConsoleKey]::Home,$false,$false,$false))}
+        New-Object ConsoleKeyInfo([char]13,[ConsoleKey]::Enter,$false,$false,$false)
+    }
+    if($script:scanContinueStep -ne 3){throw 'Scan continuation accepted an unrelated key.'}
+    $result | Add-Member NoteProperty ScanContinuesAfterEnter $true
     $originalHeading=(Get-Item Function:Write-Heading).ScriptBlock
     try {
         function Write-Heading {param($Title) throw 'Simulated early scan render failure'}
@@ -350,7 +431,14 @@ try {
     $result | Add-Member NoteProperty ExtendedCatalogNavigation $true
     $result | Add-Member NoteProperty UnknownReviewNavigation $true
     $result | Add-Member NoteProperty ExtendedCursorRestored $true
-    Start-HardwareRescan
+    $script:rescanContinueReads=0
+    $script:expectedRescanNumber=1+[int]$report['Report info'].ScanNumber
+    Start-HardwareRescan -ContinueReader {
+        $script:rescanContinueReads++
+        if($report['Report info'].ScanNumber -ne $script:expectedRescanNumber){throw 'Rescan was not published before the continue prompt.'}
+        New-Object ConsoleKeyInfo([char]13,[ConsoleKey]::Enter,$false,$false,$false)
+    }
+    if($script:rescanContinueReads -ne 1){throw 'Rescan skipped its continue prompt before displaying changes.'}
     if($report['Report info'].ExtendedStatus -ne 'Refreshed' -or $report['Extended device inventory'].Count -ne 3){throw 'Full rescan dropped the previously scanned extended catalog.'}
     if(-not [Console]::CursorVisible -or $null -ne $script:scanQueryWorker){throw 'Rescan with an extended refresh did not restore its cursor and worker state.'}
     Wait-UiPage -KeyReader {New-Object ConsoleKeyInfo([char]'0',[ConsoleKey]::D0,$false,$false,$false)}

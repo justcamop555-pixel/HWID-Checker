@@ -2,6 +2,61 @@
 
 [Back to the main README](../README.md)
 
+## 3.51
+
+- Hardened optional scan conversions so invalid metadata does not throw during property projection or discard usable identifiers. Storage codes use validated uint16 values; valid unknown codes remain explicit and malformed codes remain unknown.
+- Distinguished invalid partition drive-letter values from unassigned letters. Character codes and text letters are supported, with original values retained for inspection.
+- Fixed monitor numeric-string code comparisons dropping characters. Decoding validates codes, preserves leading zeros/null padding, honors reported name lengths and exposes invalid-code/length status alongside original arrays.
+- Fixed a live-tested monitor provider compatibility failure: optional length fields are no longer required in the query projection. The reader uses the properties the provider exposes and applies length metadata when available.
+- Prevented negative, boolean, fractional or malformed byte sizes from becoming plausible capacities. Real zero and supported uint64 byte values remain usable; raw memory/disk/volume/partition sizes are retained.
+- Corrected raw network speed labels to bits/s rather than memory-speed MHz.
+- Validation: 603 existing regressions, 26 snapshot checks, 28 ID-view checks, 24 review checks and 41 scan-metadata checks under Windows PowerShell 5.1 and PowerShell 7.6.5, plus native console checks and an actual read-only scan/rescan.
+
+Field types follow Microsoft's [disk](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/msft-disk), [partition](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/msft-partition), and [monitor](https://learn.microsoft.com/en-us/windows/win32/wmicoreprov/wmimonitorid) references.
+
+## 3.50
+
+- Fixed unread sections disappearing from review when warning text was absent. Current unavailable/empty section data and extended failure metadata now drive the read-failure model, while warning text remains a fallback for older/custom queries.
+- Collapsed repeated warnings per section and stopped stale warnings from keeping a refreshed, readable section in Not read. Stored localized failure codes/advice and raw diagnostics are retained.
+- Fixed duplicate PnP rows inflating ordinary device findings. Repeated instance IDs count once as a conflict with their distinct status readings preserved. Shared model IDs remain normal.
+- Classified Windows code 12 as a resource conflict. Disabled/disconnected states retain their separate meanings and advice.
+- Unified compact/dashboard/review totals. Review now provides a suggested starting group, explicit empty-group results, device instance context, and clear Main [5] links that do not conflict with the page shortcut.
+- Validation: 603 existing regressions, 26 snapshot checks, 28 ID-view checks and 24 review checks under Windows PowerShell 5.1 and PowerShell 7.6.5, plus native navigation/layout checks.
+
+Status meanings follow [Microsoft's Device Manager error reference](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/device-manager-error-messages); findings alone do not establish hardware failure.
+
+## 3.49
+
+- Organized ID numbers/serials into five groups with section shortcuts, snapshot context and explicit unread-section names. Added chassis serials and distinct current/permanent MAC rows without inventing fields in older schemas.
+- Fixed null rows creating phantom missing quick-view IDs and ambiguous labels when multiple system/board records are present. Separate records keep repeated values and leading zeros.
+- Fixed malformed scalar IDs/device keys being counted as found and then failing report export. Scan and import validation now share the scalar-value check; failed scan fields produce READ-06. Valid empty/wrapped strings remain missing fields, and ordinary booleans, zero indices, dates and ID arrays remain supported in their proper fields.
+- Removed terminal control characters from displayed table text and wrapped values while preserving the raw report values. Narrow windows retain the stacked view and content-sized scrolling history.
+- Fixed malformed adapter-type metadata suppressing missing IDs. Only a real boolean false marks an adapter as virtual for the not-applicable exemption.
+- Validation: 603 existing regressions, 26 snapshot checks and 28 ID-view checks under Windows PowerShell 5.1 and PowerShell 7.6.5, native section/narrow-view navigation checks, and an actual read-only scan/rescan.
+
+Identifier scopes follow Microsoft's [processor](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-processor), [monitor](https://learn.microsoft.com/en-us/windows/win32/wmicoreprov/wmimonitorid) and [storage identification](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/device-unique-identifiers--duids--for-storage-devices) references.
+
+## 3.48
+
+- Added saved-snapshot discovery after saving and when opening comparison. It checks the normal, per-user fallback and adjacent installation report folders, includes renamed JSON files, and skips damaged/unsupported reports with a visible count.
+- Added a paged baseline picker with refresh and manual-path fallback. Older usable captures from this PC rank first; same-time, newer, other-PC, unknown-time and no-usable-ID captures are distinguished using capture metadata rather than file modification time.
+- Added TXT-to-matching-JSON lookup. Comparison results retain exact OLD/NEW IDs and character differences, with section shortcuts and warnings for same-time or newer baselines.
+- Added verified-pair saves in the user's local app-data report folder when the normal location has a filesystem/access failure. Invalid data does not trigger a fallback retry; failed partial publication is cleaned up before retrying. Folder navigation follows the last successful save.
+- Validation: the 603 existing regression checks plus 26 snapshot discovery/save/comparison checks under Windows PowerShell 5.1 and PowerShell 7.6.5, and native comparison/picker navigation checks.
+
+The fallback uses the per-user storage purpose documented by [Microsoft's LocalApplicationData reference](https://learn.microsoft.com/en-us/dotnet/api/system.environment.specialfolder).
+
+## 3.47
+
+- Added Enter to continue after the startup scan and PC rescans. Finished scan rows remain available for scrolling before opening the menu or snapshot changes; redirected diagnostics continue without an interactive pause.
+- Added held-Enter release handling and bounded draining of scan-time keystrokes in the dedicated console. Continue prompts do not accept unrelated keys or zero as navigation commands.
+- Added Win32_NetworkAdapter as a final network fallback when Get-NetAdapter and MSFT_NetAdapter are unavailable or empty. Virtual/disabled records, zero/false values and available interface/device IDs are retained; a missing permanent MAC remains unknown.
+- Labeled network fallback use on the scan row. Full reports retain the selected CollectionSource, and failed reads keep all three diagnostics while classifying the final failure.
+- Fixed link-speed conversion errors from malformed optional provider values. Unread speeds remain unknown and their raw values are retained; adapter identity is preserved.
+- Validation: 603 synthetic regression checks under Windows PowerShell 5.1 and PowerShell 7.6.5, native console continuation/navigation checks, actual launcher continuation/held-Enter checks, and a read-only hardware scan/rescan.
+
+The final compatibility reader uses fields documented in [Microsoft's Win32_NetworkAdapter reference](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-networkadapter). Modern readers remain first choice.
+
 ## 3.46
 
 - Fixed empty extended-device enumeration skipping its fallback reader. Empty and null-only results now retry the unfiltered CIM/WMI reader; recovered catalogs record the fallback reason.
