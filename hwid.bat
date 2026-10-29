@@ -69,6 +69,20 @@ function Get-QueryBackend {
     if(Get-Command Get-WmiObject -ErrorAction SilentlyContinue){return 'Legacy WMI'}
     return 'Unavailable'
 }
+function Test-ProjectionReadFailure($Failure) {
+    $exception=$Failure.Exception;$projection=$false
+    for($depth=0;$null -ne $exception -and $depth -lt 16;$depth++) {
+        $code=$exception.HResult.ToString('X8')
+        $status=if($exception.PSObject.Properties['StatusCode']){[string]$exception.StatusCode}elseif($exception.PSObject.Properties['ErrorCode']){[string]$exception.ErrorCode}else{''}
+        if($exception -is [UnauthorizedAccessException] -or $exception -is [TimeoutException] -or $code -in @('80070005','80041003','800705B4') -or $status -in @('AccessDenied','Timeout')){return $false}
+        if($code -in @('80041017','80041031') -or $status -in @('InvalidQuery','InvalidProperty','NoSuchProperty')){$projection=$true}
+        $exception=$exception.InnerException
+    }
+    if($Failure.CategoryInfo.Category -in @('PermissionDenied','OperationTimeout')){return $false}
+    $text=[string]$Failure
+    if($text -match '(?i)access\s+(is\s+)?denied|unauthori[sz]ed|permission denied|timed out|timeout|0x80070005|0x80041003|0x800705b4'){return $false}
+    return $projection -or ($text -match '(?i)invalid query|invalid property|no such property|0x80041017|0x80041031')
+}
 function Get-HwidInstance {
     param([Parameter(Position=0)][string]$ClassName,[string]$Namespace='root/cimv2',[string]$Filter,[string[]]$Property,[int]$OperationTimeoutSec=20)
     $cim=Get-Command Get-CimInstance -ErrorAction SilentlyContinue
@@ -76,16 +90,31 @@ function Get-HwidInstance {
         $arguments=@{ClassName=$ClassName;Namespace=$Namespace;OperationTimeoutSec=$OperationTimeoutSec;ErrorAction='Stop'}
         if($Filter){$arguments.Filter=$Filter}
         if($Property){$arguments.Property=$Property}
-        return (& $cim @arguments)
+        $reader=$cim
     }
-    $wmi=Get-Command Get-WmiObject -ErrorAction SilentlyContinue
-    if($null -ne $wmi) {
+    else {
+        $wmi=Get-Command Get-WmiObject -ErrorAction SilentlyContinue
+        if($null -eq $wmi){throw 'No CIM or legacy WMI reader is available. Repair/install the approved Windows PowerShell/CimCmdlets component.'}
         $arguments=@{Class=$ClassName;Namespace=$Namespace;ErrorAction='Stop'}
         if($Filter){$arguments.Filter=$Filter}
         if($Property){$arguments.Property=$Property}
-        return (& $wmi @arguments)
+        $reader=$wmi
     }
-    throw 'No CIM or legacy WMI reader is available. Repair/install the approved Windows PowerShell/CimCmdlets component.'
+    try {$records=@(& $reader @arguments)}
+    catch {
+        if(-not $Property -or -not (Test-ProjectionReadFailure $_)){throw}
+        $primary=$_.Exception.Message
+        # Keep the same reader, namespace, filter and timeout; only relax the requested fields once.
+        $arguments.Remove('Property')
+        try {$records=@(& $reader @arguments)}
+        catch {
+            $exception=[Exception]::new(('Requested fields failed: '+$primary+' / Compatible read failed: '+$_.Exception.Message),$_.Exception)
+            $exception.Data['HwidFallbackFailure']=$_.Exception.Message
+            throw [System.Management.Automation.ErrorRecord]::new($exception,'Hwid.ProjectionRetryFailed',$_.CategoryInfo.Category,$_.TargetObject)
+        }
+        if($null -ne $script:hwidQueryRecoveries){$script:hwidQueryRecoveries.Add([pscustomobject]@{Class=$ClassName;Namespace=$Namespace;Method='Read available properties';PrimaryFailure=$primary})}
+    }
+    return $records
 }
 function Get-CompatibilityInfo {
     $missing=@(foreach($name in @('Get-NetAdapter','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject','Add-Type','Start-Process','ConvertTo-Json','ConvertFrom-Json')) {
@@ -646,7 +675,7 @@ function Get-MenuDestination($Key) {
 }
 function Get-MenuEntries {
     @('1','Scan summary - start here','6','Save snapshot (TXT + JSON)'), @('2','ID numbers / serials','7','Compare old and current IDs'),
-    @('3','Browse hardware / devices','8','Open saved reports folder'), @('4','Check warnings / conflicts','9','Rescan / extended devices / help'),
+    @('3','Browse hardware / devices','8','Saved reports / storage'), @('4','Check warnings / conflicts','9','Rescan / extended devices / help'),
     @('5','Full inventory report','0','Exit')
 }
 function Show-CompactDeck($Width) {
@@ -671,7 +700,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.51' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.54' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -1200,7 +1229,8 @@ function Show-Attention([switch]$Inline) {
     Write-Host '';Write-Host ('  CONFLICTS / VERIFY BEFORE COMPARING / '+$review.ConflictCount) -ForegroundColor $palette.Heading
     if(-not $review.ConflictCount){Write-PnpValue 'Result' 'No conflicts detected.' $palette.Muted}
     foreach($conflict in $review.RecordConflicts) {
-        Write-PnpValue 'SCAN CONFLICT' ($conflict.Section+' / '+$conflict.DeviceKey) $palette.Warn
+        $keyLabel=if($conflict.DeviceKey){$conflict.DeviceKey}else{'no reliable device key'}
+        Write-PnpValue 'SCAN CONFLICT' ($conflict.Section+' / '+$keyLabel) $palette.Warn
         Write-PnpValue 'Why' $conflict.Message $palette.Text
         Write-PnpValue 'Next' 'Rescan [9] > [1]. Check the duplicate records in Main [5]; do not guess which record matches.' $palette.Muted
     }
@@ -1952,7 +1982,7 @@ function New-ScanQueryWorker {
         $setup=New-Object Text.StringBuilder
         [void]$setup.AppendLine('$ErrorActionPreference="Stop"')
         # Only collection helpers run here; UI and snapshot state stay on the main thread.
-        foreach($name in @('GiB','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Get-NetworkIdentifiers','Get-DriverHardwareIds','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
+        foreach($name in @('GiB','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Get-NetworkIdentifiers','Get-DriverHardwareIds','Test-ProjectionReadFailure','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
             $function=Get-Item -LiteralPath ('Function:\'+$name) -ErrorAction SilentlyContinue
             if($null -ne $function -and -not $function.ModuleName){[void]$setup.AppendLine(('function '+$name+' {'+$function.Definition+'}'))}
         }
@@ -1963,10 +1993,12 @@ function New-ScanQueryWorker {
     }catch{$worker.Dispose();throw}
 }
 function Invoke-ScanQuery([scriptblock]$Query,[scriptblock]$Pulse) {
+    $script:lastQueryRecoveries=@()
     if($null -eq $script:scanQueryWorker) {
         # An explicit -ErrorAction Continue can override the query preference.
         # Capture errors that escape the query so partial data is never an all-clear.
-        $output=@(& $Query 2>&1)
+        $script:hwidQueryRecoveries=New-Object 'System.Collections.Generic.List[object]'
+        try {$output=@(& $Query 2>&1)}finally{$script:lastQueryRecoveries=@($script:hwidQueryRecoveries.ToArray());$script:hwidQueryRecoveries=$null}
         $uncaught=@($output | Where-Object {$_ -is [System.Management.Automation.ErrorRecord]})
         if($uncaught.Count){throw $uncaught[0]}
         return $output
@@ -1976,7 +2008,7 @@ function Invoke-ScanQuery([scriptblock]$Query,[scriptblock]$Pulse) {
     $pending=$null
     try {
         $worker.Runspace=$script:scanQueryWorker.Runspace
-        [void]$worker.AddScript('$ErrorActionPreference="Stop";'+$Query.ToString())
+        [void]$worker.AddScript('$ErrorActionPreference="Stop";$script:hwidQueryRecoveries=New-Object "System.Collections.Generic.List[object]";$collected=@(& {'+$Query.ToString()+'});[pscustomobject]@{Records=$collected;Recoveries=@($script:hwidQueryRecoveries.ToArray())}')
         $pending=$worker.BeginInvoke()
         while(-not $pending.IsCompleted) {
             if($pending.AsyncWaitHandle.WaitOne(100)){break}
@@ -1992,7 +2024,8 @@ function Invoke-ScanQuery([scriptblock]$Query,[scriptblock]$Pulse) {
             throw $sourceFailure
         }
         if($worker.Streams.Error.Count){throw $worker.Streams.Error[0]}
-        return $output
+        $script:lastQueryRecoveries=@($output[0].Recoveries)
+        return $output[0].Records
     }finally{
         if($null -ne $pending -and $pending.IsCompleted){$pending.AsyncWaitHandle.Close()}
         $worker.Dispose()
@@ -2078,6 +2111,7 @@ function Section($Name, [scriptblock]$Query) {
         $info=Get-SectionIdentifierInfo $Name $data
         $unit=if($data.Count -eq 1){'result'}else{'results'}
         $timer.Stop();$status=$info.Tag;$results=$data.Count;$summary=$info.Text
+        if($script:lastQueryRecoveries.Count){$summary+=' / compatible read'}
         try {Complete-ScanLine $line $Name ("[$status] $results $unit | $summary | {0:0.0}s" -f $timer.Elapsed.TotalSeconds) $palette[$info.Color]}catch{}
     } catch {
         $message = $_.Exception.Message
@@ -2090,7 +2124,7 @@ function Section($Name, [scriptblock]$Query) {
         try {Complete-ScanLine $line $Name ('[NOT READ] '+$summary+' / [4] / '+$failure.Code+' | '+('{0:0.0}s' -f $timer.Elapsed.TotalSeconds)) $palette.Warn}catch{}
     } finally {
         $timer.Stop()
-        if($null -ne $script:scanTimings){$script:scanTimings.Add([pscustomobject]@{Section=$Name;Status=$status;Results=$results;Seconds=[math]::Round($timer.Elapsed.TotalSeconds,3);Summary=$summary;FailureCode=$failureCode;NextStep=$nextStep})}
+        if($null -ne $script:scanTimings){$script:scanTimings.Add([pscustomobject]@{Section=$Name;Status=$status;Results=$results;Seconds=[math]::Round($timer.Elapsed.TotalSeconds,3);Summary=$summary;FailureCode=$failureCode;NextStep=$nextStep;Recoveries=@($script:lastQueryRecoveries)})}
         Update-ScanProgress
     }
 }
@@ -2153,7 +2187,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-Host '  Hardware identity and Windows inventory. Read-only scan.' -ForegroundColor $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.51'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.54'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-Host "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" -ForegroundColor $palette.Muted
@@ -2249,6 +2283,8 @@ $scanClock.Stop()
 $report['Report info']['ScanSeconds']=[math]::Round($scanClock.Elapsed.TotalSeconds,2)
 $report['Report info']['ScanCompleted']=(Get-Date).ToString('o')
 $report['Scan timing']=@($scanTimings.ToArray())
+$compatible=@($scanTimings | Where-Object {$_.Status -ne 'UNAVAILABLE' -and $_.Recoveries.Count -gt 0}).Count
+$report['Report info']['CompatibleReadSections']=$compatible
 $report['Warnings'] = @($warnings.ToArray())
     if($script:scanStep -ne $scanTotal -or $scanTimings.Count -ne $scanTotal){throw 'The scan did not finish every section.'}
     $read=@($scanTimings | Where-Object Status -ne 'UNAVAILABLE').Count
@@ -2260,6 +2296,7 @@ $report['Warnings'] = @($warnings.ToArray())
         $extendedNote=if($extraRead){' / extended READ'}else{' / extended NOT READ'}
     }
     Write-PnpValue 'Finished' ("$scanTotal/$scanTotal finished / $read read / $($scanTotal-$read) not read$extendedNote / $($report['Report info'].ScanSeconds)s") $(if($complete){$palette.Good}else{$palette.Warn})
+    if($compatible){Write-PnpValue 'Compatible reads' ("$compatible sections recovered by reading available properties. Main [5] shows retry details.") $palette.Good}
     $rows=@(Get-IdentifierRows $report)
     return [pscustomobject]@{Inventory=$report;Warnings=$warnings;Identifiers=$rows;Completed=$true}
 } finally {
@@ -2274,18 +2311,24 @@ $report['Warnings'] = @($warnings.ToArray())
 }
 function Get-IdentifierRows($Inventory) {
     # Support both the live ordered dictionary and reports imported from JSON.
+    # JSON names are read case-insensitively; use the schema's spelling for matching.
+    $sectionNames=@{};$fieldNames=@{}
+    foreach($section in @($sectionGroups.Values | ForEach-Object {$_})+@('PnP hardware IDs')){$sectionNames[$section]=$section}
+    foreach($field in (($identifierPattern -replace '^\^\(|\)\$$','') -split '\|')){$fieldNames[$field]=$field}
     $names = if ($Inventory -is [System.Collections.IDictionary]) { $Inventory.Keys } else { $Inventory.PSObject.Properties.Name }
     foreach ($name in $names) {
         if ($name -in @('Report info', 'Warnings','Compatibility','Extended scan info','Extended device inventory')) { continue }
+        $section=if($sectionNames.ContainsKey($name)){$sectionNames[$name]}else{$name}
         $records = if ($Inventory -is [System.Collections.IDictionary]) { $Inventory[$name] } else { $Inventory.$name }
         foreach ($record in $records) {
-            $device = Get-DeviceKey $name $record
+            $device = Get-DeviceKey $section $record
             foreach ($property in $record.PSObject.Properties) {
                 if ($property.Name -notmatch $identifierPattern) { continue }
+                $field=$fieldNames[$property.Name]
                 $value = Normalize-IdentifierText $property.Value
-                $quality = Get-FieldQuality $property.Name $property.Value $record
+                $quality = Get-FieldQuality $field $property.Value $record
                 if ($quality -eq 'Not applicable') { continue }
-                [pscustomobject]@{ Section = $name; Device = $device; Field = $property.Name; Value = $value; Quality = $quality }
+                [pscustomobject]@{ Section = $section; Device = $device; Field = $field; Value = $value; Quality = $quality }
             }
         }
     }
@@ -2309,9 +2352,13 @@ function Get-DeviceKey($SectionName, $Record) {
     return ($parts -join '; ')
 }
 function Get-InventoryConflicts($Inventory) {
-    foreach($section in @('CPU','Memory modules','Physical disks','Storage identifiers','Volumes','Graphics adapters','Network adapters','Monitors')) {
+    foreach($section in @('System identity','CPU','Motherboard','BIOS','Chassis','Memory modules','Physical disks','Storage identifiers','Volumes','Graphics adapters','Network adapters','Windows Machine GUID','Monitors')) {
         $records=if($Inventory -is [System.Collections.IDictionary]){$Inventory[$section]}else{$Inventory.$section}
         if(-not (Test-SectionReadable $records)){continue}
+        if($section -in @('System identity','Motherboard','BIOS','Chassis','Windows Machine GUID') -and @($records).Count -gt 1){
+            [pscustomobject]@{Section=$section;DeviceKey='';Count=@($records).Count;Message=("$(@($records).Count) records have no reliable device key. Inspect the records in [5]; comparisons skip this section.")}
+            continue
+        }
         $counts=New-Object 'System.Collections.Generic.Dictionary[string,int]' ([StringComparer]::Ordinal)
         foreach($record in $records) {
             $key=Get-DeviceKey $section $record
@@ -2346,7 +2393,7 @@ function Compare-Inventories($Previous, $Current) {
     $common = @()
     $skipped = @()
     $unkeyedSections=@()
-    $keyedSections=@('CPU','Memory modules','Physical disks','Storage identifiers','Volumes','Graphics adapters','Network adapters','Monitors')
+    $keyedSections=$idSections
     foreach ($section in $idSections) {
         $old = if ($Previous -is [System.Collections.IDictionary]) { $Previous[$section] } else { $Previous.$section }
         $new = if ($Current -is [System.Collections.IDictionary]) { $Current[$section] } else { $Current.$section }
@@ -2493,18 +2540,62 @@ function Format-ComparisonKey($Key) {
     $deviceLabel = if ($parts[1]) { " ($($parts[1]))" } else { '' }
     return "[$($parts[0])] $(Get-FieldLabel $parts[2])${deviceLabel}: $($parts[3])"
 }
+function Get-SnapshotFailureInfo($Failure) {
+    $exception=if($Failure -is [System.Management.Automation.ErrorRecord]){$Failure.Exception}else{$Failure}
+    $details=[string]$Failure;$kind=if($Failure -is [System.Management.Automation.ErrorRecord] -and $Failure.CategoryInfo.Category -eq 'PermissionDenied'){'Access'}else{'Data'};$messages=New-Object 'System.Collections.Generic.List[string]'
+    for($depth=0;$exception -is [Exception] -and $depth -lt 16;$depth++) {
+        $messages.Add($exception.Message)
+        if($exception -is [UnauthorizedAccessException]){$kind='Access'}
+        elseif($exception -is [Text.DecoderFallbackException] -and $kind -ne 'Access'){$kind='Encoding'}
+        elseif($exception -is [IO.IOException] -and $exception -isnot [IO.InvalidDataException] -and $kind -notin @('Access','Encoding')){$kind='Unavailable'}
+        $exception=$exception.InnerException
+    }
+    $text=$messages -join ' / '
+    if($text -match '64 MB import limit'){$kind='Size'}
+    elseif($text -match 'not a supported HWID v2 or v3'){$kind='Version'}
+    elseif($text -match 'Report file not found'){$kind='Unavailable'}
+    $info=switch($kind) {
+        'Access' {@('STORE-01','Access blocked','Check file permissions or choose a readable local copy.','Warn')}
+        'Unavailable' {@('STORE-02','File unavailable or in use','Close any writer, wait for sync, then refresh or retry.','Warn')}
+        'Encoding' {@('STORE-03','Invalid text encoding','Keep the original and choose a valid exported JSON snapshot.','Error')}
+        'Size' {@('STORE-05','Report exceeds the 64 MB import limit','Choose a smaller exported snapshot.','Warn')}
+        'Version' {@('STORE-06','Unsupported snapshot version','Choose a supported HWID v2 or v3 JSON snapshot.','Warn')}
+        default {@('STORE-04','Invalid or damaged snapshot','Keep the original and choose another valid JSON snapshot.','Error')}
+    }
+    [pscustomobject]@{Code=$info[0];Reason=$info[1];Action=$info[2];Color=$info[3];Details=$details}
+}
+function Read-ReportJsonText($Path) {
+    $stream=$null
+    try {
+        # One read handle enforces size and prevents reading an in-progress writer.
+        $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        if($stream.Length -gt 64MB){throw [IO.InvalidDataException]::new('Report exceeds the 64 MB import limit.')}
+        $prefix=New-Object byte[] 4;$count=$stream.Read($prefix,0,4);$offset=0
+        $encoding=[Text.UTF8Encoding]::new($false,$true)
+        if($count -ge 4 -and $prefix[0] -eq 255 -and $prefix[1] -eq 254 -and $prefix[2] -eq 0 -and $prefix[3] -eq 0){$encoding=[Text.UTF32Encoding]::new($false,$false,$true);$offset=4}
+        elseif($count -ge 4 -and $prefix[0] -eq 0 -and $prefix[1] -eq 0 -and $prefix[2] -eq 254 -and $prefix[3] -eq 255){$encoding=[Text.UTF32Encoding]::new($true,$false,$true);$offset=4}
+        elseif($count -ge 3 -and $prefix[0] -eq 239 -and $prefix[1] -eq 187 -and $prefix[2] -eq 191){$offset=3}
+        elseif($count -ge 2 -and $prefix[0] -eq 255 -and $prefix[1] -eq 254){$encoding=[Text.UnicodeEncoding]::new($false,$false,$true);$offset=2}
+        elseif($count -ge 2 -and $prefix[0] -eq 254 -and $prefix[1] -eq 255){$encoding=[Text.UnicodeEncoding]::new($true,$false,$true);$offset=2}
+        $stream.Position=$offset
+        $bytes=New-Object byte[] ([int]($stream.Length-$offset));$read=0
+        while($read -lt $bytes.Length){$received=$stream.Read($bytes,$read,$bytes.Length-$read);if(-not $received){throw [IO.EndOfStreamException]::new('Snapshot ended before all bytes could be read. Retry the import.')};$read+=$received}
+        # Decode the complete buffer so incomplete trailing characters fail on .NET Framework too.
+        return $encoding.GetString($bytes)
+    }finally{if($null -ne $stream){$stream.Dispose()}}
+}
 function Read-SavedReport($Path) {
     if(-not (Get-Command ConvertFrom-Json -ErrorAction SilentlyContinue)){throw 'JSON import is unavailable: repair the Microsoft.PowerShell.Utility module for this runtime.'}
     if(-not (Test-Path -LiteralPath $Path -PathType Leaf)){throw 'Report file not found. Choose an existing JSON report.'}
-    if((Get-Item -LiteralPath $Path).Length -gt 64MB){throw 'Report exceeds the 64 MB import limit.'}
+    try {$json=Read-ReportJsonText (Get-Item -LiteralPath $Path -ErrorAction Stop).FullName}
+    catch{$failure=Get-SnapshotFailureInfo $_;throw [Exception]::new(($failure.Code+' / '+$failure.Reason+'. '+$failure.Action),$_.Exception)}
     try {
-        $json=Get-Content -LiteralPath $Path -Raw -Encoding UTF8
         Assert-UniqueJsonProperties $json
         $previous=Convert-ReportJson $json
     }
     catch {
-        if($_.Exception.Message -match 'Duplicate JSON property'){throw $_.Exception.Message}
-        throw 'Cannot read this JSON report. Choose the .json file, not the TXT report; the file may be incomplete or damaged.'
+        if($_.Exception.Message -match 'Duplicate JSON property'){throw [IO.InvalidDataException]::new($_.Exception.Message,$_.Exception)}
+        throw [IO.InvalidDataException]::new('Cannot read this JSON report. Choose the .json file, not the TXT report; the file may be incomplete or damaged.',$_.Exception)
     }
     if ($json -notmatch '^\s*\{' -or $previous -isnot [pscustomobject] -or $previous.'Report info' -isnot [pscustomobject] -or $previous.'Report info'.Version -isnot [string] -or $previous.'Report info'.Version -notmatch '^[23]\.\d+(\.\d+)?$') {
         throw 'This file is not a supported HWID v2 or v3 report.'
@@ -2581,13 +2672,19 @@ function Get-ReportCaptureTime($Info) {
 function Get-SavedSnapshotCatalog([string[]]$Folders,$Current) {
     $entries=New-Object 'System.Collections.Generic.List[object]'
     $skipped=New-Object 'System.Collections.Generic.List[object]'
+    $textOnly=New-Object 'System.Collections.Generic.List[object]'
+    $textSeen=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     $seen=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     $currentInfo=$Current.'Report info';$now=Get-ReportCaptureTime $currentInfo
     foreach($folder in $Folders) {
         try {
             if(-not (Test-Path -LiteralPath $folder -PathType Container)){continue}
-            $files=@(Get-ChildItem -LiteralPath $folder -Filter '*.json' -File -ErrorAction Stop)
-        }catch{$skipped.Add([pscustomobject]@{Path=$folder;Reason=$_.Exception.Message});continue}
+            $all=@(Get-ChildItem -LiteralPath $folder -File -Force -ErrorAction Stop)
+            $files=@($all | Where-Object Extension -eq '.json')
+            foreach($textFile in $all | Where-Object Extension -eq '.txt') {
+                if($textSeen.Add($textFile.FullName) -and -not [IO.File]::Exists([IO.Path]::ChangeExtension($textFile.FullName,'.json'))){$textOnly.Add([pscustomobject]@{FullName=$textFile.FullName;Name=$textFile.Name})}
+            }
+        }catch{$failure=Get-SnapshotFailureInfo $_;$skipped.Add([pscustomobject]@{Path=$folder;Reason=$failure.Reason;Code=$failure.Code;Action=$failure.Action;Color=$failure.Color});continue}
         foreach($file in $files) {
             if(-not $seen.Add($file.FullName)){continue}
             try {
@@ -2603,11 +2700,56 @@ function Get-SavedSnapshotCatalog([string[]]$Folders,$Current) {
                 }
                 if(-not $samePc){$relation+=' / OTHER OR UNKNOWN PC';$rank=[math]::Max(2,$rank)}
                 if(-not $usable){$relation+=' / NO USABLE IDs';$rank=5}
-                $entries.Add([pscustomobject]@{FullName=$file.FullName;Name=$file.Name;Computer=[string]$info.Computer;Generated=$info.Generated;Relation=$relation;SamePc=$samePc;Older=($null -ne $captured -and $null -ne $now -and $captured -lt $now);UsableIds=$usable;Rank=$rank;SortTicks=$(if($null -ne $captured){$captured.UtcDateTime.Ticks}else{$file.LastWriteTimeUtc.Ticks})})
-            }catch{$skipped.Add([pscustomobject]@{Path=$file.FullName;Reason=$_.Exception.Message})}
+                $txtPath=[IO.Path]::ChangeExtension($file.FullName,'.txt')
+                $entries.Add([pscustomobject]@{FullName=$file.FullName;Name=$file.Name;Computer=[string]$info.Computer;Generated=$info.Generated;Relation=$relation;SamePc=$samePc;Older=($null -ne $captured -and $null -ne $now -and $captured -lt $now);UsableIds=$usable;Rank=$rank;TextAvailable=[IO.File]::Exists($txtPath);SortTicks=$(if($null -ne $captured){$captured.UtcDateTime.Ticks}else{$file.LastWriteTimeUtc.Ticks})})
+            }catch{$failure=Get-SnapshotFailureInfo $_;$skipped.Add([pscustomobject]@{Path=$file.FullName;Reason=$failure.Reason;Code=$failure.Code;Action=$failure.Action;Color=$failure.Color})}
         }
     }
-    [pscustomobject]@{Entries=@($entries.ToArray() | Sort-Object Rank,@{Expression='SortTicks';Descending=$true},FullName);Skipped=@($skipped.ToArray())}
+    [pscustomobject]@{Entries=@($entries.ToArray() | Sort-Object Rank,@{Expression='SortTicks';Descending=$true},FullName);Skipped=@($skipped.ToArray());TextOnly=@($textOnly.ToArray())}
+}
+function Get-SnapshotDisplayInfo($Entry) {
+    if($Entry.Relation -match 'NO USABLE IDs'){return [pscustomobject]@{Color='Warn';Hint='No usable ID fields; choose another baseline.'}}
+    if($Entry.Relation -match 'OTHER OR UNKNOWN PC'){return [pscustomobject]@{Color='Warn';Hint='Verify the computer before comparing.'}}
+    if($Entry.Relation -eq 'OLDER'){return [pscustomobject]@{Color='Good';Hint='Older capture from this PC; suitable baseline.'}}
+    if($Entry.Relation -eq 'SAME CAPTURE TIME'){return [pscustomobject]@{Color='Muted';Hint='Same capture time; this does not prove the IDs match.'}}
+    if($Entry.Relation -eq 'NEWER'){return [pscustomobject]@{Color='Warn';Hint='Newer than the active scan; check the comparison direction.'}}
+    return [pscustomobject]@{Color='Warn';Hint='Capture time is unknown; check the file before comparing.'}
+}
+function Show-SnapshotStorage([switch]$OpenFolder) {
+    Reset-UiPage;Start-UiReport;Add-ReportBookmark '1'
+    Write-Heading 'SAVED SNAPSHOTS / STORAGE'
+    Write-PnpValue 'Jump' '1 Summary / 2 Folders / 3 Files not read / 4 TXT only. 0 or Enter = menu.' $palette.Muted
+    $locations=Get-ReportLocations
+    $catalog=Get-SavedSnapshotCatalog $locations.Search $report
+    $older=@($catalog.Entries | Where-Object {$_.SamePc -and $_.Older -and $_.UsableIds -gt 0}).Count
+    $paired=@($catalog.Entries | Where-Object TextAvailable -eq $true).Count
+    Write-PnpValue 'JSON snapshots' ("$($catalog.Entries.Count) readable / $older older usable baselines from this PC") $(if($catalog.Entries.Count){$palette.Good}else{$palette.Muted})
+    Write-PnpValue 'Report pairs' ("$paired TXT + JSON / $($catalog.Entries.Count-$paired) JSON only") $palette.Text
+    $checkColor=if(@($catalog.Skipped | Where-Object Color -eq 'Error').Count){$palette.Error}elseif($catalog.Skipped.Count -or $catalog.TextOnly.Count){$palette.Warn}else{$palette.Good}
+    Write-PnpValue 'Storage check' ("$($catalog.Skipped.Count) files/folders not read / $($catalog.TextOnly.Count) TXT only") $checkColor
+    Write-PnpValue 'Meaning' 'JSON alone supports comparison. TXT alone is a readable report and needs its JSON to compare.' $palette.Muted
+    if($OpenFolder) {
+        $folder=$locations.Primary;$selected=$false
+        if($lastSavedReportPath){try{if(Test-Path -LiteralPath (Split-Path -Parent $lastSavedReportPath) -PathType Container){$folder=Split-Path -Parent $lastSavedReportPath;$selected=$true}}catch{}}
+        if(-not $selected){foreach($candidate in $locations.Search){try{if(Test-Path -LiteralPath $candidate -PathType Container){$folder=$candidate;break}}catch{}}}
+        try {
+            if(Test-Path -LiteralPath $folder -PathType Container){Start-Process explorer.exe -ArgumentList ('"'+$folder+'"');Write-PnpValue 'Opened folder' $folder $palette.Good}
+            else{Write-PnpValue 'No report folder yet' 'Main [6] saves your first snapshot.' $palette.Muted}
+        }catch{Write-PnpValue 'STORE-08 / folder not opened' $_.Exception.Message $palette.Warn}
+    }
+    Add-ReportBookmark '2';Write-Heading 'REPORT LOCATIONS'
+    foreach($folder in $locations.Search){
+        $state='Not created';$color=$palette.Muted
+        try{if(Test-Path -LiteralPath $folder -PathType Container){$state='Folder'}}catch{$state='Access unavailable';$color=$palette.Warn}
+        Write-PnpValue $state $folder $color
+    }
+    Add-ReportBookmark '3';Write-Heading ('FILES NOT READ / '+$catalog.Skipped.Count)
+    if(-not $catalog.Skipped.Count){Write-PnpValue 'Result' 'No unreadable or unsupported snapshots detected.' $palette.Good}
+    foreach($item in $catalog.Skipped){Write-PnpValue ($item.Code+' / '+[IO.Path]::GetFileName($item.Path)) $item.Reason $palette[$item.Color];Write-PnpValue 'Path' $item.Path $palette.Muted;Write-PnpValue 'Next' $item.Action $palette.Muted}
+    Add-ReportBookmark '4';Write-Heading ('TXT WITHOUT JSON / '+$catalog.TextOnly.Count)
+    if(-not $catalog.TextOnly.Count){Write-PnpValue 'Result' 'No TXT-only files detected.' $palette.Muted}
+    foreach($item in $catalog.TextOnly){Write-PnpValue 'TXT only' $item.FullName $palette.Warn}
+    Write-PnpValue 'Keep using files' 'Main [7] chooses a baseline. Main [6] saves a new pair. Existing reports are preserved.' $palette.Muted
 }
 function Test-ReportWriteFailure($Failure) {
     if($Failure -is [System.Management.Automation.ErrorRecord] -and $Failure.CategoryInfo.Category -eq 'PermissionDenied'){return $true}
@@ -2677,11 +2819,13 @@ function Read-CompareReportPath {
         $recent=@($catalog.Entries | Select-Object -Skip ($page*5) -First 5)
         Write-PnpValue 'Saved snapshots' ("$($catalog.Entries.Count) detected / page $($page+1) of $pages / older captures from this PC first") $palette.Muted
         for($i=0;$i -lt $recent.Count;$i++) {
-            Write-PnpValue ('['+($i+1)+'] '+$recent[$i].Relation) ($recent[$i].Computer+' / '+(Format-ScanTime $recent[$i].Generated)) $palette.Heading
+            $style=Get-SnapshotDisplayInfo $recent[$i]
+            Write-PnpValue ('['+($i+1)+'] '+$recent[$i].Relation) ($recent[$i].Computer+' / '+(Format-ScanTime $recent[$i].Generated)) $palette[$style.Color]
             Write-PnpValue 'File' $recent[$i].Name $palette.Text
         }
         if(-not $recent.Count){Write-PnpValue 'No snapshots found' 'Save with [6], or use [9] to choose a report elsewhere.' $palette.Muted}
-        if($catalog.Skipped.Count){Write-PnpValue 'Not listed' ("$($catalog.Skipped.Count) unreadable/unsupported files or folders. Paste a path to inspect one.") $palette.Warn}
+        if($catalog.Skipped.Count){Write-PnpValue 'Not listed' ("$($catalog.Skipped.Count) unreadable/unsupported files or folders. Main [8] explains why.") $(if(@($catalog.Skipped | Where-Object Color -eq 'Error').Count){$palette.Error}else{$palette.Warn})}
+        Write-PnpValue 'Colors' 'Green = older baseline / gray = same capture / yellow = check context / red = invalid file.' $palette.Muted
         Write-PnpValue 'Controls' '[1-5] Select / [6] Next page / [7] Previous / [8] Refresh / [9] Path / [0] Back' $palette.Muted
         Write-PnpValue 'Path' 'You can also paste a JSON path directly. TXT uses its matching JSON. Blank = Back.' $palette.Muted
         Complete-UiReport
@@ -2752,8 +2896,8 @@ function Show-ComparisonResult($Previous,$Current,$Comparison,$SourcePath) {
         elseif($oldTime -gt $newTime){Write-PnpValue 'Time order' 'The selected baseline is newer than this active scan. OLD means selected file; NEW means active scan.' $palette.Warn}
     }
     if($Comparison.AmbiguousDevices.Count){
-        Write-PnpValue 'SCAN CONFLICT' ("$($Comparison.AmbiguousDevices.Count) duplicate device key(s); ambiguous IDs are not compared.") $palette.Warn
-        foreach($conflict in $Comparison.AmbiguousDevices){Write-PnpValue 'Skipped device' ($conflict.Section+' / '+$conflict.DeviceKey+' / '+($conflict.Sources -join ' + ')+' report') $palette.Warn}
+        Write-PnpValue 'SCAN CONFLICT' ("$($Comparison.AmbiguousDevices.Count) device matches are ambiguous; these IDs are not compared.") $palette.Warn
+        foreach($conflict in $Comparison.AmbiguousDevices){$keyLabel=if($conflict.DeviceKey){$conflict.DeviceKey}else{'no reliable device key'};Write-PnpValue 'Skipped device' ($conflict.Section+' / '+$keyLabel+' / '+($conflict.Sources -join ' + ')+' report') $palette.Warn}
     }
     Write-PnpValue 'Comparable fields' ("$($Comparison.PreviousCount) previous / $($Comparison.CurrentCount) current") $palette.Text
     if($Comparison.UnkeyedSections.Count){Write-PnpValue 'Missing device keys' (($Comparison.UnkeyedSections -join ', ')+'. Records cannot be matched reliably; these sections are skipped.') $palette.Warn}
@@ -2992,10 +3136,10 @@ function Save-Reports {
         try {
             $catalog=Get-SavedSnapshotCatalog $locations.Search $report
             $older=@($catalog.Entries | Where-Object {$_.SamePc -and $_.Older -and $_.UsableIds -gt 0}).Count
-            Write-PnpValue 'Older snapshots' ("$older usable baselines from this PC detected / $($catalog.Entries.Count) saved JSON snapshots total") $palette.Text
-            if($catalog.Skipped.Count){Write-PnpValue 'Not listed' ("$($catalog.Skipped.Count) unreadable/unsupported files or folders; other snapshots remain available.") $palette.Warn}
+            Write-PnpValue 'Older snapshots' ("$older usable baselines from this PC detected / $($catalog.Entries.Count) saved JSON snapshots total") $(if($older){$palette.Good}else{$palette.Muted})
+            if($catalog.Skipped.Count){Write-PnpValue 'Not listed' ("$($catalog.Skipped.Count) unreadable/unsupported files or folders; Main [8] explains why.") $(if(@($catalog.Skipped | Where-Object Color -eq 'Error').Count){$palette.Error}else{$palette.Warn})}
         }catch{Write-PnpValue 'Snapshot lookup' 'Save succeeded. Automatic lookup was unavailable; [7] also accepts a path.' $palette.Warn}
-        Write-PnpValue 'Next' '[7] Choose an older snapshot to compare IDs / [8] Open reports folder' $palette.Muted
+        Write-PnpValue 'Next' '[7] Choose an older snapshot to compare IDs / [8] Saved reports and storage status' $palette.Heading
     } catch {
         Write-PnpValue 'SAVE-01 / not completed' $_.Exception.Message $palette.Error
     }
@@ -3037,18 +3181,7 @@ Wait-ScanContinue 'main menu'
                 Show-ComparisonResult $previous $report -SourcePath $previousPath
             } catch { Write-PnpValue 'COMPARE-01 / unavailable' $_.Exception.Message $palette.Warn }
         }
-        '8' {
-            Write-Heading 'REPORTS FOLDER'
-            $locations=Get-ReportLocations
-            $folder=if($lastSavedReportPath -and (Test-Path -LiteralPath (Split-Path -Parent $lastSavedReportPath) -PathType Container)){Split-Path -Parent $lastSavedReportPath}else{
-                $available=@($locations.Search | Where-Object {(Test-Path -LiteralPath $_ -PathType Container) -and @(Get-ChildItem -LiteralPath $_ -Filter '*.json' -File -ErrorAction SilentlyContinue).Count})
-                if($available.Count){$available[0]}else{$locations.Primary}
-            }
-            try {
-                if (Test-Path -LiteralPath $folder -PathType Container) { Start-Process explorer.exe -ArgumentList ('"' + $folder + '"'); Write-PnpValue 'Opened folder' $folder $palette.Good }
-                else { Write-Host 'Save a report first to create the reports folder.' }
-            } catch { Write-Host "Unable to open folder: $($_.Exception.Message)" -ForegroundColor $palette.Error }
-        }
+        '8' {Show-SnapshotStorage -OpenFolder}
         '0' { Show-UiTransition 'Exit'; return }
         default { Show-MenuInputError; continue }
     }

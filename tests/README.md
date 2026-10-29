@@ -13,11 +13,14 @@ Tests are optional for users. Run them from the repository root in a Windows Pow
 | --- | --- | --- |
 | `test-hwid.ps1` | 603 synthetic regression checks: menu, scan continuation, fallback recovery, rescan state, overview, IDs, export/import and comparisons | No |
 | `test-snapshot-catalog.ps1` | 26 checks: older-file detection, renamed/damaged reports, capture ordering, pagination, TXT companion lookup and save fallback/rollback | No |
+| `test-snapshot-storage.ps1` | 38 checks: strict import encodings, locked-file recovery, size limits, relative paths, storage counts, severity colors and inaccessible-folder handling | No |
 | `test-id-view.ps1` | 28 checks: malformed scalar IDs, valid strings/lists/zero values, serial/MAC labels, null rows, adapter metadata and safe display | No |
 | `test-review.ps1` | 24 checks: warning deduplication/recovery, stored failures, extended failures, duplicate statuses, resource conflicts and consistent review totals | No |
 | `test-scan-metadata.ps1` | 41 checks: optional storage/partition/memory/monitor conversions, raw-value retention, direct/worker scan agreement and report round trips | No |
+| `test-scan-recovery.ps1` | 34 checks: bounded provider-property retry, preserved filters/timeouts, partial-output isolation, error classification, full scans and saved recovery metadata in both scan modes | No |
+| `test-comparison-identity.ps1` | 34 checks: case-varied schema names, exact identifier-value changes, missing fields and ambiguous system/firmware records | No |
 | `test-runtime-launchers.ps1` | Eight launcher/runtime cases, including missing/old/restricted engines and the PS1 loader | No |
-| `test-readable-console.ps1` | Native console layout, snapshot picker, comparison navigation, scan continuation, scrolling, history, input modes, overview states and animation restoration | No; opens a temporary console |
+| `test-readable-console.ps1` | Native console layout, snapshot picker/storage navigation, comparison navigation, scan continuation, scrolling, history, input modes, overview states and animation restoration | No; opens a temporary console |
 | `test-readable-startup.ps1` | Actual launcher, scan continuation, display setup, invalid input and held Enter | Yes; opens a temporary console |
 | `test-live-rescan.ps1` | Initial scan, rescan and snapshot publication; optional `-LiveProgress` and `-Extended` | Yes |
 | `test-live-extended.ps1` | Actual extended-device catalog and property coverage | Yes |

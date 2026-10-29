@@ -2,7 +2,7 @@
 
 Read local Windows hardware identifiers, save a snapshot, and see which IDs changed between scans. The checker is read-only: it does not change hardware identifiers or device settings.
 
-**Current version: 3.51** · Windows · PowerShell 5.1 or newer
+**Current version: 3.54** · Windows · PowerShell 5.1 or newer
 
 ## Start here
 
@@ -27,7 +27,7 @@ Type a menu number, then press Enter. Empty Enter is ignored on the main menu.
 | **5** | Read the full inventory |
 | **6** | Save the current snapshot as TXT and JSON |
 | **7** | Compare a saved JSON snapshot with the current scan |
-| **8** | Open the saved reports folder |
+| **8** | Saved reports: open the folder and review storage status |
 | **9** | Rescan, inspect extended devices, or open help |
 | **0** | Exit |
 

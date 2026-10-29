@@ -2,6 +2,35 @@
 
 [Back to the main README](../README.md)
 
+## 3.54
+
+- Fixed false identifier changes when imported JSON uses different capitalization for recognized section or field names. Comparison rows now use stable schema names; raw imported data and identifier values retain their original spelling, letter case and leading zeros.
+- Fixed arbitrary pairing of multiple system/firmware records without matching device keys. These sections are now disclosed under Not compared, with a scan-data conflict in warning review. Single-record firmware comparisons remain available.
+- Kept actual identifier-value comparisons case-sensitive. Missing/default fields with case-varied names are skipped on both sides rather than shown as removed IDs.
+- Validation: 828 synthetic checks on each supported PowerShell runtime, including 34 new comparison-identity regressions, plus native console and read-only scan/rescan checks.
+
+Schema-name handling follows PowerShell's [JSON conversion behavior](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/convertfrom-json). Duplicate JSON names are still rejected before import.
+
+## 3.53
+
+- Recovered scan sections when a Windows provider rejects a requested property: retry once using available properties, while keeping the same reader, namespace, device filter and CIM timeout. Unsupported fields remain missing; IDs are never guessed.
+- Buffered each reader attempt so records emitted before a failure cannot leak into a successful retry or duplicate devices. Access failures, timeouts and missing classes keep their existing failure handling.
+- Marked successful recovery as `compatible read` in scan lines and retained the original diagnostic, class and method in scan timing, full inventory and saved reports. The finished scan reports how many sections recovered.
+- Kept direct and live-progress scans consistent: recovery notes travel separately from hardware records and reset before each query. Failed retries retain both messages and use the final error for classification.
+- Validation: 794 synthetic checks on Windows PowerShell 5.1 and PowerShell 7.6.5, native console checks, and an actual read-only live-progress scan/rescan reading all 17 sections with zero query warnings and a refreshed extended catalog.
+
+Retry classification follows Microsoft's [WMI error constants](https://learn.microsoft.com/en-us/windows/win32/wmisdk/wmi-error-constants); property selection follows [Get-CimInstance](https://learn.microsoft.com/en-us/powershell/module/cimcmdlets/get-ciminstance).
+
+## 3.52
+
+- Added Main [8] storage status with readable snapshots, older usable baselines, TXT/JSON pairs, JSON-only and TXT-only files, and per-file recovery advice. Folder opening remains available; failures do not hide the summary.
+- Distinguished locked/unavailable files, access failures, invalid encoding, damaged JSON, oversized imports and unsupported versions with stable STORE codes. Other readable snapshots remain available and refresh picks up recovered files.
+- Prevented lossy UTF-8 decoding from silently changing imported identifiers. Strict UTF-8 and BOM-marked UTF-16/UTF-32 imports preserve legacy exports; one read handle checks the size limit and excludes active writers, with disposal on failure.
+- Fixed .NET Framework text-reader behavior that could drop incomplete trailing characters. Whole-buffer strict decoding rejects truncated UTF-8/UTF-16/UTF-32 consistently on both supported PowerShell runtimes.
+- Fixed relative imports resolving against the process directory rather than the PowerShell location.
+- Applied the existing palette by meaning: green older baselines, gray same-capture labels, yellow retry/context warnings and red invalid-data failures. Save results use matching status colors and point to storage details.
+- Validation: the existing 722 synthetic checks plus 38 storage checks under Windows PowerShell 5.1 and PowerShell 7, and native console storage navigation/scrolling checks. Existing user reports are preserved.
+
 ## 3.51
 
 - Hardened optional scan conversions so invalid metadata does not throw during property projection or discard usable identifiers. Storage codes use validated uint16 values; valid unknown codes remain explicit and malformed codes remain unknown.

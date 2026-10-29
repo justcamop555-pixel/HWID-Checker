@@ -13,6 +13,8 @@ try {
     foreach ($definition in $ast.FindAll({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst]},$false)) {
         . ([scriptblock]::Create($definition.Extent.Text))
     }
+    $idAssignment=$ast.FindAll({param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$identifierPattern'},$false) | Select-Object -First 1
+    . ([scriptblock]::Create($idAssignment.Extent.Text))
     $result=Initialize-ReadableConsole $true $false
     if(-not $result.ContextMenuDisabled -or [HwidConsoleDisplay]::ReadEditPopupItems() -ne 0 -or -not [HwidConsoleDisplay]::HasWindowCloseCommand()){throw 'Edit popup was not emptied or window Close was removed.'}
     foreach ($mode in @(0,64,128,192,511,1023)) {
@@ -244,7 +246,7 @@ try {
     $locationsFunction=(Get-Item Function:Get-ReportLocations).ScriptBlock
     $lineFunction=(Get-Item Function:Read-CheckerLine).ScriptBlock
     try {
-        function Get-ReportLocations {[pscustomobject]@{Search=@('C:\Reports')}}
+        function Get-ReportLocations {[pscustomobject]@{Primary='C:\Reports';Search=@('C:\Reports')}}
         function Get-SavedSnapshotCatalog {
             [pscustomobject]@{Entries=@(foreach($i in 1..6){[pscustomobject]@{FullName=('C:\Reports\older-'+$i+'.json');Name=('older-'+$i+'.json');Relation='OLDER';Computer='TEST';Generated='2026-01-01T00:00:00Z'}});Skipped=@()}
         }
@@ -258,6 +260,29 @@ try {
         }
         if((Read-CompareReportPath) -ne 'C:\Reports\older-6.json' -or $script:pickerReads -ne 2){throw 'Native snapshot picker lost its page selection.'}
         $result | Add-Member NoteProperty SnapshotPickerPagination $true
+        function Get-SavedSnapshotCatalog {
+            [pscustomobject]@{
+                Entries=@([pscustomobject]@{SamePc=$true;Older=$true;UsableIds=1;TextAvailable=$true})
+                Skipped=@(foreach($i in 1..8){[pscustomobject]@{Path=('C:\Reports\broken-'+$i+'.json');Code='STORE-04';Reason='Invalid or damaged snapshot';Action='Choose another snapshot.';Color='Error'}})
+                TextOnly=@([pscustomobject]@{FullName='C:\Reports\old.txt';Name='old.txt'})
+            }
+        }
+        Show-SnapshotStorage
+        $script:storageSteps=0
+        Wait-UiPage -KeyReader {
+            $script:storageSteps++
+            if($script:storageSteps -eq 1){
+                if([Console]::WindowTop -ne 0 -or $script:reportBookmarks.Count -ne 4){throw 'Storage page did not start at its summary with four shortcuts.'}
+                return (New-Object ConsoleKeyInfo([char]'3',[ConsoleKey]::D3,$false,$false,$false))
+            }
+            $key=if($script:storageSteps -eq 2){'3'}else{'4'}
+            $expected=[math]::Min($script:reportBookmarks[$key],[Console]::BufferHeight-[Console]::WindowHeight)
+            if([Console]::WindowTop -ne $expected){throw 'Storage shortcut did not reach the requested section.'}
+            if($script:storageSteps -eq 2){return (New-Object ConsoleKeyInfo([char]'4',[ConsoleKey]::D4,$false,$false,$false))}
+            New-Object ConsoleKeyInfo([char]'0',[ConsoleKey]::D0,$false,$false,$false)
+        }
+        if([Console]::BufferHeight -ne (Get-ReportHistoryRows ([Console]::WindowHeight) ([Console]::CursorTop))){throw 'Storage history did not match its content.'}
+        $result | Add-Member NoteProperty SnapshotStorageNavigation $true
     }finally{Set-Item Function:Get-SavedSnapshotCatalog -Value $catalogFunction;Set-Item Function:Get-ReportLocations -Value $locationsFunction;Set-Item Function:Read-CheckerLine -Value $lineFunction}
 
     Reset-UiPage

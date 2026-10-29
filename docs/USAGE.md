@@ -8,6 +8,8 @@ Use **[1]** for the overview. It separates normal query coverage, identifier fie
 
 After the startup scan, the finished scan stays visible until you press **Enter** to continue to the main menu. After a rescan, press **Enter** to continue to the snapshot changes. You can scroll before continuing. Release Enter if it was held during scanning; the dedicated console clears scan-time keystrokes so they cannot skip this step. Redirected runs do not pause for this prompt.
 
+If a provider rejects requested fields, the checker retries once using the properties that provider exposes. It keeps the same device filter, namespace and reader. **Compatible read** means that retry succeeded; unsupported fields can still be missing. The finish screen counts recovered sections, and **[5] Full inventory report** includes retry diagnostics under Scan timing. These details are also saved in TXT/JSON. Access failures, timeouts and missing providers keep their normal warnings.
+
 | Label | Meaning |
 | --- | --- |
 | Found | Windows supplied a value that is not recognized as a default |
@@ -90,13 +92,19 @@ Repeated device-instance rows count as one conflict, with their distinct status 
 
 1. Finish the scan you want to keep.
 2. Choose **[6]** to create a TXT and JSON pair.
-3. Choose **[8]** to open `HWID-Reports/` beside `hwid.bat`.
+3. Choose **[8]** to open the report folder and review saved-snapshot storage status.
 
 TXT is for reading. JSON is for comparison. Saves use new filenames rather than overwriting previous reports. Rescanning does not save automatically.
 
 After saving, the checker immediately reports how many older usable snapshots it found for this PC. The new save remains a capture of the active scan; saving twice does not create a new hardware scan.
 
 If the normal `HWID-Reports` folder cannot be written, the checker tries `%LOCALAPPDATA%\HWID Checker\HWID-Reports`. The save screen shows the actual location and explains fallback use. Both files are verified/published as a pair; malformed report data does not trigger a storage retry. **[8]** opens the last successful save's folder in the current session.
+
+**[8] Saved reports / storage** shows readable JSON snapshots, older usable baselines, TXT + JSON pairs, JSON-only snapshots, and files that could not be read. Its section shortcuts are **1** Summary, **2** Folders, **3** Files not read, and **4** TXT only. JSON alone can be compared. TXT alone stays readable, but needs its matching JSON for comparison. Files are preserved; this screen does not repair or delete them.
+
+Storage messages distinguish access blocked (**STORE-01**), unavailable/in-use files (**STORE-02**), invalid encoding (**STORE-03**), damaged data (**STORE-04**), the 64 MB import limit (**STORE-05**) and unsupported versions (**STORE-06**). Each lists its path and next step. A folder-opening failure (**STORE-08**) leaves the storage results available. Close any writer or wait for sync, then reopen Main **[8]** or refresh the comparison picker to detect recovered files.
+
+The library remains local TXT/JSON files, without a separate database. Imports read strict UTF-8, with or without a BOM, and support BOM-marked UTF-16/UTF-32 exports. Invalid byte sequences are rejected instead of silently changing identifier text.
 
 ## Find which numbers changed
 
@@ -107,13 +115,17 @@ If the normal `HWID-Reports` folder cannot be written, the checker tries `%LOCAL
 
 Pasted paths can use matching single or double quotes. Brackets, apostrophes and ampersands are treated as literal filename characters. The checker does not execute pasted text or expand shell commands.
 
-The picker searches the launcher's report folder, the per-user fallback folder, and the adjacent installation's report folder when a parent `hwid.bat` exists. Renamed JSON snapshots are included. Damaged/unsupported files are omitted with a count; a manual path still exposes an individual file's error.
+The picker searches the launcher's report folder, the per-user fallback folder, and the adjacent installation's report folder when a parent `hwid.bat` exists. Renamed JSON snapshots are included. Files that cannot be read or validated are omitted with a count; Main **[8]** explains each failure. A manual path also exposes an individual file's error.
 
 Five snapshots appear per page: **1–5** select a file, **6** opens the next page, **7** returns to the previous page, **8** refreshes detection, **9** accepts a path, and **0** or blank goes back. Older captures from the same computer appear first. Capture timestamps determine age, so copying a file does not make an old capture current. A **SAME CAPTURE TIME** label is a timestamp match, not proof that all IDs match. Newer, other-PC, unknown-time and no-usable-ID snapshots are labeled separately.
+
+Colors reinforce these labels: **green** marks older usable baselines from this PC; **gray** marks the same capture time; **yellow** asks you to check context or retry; **red** marks invalid file data in the storage screen. Color never replaces the written status.
 
 Choosing a TXT report automatically uses the JSON with the same filename stem. TXT without its JSON companion cannot be used for comparison. Results provide **1 Summary / 2 ID changes / 3 Not compared** shortcuts, full OLD/NEW values and exact character differences. Same-time and newer-than-current baselines receive a time-order explanation.
 
 Comparison also identifies added/removed records. Missing or duplicate matching keys can prevent a reliable match; the checker explains skipped comparisons rather than guessing. A changed device-instance ID can reflect a different port or Windows device record.
+
+Capitalization of recognized JSON section/field names does not count as an ID change. Actual identifier values remain case-sensitive and keep leading zeros. If a system or firmware section contains multiple records without a reliable device key, its comparison is skipped and Main **[4]** shows the ambiguity; a single record remains comparable. Raw saved files are preserved.
 
 For two consecutive scans in the same session, **[9] > [3]** reopens the last rescan comparison. Save with **[6]** if you need a snapshot after closing.
 
