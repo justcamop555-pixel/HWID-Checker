@@ -344,7 +344,7 @@ try {
         if([Console]::CursorVisible){throw 'Typing cursor was visible while a scan query was running.'}
         if($ClassName -eq 'MSFT_Disk'){return [pscustomobject]@{Number=0;SerialNumber='DISK1';PartitionStyle=2;Guid='DISK1';Size=1GB}}
         if($ClassName -eq 'MSFT_Partition'){return [pscustomobject]@{DiskNumber=0;PartitionNumber=1;Guid='PART1';DriveLetter='C';AccessPaths=@('PATH');Size=1GB}}
-        [pscustomobject]@{Name='Fixture';DeviceID='CPU0';SerialNumber='SERIAL1';UUID='SYSTEM1';ProcessorId='CPU1';TotalPhysicalMemory=8GB}
+        [pscustomobject]@{Name='Fixture';Caption='Windows fixture';InstanceName='MONITOR1';DeviceID='CPU0';SerialNumber='SERIAL1';UUID='SYSTEM1';ProcessorId='CPU1';TotalPhysicalMemory=8GB}
     }
     function Get-NetAdapter {param([switch]$IncludeHidden) [pscustomobject]@{Name='NIC';InterfaceGuid='NIC1';MacAddress='001122334455';HardwareInterface=$false}}
     function Get-ItemProperty {param($LiteralPath,$Name) [pscustomobject]@{MachineGuid='WINDOWS1'}}
@@ -470,6 +470,7 @@ try {
     if([Console]::WindowTop -ne 0){throw 'Rescan with an extended refresh did not open at its summary.'}
     $result | Add-Member NoteProperty RescanRefreshedExtendedCatalog $true
     Reset-UiPage
+    $animationPreference=$env:HWID_NO_ANIMATION;$env:HWID_NO_ANIMATION=$null
     $animationLeft=[Console]::CursorLeft; $animationTop=[Console]::CursorTop
     $animationVisible=[Console]::CursorVisible
     $animationForeground=[Console]::ForegroundColor;$animationBackground=[Console]::BackgroundColor
@@ -495,10 +496,26 @@ try {
     Show-UiTransition 'Back'
     if([Console]::CursorVisible){throw 'Animation exposed a previously hidden cursor.'}
     [Console]::CursorVisible=$animationVisible
-    [void][HwidConsoleDisplay]::RestoreRegion($fixture)
     $result | Add-Member NoteProperty AnimationTextAndColorsRestored $true
     $result | Add-Member NoteProperty AnimationInputModesPreserved $true
     $result | Add-Member NoteProperty ThreeTransitionsMs $timer.ElapsedMilliseconds
+    $script:animationInputChecks=0
+    $skipTimer=[Diagnostics.Stopwatch]::StartNew()
+    Show-UiTransition Next 'Quick IDs' -PendingInput {$script:animationInputChecks++;$script:animationInputChecks -ge 4}
+    $skipTimer.Stop()
+    if($script:animationInputChecks -ne 4 -or $skipTimer.ElapsedMilliseconds -gt 180){throw 'Queued input did not shorten the animation.'}
+    $actualCells=[HwidConsoleDisplay]::CaptureRegion($fixture.Left,$fixture.Top,$fixture.Width,$fixture.Height)
+    for($cell=0;$cell -lt $expectedCells.Cells.Length;$cell++){
+        if($expectedCells.Cells[$cell].Character -ne $actualCells.Cells[$cell].Character -or $expectedCells.Cells[$cell].Attributes -ne $actualCells.Cells[$cell].Attributes){throw 'Input-skipped animation did not restore the original text/colors.'}
+    }
+    if([Console]::CursorVisible -ne $animationVisible -or [HwidConsoleDisplay]::ReadInputMode() -ne $animationInputMode){throw 'Input-skipped animation changed cursor visibility or input modes.'}
+    $queuedKeys=New-Object 'System.Collections.Generic.Queue[string]';$queuedKeys.Enqueue('2')
+    Show-UiTransition Back -PendingInput {$queuedKeys.Count -gt 0}
+    if($queuedKeys.Count -ne 1 -or $queuedKeys.Dequeue() -ne '2'){throw 'Animation consumed a pending navigation key.'}
+    $result | Add-Member NoteProperty AnimationInputSkipRestored $true
+    $result | Add-Member NoteProperty AnimationQueuedKeyPreserved $true
+    [void][HwidConsoleDisplay]::RestoreRegion($fixture)
+    $env:HWID_NO_ANIMATION=$animationPreference
     $result | Add-Member NoteProperty ReportHistoryRows $history
     $result | Add-Member NoteProperty RestoredBufferRows ([Console]::BufferHeight)
     $result | ConvertTo-Json | Set-Content -LiteralPath '__OUTPUT__' -Encoding UTF8

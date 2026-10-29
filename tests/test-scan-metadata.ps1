@@ -29,7 +29,7 @@ function Get-CimInstance {
             return
         }
     }
-    [pscustomobject]@{Name='Fixture';DeviceID='CPU0';DeviceLocator='A1';SerialNumber='SERIAL-1';UUID='SYSTEM-1';ProcessorId='CPU-1';TotalPhysicalMemory='bad memory';Capacity=$false;Size=-1024;FreeSpace=0;DriveType=3;FileSystem='NTFS';VolumeSerialNumber='VOL-1';PNPDeviceID='PCI\NODE';HardwareID=@('MODEL');ConfigManagerErrorCode=0}
+    [pscustomobject]@{Name='Fixture';Caption='Windows fixture';DeviceID='CPU0';DeviceLocator='A1';SerialNumber='SERIAL-1';UUID='SYSTEM-1';ProcessorId='CPU-1';TotalPhysicalMemory='bad memory';Capacity=$false;Size=-1024;FreeSpace=0;DriveType=3;FileSystem='NTFS';VolumeSerialNumber='VOL-1';PNPDeviceID='PCI\NODE';HardwareID=@('MODEL');ConfigManagerErrorCode=0}
 }
 function Get-NetAdapter {param([switch]$IncludeHidden) [pscustomobject]@{Name='NIC';MacAddress='001122334455';HardwareInterface=$false;InterfaceGuid='NIC-1'}}
 function Get-ItemProperty {param($LiteralPath,$Name) [pscustomobject]@{MachineGuid='MACHINE-1'}}

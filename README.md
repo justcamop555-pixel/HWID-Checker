@@ -2,7 +2,7 @@
 
 Read local Windows hardware identifiers, save a snapshot, and see which IDs changed between scans. The checker is read-only: it does not change hardware identifiers or device settings.
 
-**Current version: 3.54** · Windows · PowerShell 5.1 or newer
+**Current version: 3.58** · Windows · PowerShell 5.1 or newer
 
 ## Start here
 

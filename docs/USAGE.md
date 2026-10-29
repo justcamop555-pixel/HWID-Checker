@@ -10,6 +10,12 @@ After the startup scan, the finished scan stays visible until you press **Enter*
 
 If a provider rejects requested fields, the checker retries once using the properties that provider exposes. It keeps the same device filter, namespace and reader. **Compatible read** means that retry succeeded; unsupported fields can still be missing. The finish screen counts recovered sections, and **[5] Full inventory report** includes retry diagnostics under Scan timing. These details are also saved in TXT/JSON. Access failures, timeouts and missing providers keep their normal warnings.
 
+If live progress updates fail, the query continues and keeps its hardware results. The finish screen reports affected sections, and **[5] Scan timing** retains a separate progress-display warning. Provider-read failures still use their own READ codes.
+
+A returned record containing only empty fields receives **READ-06**, instead of inflating readable-section coverage. Real zero/false values remain data; an identifiable component with an omitted serial remains readable and its missing ID is shown separately. In the present-device scan, malformed hardware/compatible ID-list entries are excluded from usable model IDs, retained in raw fields in **[5]**, and listed in **[4]** for review. Valid neighboring IDs and other devices are preserved.
+
+Network fallback scans distinguish operational states such as Up, Down, Dormant and Not present. Invalid status metadata stays unknown, with the raw value retained. When a fallback reader supplies multiple distinct addresses without identifying the current one, Current MAC remains unresolved and its comparison is skipped. The full address list and **Current MAC read status** appear in **[5]** and saved reports. A reported permanent address stays a separate identifier.
+
 | Label | Meaning |
 | --- | --- |
 | Found | Windows supplied a value that is not recognized as a default |
@@ -98,6 +104,8 @@ TXT is for reading. JSON is for comparison. Saves use new filenames rather than 
 
 After saving, the checker immediately reports how many older usable snapshots it found for this PC. The new save remains a capture of the active scan; saving twice does not create a new hardware scan.
 
+The save screen distinguishes **Computer / scan** from **Saved at** and shows normal-section read coverage. `SavedAt` is added only to the exported copy; the active scan's original capture time and number stay unchanged. Saving a partial capture remains available for diagnosis. Both final files are checked against the requested contents before **SAVED** appears; a handled verification failure rolls back the new pair where possible and reports any cleanup needed.
+
 If the normal `HWID-Reports` folder cannot be written, the checker tries `%LOCALAPPDATA%\HWID Checker\HWID-Reports`. The save screen shows the actual location and explains fallback use. Both files are verified/published as a pair; malformed report data does not trigger a storage retry. **[8]** opens the last successful save's folder in the current session.
 
 **[8] Saved reports / storage** shows readable JSON snapshots, older usable baselines, TXT + JSON pairs, JSON-only snapshots, and files that could not be read. Its section shortcuts are **1** Summary, **2** Folders, **3** Files not read, and **4** TXT only. JSON alone can be compared. TXT alone stays readable, but needs its matching JSON for comparison. Files are preserved; this screen does not repair or delete them.
@@ -141,6 +149,7 @@ Hidden and remembered are different properties, and their groups can overlap. A 
 - Reports in the checker's readable console: scroll with the wheel, arrows, Page Up/Down or Home/End. Use any numbered shortcuts printed on that page.
 - Report pages: Enter returns to the menu. Where the footer offers **0**, that also returns.
 - Navigation animations can be disabled by setting `HWID_NO_ANIMATION=1` before launching.
+- Next/Back use directional trails with a moving border; Exit closes toward the center. Back is quickest. Typing during a transition skips the remaining motion and leaves the key available for the next input step. Narrow windows keep the action label visible.
 
 ## Compatibility and common problems
 

@@ -2,6 +2,43 @@
 
 [Back to the main README](../README.md)
 
+## 3.58
+
+- Added directional moving borders and clearer two-stage arrow trails to Next/Back. Exit closes both the track and border toward the center before Goodbye. Existing console colors and the three-row animation area are preserved.
+- Shortened navigation timing: Back 160 ms, Next 200 ms and Exit 260 ms. Queued keyboard input skips the remaining motion without reading or discarding that input.
+- Kept action labels visible in narrow windows and honored explicit Back destinations. Frame geometry remains bounded and destination controls are sanitized.
+- Retained original text, per-cell colors, cursor visibility, viewport and input modes after completed or skipped animations. Shared/redirected consoles and `HWID_NO_ANIMATION=1` continue to skip motion.
+- Validation: 603 existing regressions and 38 animation checks on Windows PowerShell 5.1 and PowerShell 7, plus native console checks covering completed/input-skipped transitions, exact cell restoration, bounded history and preserved queued input.
+
+## 3.57
+
+- Stopped counting records containing only null, blank/null-padded strings or empty lists as readable hardware. These receive READ-06; genuine zero/false metadata and devices with a name/key but omitted serials remain readable.
+- Validated the present-device scan's hardware/compatible ID lists. Valid strings are retained, malformed entries stay in separate raw fields, and affected nodes get explicit scan/review messages without discarding the remaining device inventory.
+- Fixed model-list counts accepting non-string values in older/custom records. Counts now reflect nodes with usable model strings, independently of device-instance IDs.
+- Preserved singleton string lists and exact valid ID text across direct collection, live-progress collection and saved snapshot round trips.
+- Validation: 918 synthetic checks under Windows PowerShell 5.1 and PowerShell 7.6.5, including 27 new scan-content checks, plus native console and read-only scan/rescan checks. Existing full-scan fixtures now populate the requested OS/monitor/partition fields so they continue to represent successful provider reads under the stricter validation.
+
+Microsoft documents [Win32_PnPEntity HardwareID and CompatibleID](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-pnpentity) as string arrays. Empty model-ID lists can be normal and do not by themselves create a warning.
+
+## 3.56
+
+- Added final TXT/JSON content verification before announcing a successful save. Both files are compared with the requested content in bounded chunks; missing, changed or unreadable files fail the save and trigger existing rollback/cleanup handling. Existing report files are never overwritten.
+- Saved a separate `SavedAt` timestamp on a copy of the active report. The scan capture time, scan number and live identifiers remain unchanged, so repeated saves do not become new scans or manufacture comparison differences.
+- Fixed copied arrays exporting as value/Count wrapper objects on Windows PowerShell 5.1 by allocating plain object arrays. Device records keep the same JSON structure across both supported runtimes.
+- Organized save results around verified files, scan/save time, readable normal-section coverage and the actual destination. Partial captures can still be saved for diagnosis, with coverage shown explicitly.
+- Prevented live progress callback failures from discarding valid hardware results. A failed callback is disabled for the rest of that query, its diagnostic stays separate in scan timing, and the next query starts with clean feedback state. Provider errors keep their own classification.
+- Validation: 891 synthetic checks under Windows PowerShell 5.1 and PowerShell 7.6.5, including 22 save/scan-handling regressions, plus native console and read-only scan/rescan checks.
+
+## 3.55
+
+- Fixed network fallback status labels for numeric strings, including padded values. Booleans, negative/fractional values and out-of-range codes remain explicitly invalid rather than becoming Up/Down. Modern operational states and legacy connection states use their own mappings.
+- Stopped treating the first of multiple distinct reported network addresses as the current MAC. An explicit current address wins; a single distinct list address can be used; an unresolved multiple-address list remains missing for comparison, with the full list and reason retained.
+- Ignored non-string address-list entries when selecting a MAC while preserving the original list. Equivalent hex addresses with different separators/case do not create false ambiguity. Existing permanent MAC values remain separate.
+- Preserved the raw modern interface status code in full reports and snapshots. Both direct and live-progress readers use the same helpers.
+- Validation: 869 synthetic checks on Windows PowerShell 5.1 and PowerShell 7.6.5, native console checks, real network fallback agreement between both scan modes, and a read-only 17-section scan/rescan with a refreshed extended catalog.
+
+Network property types and status meanings follow Microsoft's [MSFT_NetAdapter](https://learn.microsoft.com/en-us/windows/win32/fwp/wmi/netadaptercimprov/msft-netadapter) and [Win32_NetworkAdapter](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-networkadapter) references. When fallback data does not identify a current address, the checker treats multiple distinct values as unresolved.
+
 ## 3.54
 
 - Fixed false identifier changes when imported JSON uses different capitalization for recognized section or field names. Comparison rows now use stable schema names; raw imported data and identifier values retain their original spelling, letter case and leading zeros.

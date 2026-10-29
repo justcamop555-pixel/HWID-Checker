@@ -30,7 +30,7 @@ function Get-CimInstance {
         }
     }
     if($ClassName -eq 'RetryFails'){throw [Runtime.InteropServices.COMException]::new('Localized projected property failure',[Convert]::ToInt32('80041017',16))}
-    foreach($id in @('00001','00002')){[pscustomobject]@{SerialNumber=$id;DeviceID=$id;Namespace=$Namespace;Filter=$Filter;Timeout=$OperationTimeoutSec;Properties=$Property;Enabled=$false;Paths=@('P1','P2')}}
+    foreach($id in @('00001','00002')){[pscustomobject]@{Name='Fixture';Caption='Windows fixture';InstanceName='MONITOR1';DiskNumber=0;PartitionNumber=1;TotalPhysicalMemory=8GB;SerialNumber=$id;DeviceID=$id;Namespace=$Namespace;Filter=$Filter;Timeout=$OperationTimeoutSec;Properties=$Property;Enabled=$false;Paths=@('P1','P2')}}
 }
 function Get-NetAdapter {param([switch]$IncludeHidden) [pscustomobject]@{Name='Fixture NIC';MacAddress='001122334455';HardwareInterface=$false}}
 function Get-ItemProperty {param($LiteralPath,$Name) [pscustomobject]@{MachineGuid='FIXTURE-GUID'}}

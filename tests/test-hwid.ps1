@@ -82,7 +82,7 @@ $rejected = $false
 try { Read-SavedReport $badPath | Out-Null } catch { $rejected = $true }
 Assert $rejected 'Unsupported report is rejected'
 # Exercise the entire script without reading or exporting real device identifiers.
-function Get-CimInstance { param($ClassName,$Filter,$OperationTimeoutSec) if($ClassName -eq 'MSFT_Disk'){throw 'Simulated access denied'}; if($ClassName -eq 'MSFT_Partition'){return [pscustomobject]@{DiskNumber=0;PartitionNumber=1;Guid='PARTITION-TEST';AccessPaths=@('VOLUME-TEST');Size=1GB}}; [pscustomobject]@{SerialNumber='MOCK'; DeviceID='MOCK'; UUID='MOCK'; TotalPhysicalMemory=8GB} }
+function Get-CimInstance { param($ClassName,$Filter,$OperationTimeoutSec) if($ClassName -eq 'MSFT_Disk'){throw 'Simulated access denied'}; if($ClassName -eq 'MSFT_Partition'){return [pscustomobject]@{DiskNumber=0;PartitionNumber=1;Guid='PARTITION-TEST';AccessPaths=@('VOLUME-TEST');Size=1GB}}; [pscustomobject]@{SerialNumber='MOCK'; DeviceID='MOCK'; UUID='MOCK'; TotalPhysicalMemory=8GB;DiskNumber=0;PartitionNumber=1;Name='MOCK';Caption='MOCK';InstanceName='MONITOR-MOCK'} }
 function Get-Disk { throw 'Simulated access denied' }
 function Get-Partition { [pscustomobject]@{DiskNumber=0;PartitionNumber=1;Guid='PARTITION-TEST';AccessPaths=@('VOLUME-TEST');Size=1GB} }
 function Get-NetAdapter { param([switch]$IncludeHidden) [pscustomobject]@{Name='MOCK'; MacAddress='00:00:00:00:00:00'; InterfaceGuid='MOCK'} }
@@ -801,7 +801,7 @@ try {
         if($ClassName -eq 'Win32_Processor' -and $script:rescanFixture -eq 3){throw 'Simulated CPU provider failure'}
         if($ClassName -eq 'MSFT_Disk'){return [pscustomobject]@{Number=0;SerialNumber='DISK1';Guid='DISK-GUID';UniqueId='DISK-ID';PartitionStyle=2;BusType=17;Size=1GB}}
         if($ClassName -eq 'MSFT_Partition'){return [pscustomobject]@{DiskNumber=0;PartitionNumber=1;DriveLetter='C';Guid='PART1';AccessPaths=@('PATH1');Size=1GB}}
-        [pscustomobject]@{Name='Fixture';DeviceID='CPU0';Index=0;DeviceLocator='A1';BankLabel='B1';SerialNumber=('ID000'+$script:rescanFixture);ProcessorId=('ID000'+$script:rescanFixture);UUID='SYSTEM1';TotalPhysicalMemory=8GB;InstanceName='MONITOR1'}
+        [pscustomobject]@{Name='Fixture';Caption='Windows fixture';InstanceName='MONITOR1';DiskNumber=0;PartitionNumber=1;DeviceID='CPU0';Index=0;DeviceLocator='A1';BankLabel='B1';SerialNumber=('ID000'+$script:rescanFixture);ProcessorId=('ID000'+$script:rescanFixture);UUID='SYSTEM1';TotalPhysicalMemory=8GB}
     }
     function Get-NetAdapter {param([switch]$IncludeHidden) [pscustomobject]@{Name='Fixture NIC';InterfaceGuid='NIC1';MacAddress='001122334455';HardwareInterface=$false}}
     function Get-DriverHardwareIds {
@@ -929,7 +929,7 @@ try {
     function Get-CimInstance {
         param($ClassName,$Filter,$OperationTimeoutSec,$Property,$Namespace)
         if($ClassName -eq 'MSFT_Disk'){throw 'Simulated storage failure'}
-        [pscustomobject]@{DeviceID='MOCK';UUID='MOCK';SerialNumber='MOCK';TotalPhysicalMemory=8GB}
+        [pscustomobject]@{DeviceID='MOCK';UUID='MOCK';SerialNumber='MOCK';TotalPhysicalMemory=8GB;DiskNumber=0;PartitionNumber=1;Name='MOCK';Caption='MOCK';InstanceName='MONITOR-MOCK'}
     }
     $workerSnapshot=Invoke-HardwareScan 4 -UseWorker $true
     Assert ($workerSnapshot.Completed -and $workerSnapshot.Inventory['Report info'].QueryMode -eq 'Live progress' -and $workerSnapshot.Inventory['Scan timing'].Count -eq 17) 'The worker path completes the full seventeen-section inventory with collection helpers loaded'
@@ -1086,7 +1086,7 @@ try {
     Assert (@($script:rendered | Where-Object {$_.Text -match '^\s+Finished:.*extended READ'}).Count -eq 1) 'The scan finish line explicitly confirms a requested extended read'
     function Get-ExtendedDeviceInventory {throw 'Simulated extended refresh failure'}
     $completionCim=(Get-Item Function:Get-CimInstance).ScriptBlock
-    function Get-CimInstance {param($ClassName,$Filter,$OperationTimeoutSec,$Property,$Namespace) [pscustomobject]@{Name='Completion fixture';DeviceID='MOCK';PNPDeviceID='USB\COMPLETE';UUID='MOCK';SerialNumber='MOCK';TotalPhysicalMemory=8GB}}
+    function Get-CimInstance {param($ClassName,$Filter,$OperationTimeoutSec,$Property,$Namespace) [pscustomobject]@{Name='Completion fixture';Caption='Windows fixture';InstanceName='MONITOR1';DiskNumber=0;PartitionNumber=1;DeviceID='MOCK';PNPDeviceID='USB\COMPLETE';UUID='MOCK';SerialNumber='MOCK';TotalPhysicalMemory=8GB}}
     $script:rendered.Clear()
     try {$fullPartial=Invoke-HardwareScan 8 -IncludeExtended $true}finally {Set-Item Function:Get-CimInstance -Value $completionCim}
     Assert ($fullPartial.Completed -and -not $fullPartial.Inventory.Contains('Extended device inventory') -and $fullPartial.Inventory['Report info'].ExtendedStatus -eq 'Unavailable') 'A failed extended refresh keeps new normal data and cannot attach stale extended records'

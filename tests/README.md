@@ -19,6 +19,10 @@ Tests are optional for users. Run them from the repository root in a Windows Pow
 | `test-scan-metadata.ps1` | 41 checks: optional storage/partition/memory/monitor conversions, raw-value retention, direct/worker scan agreement and report round trips | No |
 | `test-scan-recovery.ps1` | 34 checks: bounded provider-property retry, preserved filters/timeouts, partial-output isolation, error classification, full scans and saved recovery metadata in both scan modes | No |
 | `test-comparison-identity.ps1` | 34 checks: case-varied schema names, exact identifier-value changes, missing fields and ambiguous system/firmware records | No |
+| `test-network-scan.ps1` | 41 checks: fallback status types, ambiguous/current addresses, malformed optional metadata, raw-value preservation and snapshot comparisons in both scan modes | No |
+| `test-save-scan-handling.ps1` | 22 checks: final-file verification, corruption/rollback, Unicode, scan/save timestamps, copied-array structure and progress-display failure isolation | No |
+| `test-scan-content.ps1` | 27 checks: empty projected records, derived labels, zero/false values, mixed model-ID lists, raw-value retention, scan counts and review findings in both scan modes | No |
+| `test-animation.ps1` | 38 checks: moving borders, direction/trails, narrow labels, bounded frames, destinations, timing and disabled-animation behavior | No |
 | `test-runtime-launchers.ps1` | Eight launcher/runtime cases, including missing/old/restricted engines and the PS1 loader | No |
 | `test-readable-console.ps1` | Native console layout, snapshot picker/storage navigation, comparison navigation, scan continuation, scrolling, history, input modes, overview states and animation restoration | No; opens a temporary console |
 | `test-readable-startup.ps1` | Actual launcher, scan continuation, display setup, invalid input and held Enter | Yes; opens a temporary console |
