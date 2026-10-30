@@ -65,13 +65,31 @@ The startup scan reads **17 sections**. Fields depend on the hardware, firmware,
 
 ## Screenshots
 
-Screenshots have not yet been added to the repository. These placeholders identify the intended captures; any future images should redact identifying values.
+The following captures show **v3.59**. Identifying values are partially redacted; counts and findings are examples from one PC.
 
-| View | Screenshot placeholder |
-| --- | --- |
-| Main menu and scan overview | _Pending: dashboard, scan coverage, and review totals_ |
-| Hardware identifiers | _Pending: grouped serial/ID view using redacted values_ |
-| Snapshot comparison | _Pending: previous/current values and character differences using synthetic data_ |
+### Main menu
+
+Scan status, review totals, and numbered shortcuts for inspecting, saving, comparing, and rescanning.
+
+![HWID Checker v3.59 main menu with scan status and numbered navigation options](docs/images/main-menu.png)
+
+<details>
+<summary><strong>Completed scan</strong> — section results and read coverage</summary>
+
+The finished scan lists all 17 sections, identifier counts, query timings, and the prompt to continue.
+
+![Completed 17-section HWID scan showing READ and CHECK results, timings, and the Enter-to-continue prompt](docs/images/scan-results.png)
+
+</details>
+
+<details>
+<summary><strong>Snapshot comparison</strong> — previous and current identifiers</summary>
+
+Comparison results show OLD/NEW values and character differences. A difference reflects the captured data; it does not by itself establish that physical hardware was replaced.
+
+![HWID snapshot comparison showing partially redacted previous and current values with exact character differences](docs/images/snapshot-comparison.png)
+
+</details>
 
 ## Installation
 
@@ -219,9 +237,9 @@ Read the displayed `COMPAT` message, confirm an approved PowerShell 5.1/7 runtim
 
 ## Roadmap
 
-The features above are implemented. The following are **proposed future improvements**, not available features or scheduled commitments:
+Completed work is checked. Unchecked items are **proposed future improvements**, not available features or scheduled commitments:
 
-- [ ] Add current screenshots with identifiers redacted or replaced by synthetic values.
+- [x] Add current screenshots with identifying values partially redacted.
 - [ ] Expand the documented Windows-build and hardware validation matrix.
 - [ ] Automate synthetic regression checks in Windows CI.
 - [ ] Publish a versioned JSON report schema and example fixtures.
