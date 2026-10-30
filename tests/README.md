@@ -23,6 +23,7 @@ Tests are optional for users. Run them from the repository root in a Windows Pow
 | `test-save-scan-handling.ps1` | 22 checks: final-file verification, corruption/rollback, Unicode, scan/save timestamps, copied-array structure and progress-display failure isolation | No |
 | `test-scan-content.ps1` | 27 checks: empty projected records, derived labels, zero/false values, mixed model-ID lists, raw-value retention, scan counts and review findings in both scan modes | No |
 | `test-animation.ps1` | 38 checks: moving borders, direction/trails, narrow labels, bounded frames, destinations, timing and disabled-animation behavior | No |
+| `test-pnp-fallback.ps1` | 29 checks: present-only fallback, alias mapping, preserved IDs/source, empty/missing readers, partial errors, access/timeouts and localized typed failures in both scan modes | No |
 | `test-runtime-launchers.ps1` | Eight launcher/runtime cases, including missing/old/restricted engines and the PS1 loader | No |
 | `test-readable-console.ps1` | Native console layout, snapshot picker/storage navigation, comparison navigation, scan continuation, scrolling, history, input modes, overview states and animation restoration | No; opens a temporary console |
 | `test-readable-startup.ps1` | Actual launcher, scan continuation, display setup, invalid input and held Enter | Yes; opens a temporary console |

@@ -14,6 +14,8 @@ If live progress updates fail, the query continues and keeps its hardware result
 
 A returned record containing only empty fields receives **READ-06**, instead of inflating readable-section coverage. Real zero/false values remain data; an identifiable component with an omitted serial remains readable and its missing ID is shown separately. In the present-device scan, malformed hardware/compatible ID-list entries are excluded from usable model IDs, retained in raw fields in **[5]**, and listed in **[4]** for review. Valid neighboring IDs and other devices are preserved.
 
+If the normal Win32 present-device query is unsupported or returns no records, the checker tries **Get-PnpDevice -PresentOnly** when available. Successful recovery is marked **fallback reader**, with its source in **[5]** and saved reports. The normal scan keeps its present-device scope; **[9] > [4]** remains the separate scan for known hidden/disconnected records. Access/timeouts stay explicit, and an unavailable fallback never becomes an empty successful scan. Older systems without either usable reader retain the failure and recovery guidance.
+
 Network fallback scans distinguish operational states such as Up, Down, Dormant and Not present. Invalid status metadata stays unknown, with the raw value retained. When a fallback reader supplies multiple distinct addresses without identifying the current one, Current MAC remains unresolved and its comparison is skipped. The full address list and **Current MAC read status** appear in **[5]** and saved reports. A reported permanent address stays a separate identifier.
 
 | Label | Meaning |

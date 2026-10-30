@@ -719,7 +719,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.58' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.59' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -1422,13 +1422,48 @@ function Get-DeviceIdListInfo($Value) {
     }
     [pscustomobject]@{Values=@($values.ToArray());InvalidCount=$invalid;Raw=$Value}
 }
+function Get-PresentDeviceRecords {
+    try{
+        $output=@(Get-HwidInstance -OperationTimeoutSec 20 Win32_PnPEntity -Filter 'Present = True' -Property Name,Manufacturer,PNPClass,ClassGuid,Service,Present,PNPDeviceID,HardwareID,CompatibleID,ConfigManagerErrorCode 2>&1)
+        $errors=@($output | Where-Object {$_ -is [System.Management.Automation.ErrorRecord]})
+        if($errors.Count){throw $errors[0]}
+        $devices=@($output | Where-Object {$null -ne $_})
+        if(-not $devices.Count){throw 'No present device records returned by the Win32 reader.'}
+        return $devices
+    }catch{
+        $failure=Get-ScanFailureInfo $_
+        if($failure.Code -notin @('READ-03','READ-04') -and -not (Test-ProjectionReadFailure $_)){throw}
+        $primaryError=$_.Exception.Message
+    }
+    try{
+        if(-not (Get-Command Get-PnpDevice -ErrorAction SilentlyContinue)){throw [NotSupportedException]::new('Get-PnpDevice present-only reader is not supported on this runtime.')}
+        $output=@(Get-PnpDevice -PresentOnly -ErrorAction Stop 2>&1)
+        $errors=@($output | Where-Object {$_ -is [System.Management.Automation.ErrorRecord]})
+        if($errors.Count){throw $errors[0]}
+        $devices=@($output | Where-Object {$null -ne $_ -and -not ($_.Present -is [bool] -and -not $_.Present)})
+        if(-not $devices.Count){throw 'No present device records returned by the fallback reader.'}
+        $rows=@(foreach($device in $devices){
+            $name=if(-not [string]::IsNullOrWhiteSpace([string]$device.Name)){$device.Name}else{$device.FriendlyName}
+            $class=if(-not [string]::IsNullOrWhiteSpace([string]$device.PNPClass)){$device.PNPClass}else{$device.Class}
+            $id=if(-not [string]::IsNullOrWhiteSpace([string]$device.PNPDeviceID)){$device.PNPDeviceID}else{$device.InstanceId}
+            [pscustomobject]@{Name=$name;Manufacturer=$device.Manufacturer;PNPClass=$class;ClassGuid=$device.ClassGuid;Service=$device.Service;Present=$true;PNPDeviceID=$id;HardwareID=$device.HardwareID;CompatibleID=$device.CompatibleID;ConfigManagerErrorCode=$device.ConfigManagerErrorCode;CollectionSource='Get-PnpDevice present-only fallback'}
+        })
+        if($null -ne $script:hwidQueryRecoveries){$script:hwidQueryRecoveries.Add([pscustomobject]@{Class='Win32_PnPEntity';Namespace='root/cimv2';Method='Get-PnpDevice present-only fallback';PrimaryFailure=$primaryError})}
+        return $rows
+    }catch{
+        $exception=[Exception]::new(('Present device inventory unavailable. Primary: '+$primaryError+' / Fallback: '+$_.Exception.Message),$_.Exception)
+        $exception.Data['HwidFallbackFailure']=$_.Exception.Message
+        throw [System.Management.Automation.ErrorRecord]::new($exception,'Hwid.PresentDeviceFallbackFailed',$_.CategoryInfo.Category,$_.TargetObject)
+    }
+}
 function Get-DriverHardwareIds {
     # All present device classes, including physical, virtual, system and peripheral nodes.
-    foreach($device in (Get-HwidInstance -OperationTimeoutSec 20 Win32_PnPEntity -Filter 'Present = True' -Property Name,Manufacturer,PNPClass,ClassGuid,Service,Present,PNPDeviceID,HardwareID,CompatibleID,ConfigManagerErrorCode | Sort-Object PNPClass,Name,PNPDeviceID)){
+    foreach($device in (Get-PresentDeviceRecords | Sort-Object PNPClass,Name,PNPDeviceID)){
         $hardware=Get-DeviceIdListInfo $device.HardwareID;$compatible=Get-DeviceIdListInfo $device.CompatibleID
         $row=[ordered]@{Name=$device.Name;Manufacturer=$device.Manufacturer;PNPClass=$device.PNPClass;ClassGuid=$device.ClassGuid;Service=$device.Service;Present=$device.Present;DeviceInstanceId=$device.PNPDeviceID;HardwareID=$hardware.Values;CompatibleID=$compatible.Values;ConfigManagerErrorCode=$device.ConfigManagerErrorCode}
         if($hardware.InvalidCount){$row['HardwareIDReadStatus']="Invalid entries ignored: $($hardware.InvalidCount)";$row['RawHardwareID']=$hardware.Raw}
         if($compatible.InvalidCount){$row['CompatibleIDReadStatus']="Invalid entries ignored: $($compatible.InvalidCount)";$row['RawCompatibleID']=$compatible.Raw}
+        if($device.CollectionSource){$row['CollectionSource']=$device.CollectionSource}
         [pscustomobject]$row
     }
 }
@@ -1965,6 +2000,7 @@ function Get-SectionIdentifierInfo($Name,$Records) {
         $repaired=@($Records | Where-Object {$_.HardwareIDReadStatus -match '^Invalid' -or $_.CompatibleIDReadStatus -match '^Invalid'}).Count
         if($repaired){$text+="; $repaired nodes with invalid ID entries"}
         if($review){$text+="; $review review"}
+        if(@($Records | Where-Object CollectionSource -match 'fallback').Count){$text+=' / fallback reader'}
         return [pscustomobject]@{Text=$text;Tag=$(if($review){'CHECK'}else{'READ'});Color=$(if($review){'Warn'}else{'Good'});Found=$nodes;Missing=$missingNodes;Default=0}
     }
     $found=0;$missing=0;$defaults=0
@@ -2047,7 +2083,7 @@ function New-ScanQueryWorker {
         $setup=New-Object Text.StringBuilder
         [void]$setup.AppendLine('$ErrorActionPreference="Stop"')
         # Only collection helpers run here; UI and snapshot state stay on the main thread.
-        foreach($name in @('GiB','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Format-NetworkStatus','Get-NetworkAddressInfo','Get-NetworkIdentifiers','Get-DeviceIdListInfo','Get-DriverHardwareIds','Test-ProjectionReadFailure','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
+        foreach($name in @('GiB','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Format-NetworkStatus','Get-NetworkAddressInfo','Get-NetworkIdentifiers','Get-DeviceIdListInfo','Get-PresentDeviceRecords','Get-DriverHardwareIds','Get-ScanFailureInfo','Test-ProjectionReadFailure','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
             $function=Get-Item -LiteralPath ('Function:\'+$name) -ErrorAction SilentlyContinue
             if($null -ne $function -and -not $function.ModuleName){[void]$setup.AppendLine(('function '+$name+' {'+$function.Definition+'}'))}
         }
@@ -2116,7 +2152,7 @@ function Get-ScanFailureInfo($Failure) {
         if($exception -is [UnauthorizedAccessException] -or $hresult -in @('80070005','80041003') -or $cimStatus -eq 'AccessDenied'){$kind='Access';break}
         if($exception -is [TimeoutException] -or $hresult -eq '800705B4'){$kind='Timeout';break}
         if($exception -is [IO.InvalidDataException]){$kind='Data';break}
-        if($hresult -in @('8004100E','80041010','80041013','800706BA') -or $cimStatus -in @('InvalidClass','InvalidNamespace','NotSupported')){$kind='Provider';break}
+        if($exception -is [NotSupportedException] -or $exception -is [System.Management.Automation.CommandNotFoundException] -or $hresult -in @('8004100E','80041010','80041013','800706BA') -or $cimStatus -in @('InvalidClass','InvalidNamespace','NotSupported')){$kind='Provider';break}
         $exception=$exception.InnerException
     }
     if($kind -eq 'Other') {
@@ -2273,7 +2309,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-Host '  Hardware identity and Windows inventory. Read-only scan.' -ForegroundColor $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.58'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.59'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-Host "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" -ForegroundColor $palette.Muted
@@ -2383,7 +2419,7 @@ $report['Warnings'] = @($warnings.ToArray())
         $extendedNote=if($extraRead){' / extended READ'}else{' / extended NOT READ'}
     }
     Write-PnpValue 'Finished' ("$scanTotal/$scanTotal finished / $read read / $($scanTotal-$read) not read$extendedNote / $($report['Report info'].ScanSeconds)s") $(if($complete){$palette.Good}else{$palette.Warn})
-    if($compatible){Write-PnpValue 'Compatible reads' ("$compatible sections recovered by reading available properties. Main [5] shows retry details.") $palette.Good}
+    if($compatible){Write-PnpValue 'Compatible reads' ("$compatible sections recovered through a compatible reader/query. Main [5] shows details.") $palette.Good}
     if($report['Report info'].ProgressFallbackSections){Write-PnpValue 'Progress display' ("$($report['Report info'].ProgressFallbackSections) sections finished after live display updates failed. Read results are shown above; Main [5] has details.") $palette.Warn}
     $rows=@(Get-IdentifierRows $report)
     return [pscustomobject]@{Inventory=$report;Warnings=$warnings;Identifiers=$rows;Completed=$true}

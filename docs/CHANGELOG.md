@@ -2,6 +2,17 @@
 
 [Back to the main README](../README.md)
 
+## 3.59
+
+- Added a present-device fallback for unsupported Win32 PnP queries/providers or empty results. It uses `Get-PnpDevice -PresentOnly`, maps available instance/name/class aliases, and keeps model/compatible IDs separate. It does not widen the normal scan into disconnected records.
+- Left access and timeout failures with their original guidance, without invoking the new reader. Failed fallback attempts retain both diagnostics and classify the final failure. Two empty readers remain READ-04; missing/unsupported readers remain READ-03.
+- Retained fallback source on device records and the original failure in scan timing/saved reports. Compatible-read completion wording now covers recovered readers as well as property queries.
+- Fixed localized typed `CommandNotFoundException` and `NotSupportedException` being classified as generic read failures.
+- Buffered both present-device readers' error streams so uncaught partial errors cannot trigger an inappropriate retry or publish incomplete rows as success.
+- Validation: 985 synthetic checks under Windows PowerShell 5.1 and PowerShell 7.6.5, real present-only fallback agreement in both collection modes, native console checks and a read-only 17-section scan/rescan with extended refresh.
+
+Microsoft documents the [Win32 PnP Present property](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-pnpentity) as unsupported on some older Windows versions. The fallback follows [Get-PnpDevice -PresentOnly](https://learn.microsoft.com/en-us/powershell/module/pnpdevice/get-pnpdevice), when that command is available.
+
 ## 3.58
 
 - Added directional moving borders and clearer two-stage arrow trails to Next/Back. Exit closes both the track and border toward the center before Goodbye. Existing console colors and the three-row animation area are preserved.
