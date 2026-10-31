@@ -24,10 +24,20 @@ Tests are optional for users. Run them from the repository root in a Windows Pow
 | `test-scan-content.ps1` | 27 checks: empty projected records, derived labels, zero/false values, mixed model-ID lists, raw-value retention, scan counts and review findings in both scan modes | No |
 | `test-animation.ps1` | 38 checks: moving borders, direction/trails, narrow labels, bounded frames, destinations, timing and disabled-animation behavior | No |
 | `test-pnp-fallback.ps1` | 29 checks: present-only fallback, alias mapping, preserved IDs/source, empty/missing readers, partial errors, access/timeouts and localized typed failures in both scan modes | No |
+| `test-reader-attempts.ps1` | 34 checks: non-terminating partial-error recovery, CIM/legacy-WMI property retries, network/extended fallbacks, final failures, scope/metadata preservation and saved comparison consistency in both scan modes | No |
+| `test-extended-refresh.ps1` | 66 checks: contradictory/equal property readings, malformed keys and catalogs, manual/full refresh publication, latest failure details, recovery clearing and snapshot round trips in both scan modes | No |
+| `test-pnp-refresh.ps1` | 33 checks: raw key validation in both present-device readers, manual refresh failure/recovery, strict status values and saved identifier consistency | No |
+| `test-hidden-devices.ps1` | 47 checks: scalar/conflicting problem codes, optional parent isolation, Class aliases, overlapping device views, rendered counts and saved raw metadata | No |
+| `test-instance-aliases.ps1` | 28 checks: Windows DeviceID fallback, blank/NUL aliases, exact ID/source preservation, normalized property/parent matching, malformed keys and saved snapshots | No |
+| `test-device-id-lists.ps1` | 34 checks: normal/extended ID-list parity, exact values, malformed raw retention, repeated/different list observations, primary preference, review and snapshot round trips | No |
+| `test-scan-diagnostics.ps1` | 60 checks: localized WMI HRESULTs/legacy error codes, present-only recovery, access/timeout retry suppression, final-reader diagnostics, padded duplicates, model coverage and saved snapshots | No |
+| `test-device-coverage.ps1` | 36 checks: all-known startup/rescan coverage, progress stages, failed-batch isolation, bounded retries, error containment, raw-ID preservation and snapshot metadata in both scan modes | No |
+| `test-scan-scroll.ps1` | 33 native checks: bounded scan history, viewport-preserving timer/output writes, injected keys during a worker query, follow/pause controls, held Enter, resizing, narrow full scans and cleanup | No; opens a hidden temporary console |
 | `test-runtime-launchers.ps1` | Eight launcher/runtime cases, including missing/old/restricted engines and the PS1 loader | No |
+| `test-startup-recovery.ps1` | 35 checks: CMD preparation order, empty/missing/broken bodies, exit-code preservation, both PS loaders, cleanup failures, bounded diagnostics, fatal traps and actual menu-action recovery on 5.1/7 | No |
 | `test-readable-console.ps1` | Native console layout, snapshot picker/storage navigation, comparison navigation, scan continuation, scrolling, history, input modes, overview states and animation restoration | No; opens a temporary console |
 | `test-readable-startup.ps1` | Actual launcher, scan continuation, display setup, invalid input and held Enter | Yes; opens a temporary console |
-| `test-live-rescan.ps1` | Initial scan, rescan and snapshot publication; optional `-LiveProgress` and `-Extended` | Yes |
+| `test-live-rescan.ps1` | Initial scan, rescan and snapshot publication; `-LiveProgress` tests worker queries, `-Extended` includes the all-known catalog in the initial scan as well as the rescan | Yes |
 | `test-live-extended.ps1` | Actual extended-device catalog and property coverage | Yes |
 
 Live diagnostics print counts/status/timing rather than device identifiers. The console tests need an interactive Windows desktop. The startup diagnostic has a bounded wait and may time out on slower systems.

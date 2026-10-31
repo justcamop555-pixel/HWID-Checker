@@ -792,9 +792,11 @@ $scanPreserved=[pscustomobject]@{
     Net=(Get-Item Function:Get-NetAdapter).ScriptBlock
     Pnp=(Get-Item Function:Get-DriverHardwareIds).ScriptBlock
     Invoke=(Get-Item Function:Invoke-HardwareScan).ScriptBlock
+    Extended=(Get-Item Function:Get-ExtendedDeviceInventory).ScriptBlock
 }
 try {
     $script:rescanFixture=1
+    function Get-ExtendedDeviceInventory {[pscustomobject]@{Devices=@([pscustomobject]@{Name='Synthetic known node';DeviceInstanceId='USB\KNOWN';Present=$true;HardwareID=@('KNOWN-MODEL')});Info=[ordered]@{Captured='2026-10-31T12:00:00Z';Source='Synthetic rescan catalog'}}}
     function Get-CimInstance {
         param($ClassName,$Filter,$OperationTimeoutSec,$Property,$Namespace)
         if($ClassName -eq 'MSFT_Disk' -and $script:rescanFixture -eq 1){throw 'Simulated storage permission failure'}
@@ -852,6 +854,7 @@ try {
     Set-Item Function:Get-NetAdapter -Value $scanPreserved.Net
     Set-Item Function:Get-DriverHardwareIds -Value $scanPreserved.Pnp
     Set-Item Function:Invoke-HardwareScan -Value $scanPreserved.Invoke
+    Set-Item Function:Get-ExtendedDeviceInventory -Value $scanPreserved.Extended
 }
 Assert ((Get-ScanFailureHint 'Access is denied') -eq 'Access blocked') 'Scan errors explain blocked access without exposing raw IDs'
 Assert ((Get-ScanFailureHint 'Operation timed out') -eq 'Provider timed out') 'Scan errors identify provider timeouts'

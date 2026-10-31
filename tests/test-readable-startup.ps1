@@ -34,7 +34,9 @@ $testRaw=$raw.Replace('$choice = Read-MenuChoice', $menuTest)
 $testRaw=$testRaw.Replace("Wait-ScanContinue 'main menu'", "Wait-ScanContinue 'main menu' -KeyReader { `$script:startupContinueReads++; New-Object ConsoleKeyInfo([char]13,[ConsoleKey]::Enter,`$false,`$false,`$false) }")
 $failureTrap='trap { @{Error=$_.Exception.Message;AtLine=$_.InvocationInfo.ScriptLineNumber;Stack=$_.ScriptStackTrace} | ConvertTo-Json | Set-Content -LiteralPath ''__RESULT__'' -Encoding UTF8; exit 1 }'
 $failureTrap=$failureTrap.Replace('__RESULT__',$resultLiteral)
-$testRaw=$testRaw.Replace('$ErrorActionPreference = ''Stop''','$ErrorActionPreference = ''Stop'''+[Environment]::NewLine+$failureTrap)
+$sourceTrap=$ast.FindAll({param($node) $node -is [System.Management.Automation.Language.TrapStatementAst]},$false) | Select-Object -First 1
+if($null -ne $sourceTrap){$testRaw=$testRaw.Replace($sourceTrap.Extent.Text,$failureTrap)}
+else{$testRaw=$testRaw.Replace('$ErrorActionPreference = ''Stop''','$ErrorActionPreference = ''Stop'''+[Environment]::NewLine+$failureTrap)}
 $diagnostic="'0' { `$display.InputModeAfter=[HwidConsoleDisplay]::ReadInputMode(); `$display | Add-Member NoteProperty WindowTop ([Console]::WindowTop); `$display | Add-Member NoteProperty MenuReads `$script:menuReads; `$display | Add-Member NoteProperty KeyReads `$script:keyReads; `$display | Add-Member NoteProperty StartupContinueReads `$script:startupContinueReads; `$display | Add-Member NoteProperty CursorRow ([Console]::CursorTop); `$display | Add-Member NoteProperty OwnConsole (`$env:HWID_OWN_CONSOLE -eq '1'); `$display | Add-Member NoteProperty Admin `$admin; `$display | ConvertTo-Json | Set-Content -LiteralPath '$resultLiteral' -Encoding UTF8; return }"
 $testRaw=$testRaw.Replace("'0' { Show-UiTransition 'Exit'; return }",$diagnostic)
 [IO.File]::WriteAllText($testScript,$testRaw,(New-Object Text.UTF8Encoding($false)))

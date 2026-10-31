@@ -2,6 +2,88 @@
 
 [Back to the main README](../README.md)
 
+## 3.67
+
+- Added visible CMD preparation stages before the checker starts: preparing, checking compatible PowerShell and launching. The PS1 loader also displays preparation. Progress reflects actual steps and adds no fixed delay.
+- Fixed missing/blank embedded checker content sometimes being accepted as a successful launch. All three loaders validate the marker/body before invocation; BAT failures retain their exit codes and show a START-02 summary. Existing runtime/version/language-mode restrictions remain in place.
+- Added application failure handling with bounded, control-character-safe diagnostics and phase context. Uncaught PowerShell errors use CRASH-01, clean up worker/timer/navigation state and exit nonzero; interactive dedicated windows keep the message available until Enter.
+- Added recovery around menu actions. UI-01 retains the active inventory and warnings, clears transient operation state and returns to the main menu after Enter. It does not trigger an automatic rescan, export or crash-log write. A failure of the menu itself stops visibly rather than retrying indefinitely.
+- Updated the startup diagnostic to replace the application's fatal trap with its test reporter, avoiding duplicate trap definitions.
+- Validation: 1,399 checks on each of Windows PowerShell 5.1 and PowerShell 7.6.5, including 35 new recovery checks and the eight existing runtime-launcher checks. Fixtures cover real CMD/PS loader execution, corrupted content, preserved exit codes, cleanup failures, retained snapshots, fatal phases and the actual main-menu loop. The previous version exits 0 for a blank body; the updated loader exits 1 with an incomplete-file message. A read-only live scan/rescan verifies normal collection.
+
+## 3.66
+
+- Fixed the active scan reserving 4,096 mostly blank buffer rows, which made the scrollbar extend far beyond scan content. Normal and separate extended scans now maintain history around the actual written rows, including wrapped output in narrow windows. Menus still clear their report history.
+- Fixed live progress/waiting redraws moving the console cursor and pulling the viewport away while browsing. Status text now paints directly into its buffer cells; newly completed rows preserve a reader's chosen view. Scrolling back pauses following; End resumes following new results.
+- Added Up/Down, Page Up/Down, Home and End handling during worker queries and between scan rows. Input processing is limited to 32 keys per pass; Enter/menu keys remain ignored during collection. The scan screen explains its navigation controls.
+- Kept scan rendering optional for collection: redirected diagnostics avoid console-only geometry reads, resize mismatches skip stale timer coordinates, and early render failures clear navigation state and restore cursor visibility.
+- Validation: 1,323 synthetic checks and 33 native-console checks on each of Windows PowerShell 5.1 and PowerShell 7.6.5. Native checks cover injected keyboard input during a live worker query, mouse-style viewport movement, held Enter, narrow full scans, wrapped history, resize handling and cleanup. A read-only live scan/rescan verifies hardware coverage and catalog refresh.
+
+Microsoft documents that [cursor positioning outside the visible window moves the window origin](https://learn.microsoft.com/en-us/windows/console/setconsolecursorposition). The live status painter avoids that cursor movement, while buffer sizing follows the [console window/buffer constraints](https://learn.microsoft.com/en-us/windows/console/setconsolescreenbuffersize).
+
+## 3.65
+
+- Startup and full PC rescans now include the all-known device catalog automatically, including Windows-exposed hidden/disconnected records. The normal present-device list remains separate so remembered nodes do not become false arrivals or active-device counts. Older present-only captures also gain the catalog on their next rescan.
+- Fixed the overall progress bar reaching 100% before extended collection finished. Full scans use 18 stages: 17 normal sections plus the device catalog. Completion still reports unread sections/catalogs explicitly, and the scan continuation prompt remains available afterward.
+- Fixed one terminating device-property query preventing detail reads for unrelated devices. Property reads now use batches of up to 32 nodes, preserve partial successful rows and continue later batches. Generic terminating batch failures receive one bounded per-device recovery pass; access/timeouts/provider failures avoid that retry expansion.
+- Contained non-terminating optional property errors in both scan modes so valid rows stay usable. Full reports/JSON retain property-batch/retry/error counts, and failed property values remain unknown. Successful later reads clear prior recovery diagnostics.
+- Validation: 1,323 synthetic checks on Windows PowerShell 5.1 and PowerShell 7.6.5, including 36 new coverage checks. Read-only live verification covers initial scans, rescans, extended catalogs and present-device fallback.
+
+Microsoft documents [Get-PnpDevice without `-PresentOnly`](https://learn.microsoft.com/en-us/powershell/module/pnpdevice/get-pnpdevice) as returning all known PnP devices, present or not. Coverage remains limited to records Windows exposes; a catalog entry does not prove a physical device is connected.
+
+## 3.64
+
+- Fixed standard WMI unsupported/missing-provider errors being reported as generic failures. Their HRESULTs now enable the existing present-only fallback even when Windows returns localized error messages. The successful reader and original failure remain in scan diagnostics.
+- Recognize WMI operation/provider timeouts and missing privileges, including legacy `ErrorCode` names. Access/timeouts cannot trigger an invalid-property retry or present-device fallback; the failure guidance describes the actual category. Unknown/reserved errors remain generic failures.
+- Fixed padded duplicate device IDs sometimes producing a duplicate conflict plus a separate status finding for the same node. Review now uses the same normalized, ordinal case-insensitive keys as node-change matching. Distinct statuses remain together, and original ID text stays unchanged.
+- Scan rows, overview model coverage and extended review now agree that whitespace/NUL-only identifiers are missing and non-string model entries are unusable. Raw inventory rows remain available for inspection.
+- Validation: 1,287 synthetic checks on Windows PowerShell 5.1 and PowerShell 7.6.5, including 60 new scan-diagnostic checks for localized HRESULTs, fallback scope, retry suppression, exact raw values, duplicate review and saved snapshots. Read-only live checks cover scanning, rescanning, extended collection and present-device fallback.
+
+Error classification follows Microsoft's [WMI error constants](https://learn.microsoft.com/en-us/windows/win32/wmisdk/wmi-error-constants). No device configuration changes are made by these recovery paths.
+
+## 3.63
+
+- Recovered valid device-instance identifiers from PNPDeviceID, InstanceId, or the Windows DeviceID key, in that order. Blank/whitespace/NUL-only aliases no longer hide a usable alternative. Both Win32 queries explicitly request DeviceID, and raw validation covers the added key.
+- Preserved the selected identifier's original text and its InstanceIdSource. Property queries, native lookup, and parent-name matching use normalized lookup keys without rewriting the stored ID.
+- Applied the same hardware/compatible-list validation to normal and extended collection. NUL-only/blank strings do not count as usable model IDs; malformed entries retain their raw values and review details while neighboring valid IDs survive.
+- Retained all optional model-list observations rather than overwriting earlier lists. Usable primary lists stay preferred; when they are absent, valid property observations are combined in first-observation order with exact deduplication. Differing readings are flagged for inspection, and original sequences remain available in full reports/JSON.
+- Validation: 1,227 checks on Windows PowerShell 5.1 and PowerShell 7.6.5, including 62 new instance-alias/ID-list checks; a real 17-section scan/rescan, live extended catalogs on both runtimes, and present-only fallback agreement in direct/worker collection. Separate v3.62 copies reproduce the omitted DeviceID and NUL-only model-ID failures.
+
+Microsoft documents [DeviceID as a device key](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-pnpentity) and [hardware IDs as an ordered driver-matching list](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/hardware-ids). A combined list of differing observations is an inspection view, not an authoritative Windows driver-priority list.
+
+## 3.62
+
+- Fixed the present-device view accepting malformed raw instance/class keys that the startup scan rejected. Both present-device reader paths now share record validation before mapping or publication; invalid refreshes remain NOT READ / READ-06.
+- Stopped arrays, objects, booleans and dates from becoming Working/Disabled problem codes through string coercion. Valid numeric/string/enum status codes, including zero, remain usable.
+- Preserved distinct optional problem-code readings and flagged disagreements with each other or native status. Conflicting status stays unknown; invalid optional readings cannot hide a valid native driver finding. Raw observations and read-status details remain in full reports/JSON.
+- Isolated malformed optional parent metadata instead of discarding the core device catalog. The parent remains unresolved, its raw value is retained, and extended review explains the missing topology. Extended enumeration also maps the Class alias when PNPClass is absent.
+- Made extended view groups independent filters. Hidden remembered devices appear under Hidden and Disconnected; hidden disabled devices appear under Hidden, Disabled and Present. Counts are explicitly non-additive.
+- Validation: 1,165 checks on Windows PowerShell 5.1 and PowerShell 7.6.5, including 80 new PnP-refresh/hidden-device checks; a real 17-section scan/rescan, extended reads on both runtimes, and native console navigation/scrolling checks. Separate v3.61 baseline copies reproduce the malformed-key/status failures before these fixes.
+
+Microsoft describes [hidden devices](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/viewing-hidden-devices) as including node/class hiding flags and non-present records. The checker keeps those properties separate while allowing the corresponding views to overlap.
+
+## 3.61
+
+- Fixed repeated extended-refresh failures showing an older technical message alongside the latest failure code. Manual retries now retain their latest failure details separately from an older catalog and clear those details on successful recovery.
+- Validated extended enumeration and catalog results before publication. Scalar/empty device records, non-scalar instance keys, and missing capture metadata cannot be marked Refreshed. A malformed primary enumeration can use its compatibility reader; failed manual refreshes retain the previous catalog, while failed PC-rescan refreshes keep new normal results without attaching an old catalog.
+- Kept contradictory presence and node-status property readings unknown rather than choosing whichever arrived last. Distinct readings are retained in PresenceReadings/NodeStatusReadings, with conflict labels in extended review; matching duplicate readings remain usable.
+- Rejected arrays, booleans and objects as node-status numbers. Unknown flags remain separate from a definite hidden/present state, and native fallback does not override conflicting property readings.
+- Ignored malformed optional property keys without allowing them to match a real device; InvalidPropertyRows records the count. Missing instance IDs in otherwise readable extended nodes now appear explicitly in detail review.
+- Validation: 1,085 checks on Windows PowerShell 5.1 and PowerShell 7.6.5, including 66 extended-refresh regressions; a real 17-section scan/rescan with zero rescan query warnings; and live extended-device catalogs on both runtimes. The new suite reproduces a contradictory-presence failure against v3.60 before the fix.
+
+Windows exposes [device presence](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-pnpentity) and [node status flags](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/devpkey-device-devnodestatus) as separate properties. A collection-time disagreement remains a review finding rather than a confirmed hardware change.
+
+## 3.60
+
+- Fixed compatible reads being skipped when a CIM/WMI reader emits records followed by an uncaught non-terminating property error. Each attempt now buffers and validates its error stream before returning records or selecting a retry.
+- Fixed partial network and extended-device enumeration preventing their compatibility fallbacks from recovering. Failed primary rows are discarded; recovered results retain the selected reader and original diagnostic where recorded.
+- Shared attempt validation with the present-only PnP fallback. Direct and live-progress collection use the same helper, while extended fallback keeps its unfiltered scope for remembered records.
+- Preserved query filters, namespaces, timeout settings, the single property retry, exact identifiers and false/zero metadata. Access/timeouts are not reclassified as property errors; failed attempts retain typed final failures and cannot publish incomplete rows.
+- Added 34 regressions covering partial-error recovery, failed retries, legacy WMI, network/extended fallback, clean subsequent queries, snapshot round trips, and comparisons in both collection modes.
+- Validation: 1,019 checks on Windows PowerShell 5.1 and PowerShell 7.6.5; real network/extended fallback recovery in both collection modes on both runtimes; and a read-only 17-section scan/rescan with extended refresh and no rescan query warnings.
+
+PowerShell can continue after a [non-terminating error](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_commonparameters). The checker now validates each reader attempt using [separate success/error streams](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_redirection) before accepting its data.
+
 ## 3.59
 
 - Added a present-device fallback for unsupported Win32 PnP queries/providers or empty results. It uses `Get-PnpDevice -PresentOnly`, maps available instance/name/class aliases, and keeps model/compatible IDs separate. It does not widen the normal scan into disconnected records.

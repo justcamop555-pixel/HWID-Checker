@@ -1,11 +1,15 @@
 @echo off
 setlocal DisableDelayedExpansion
-title Detailed HWID Checker
+title HWID Checker - Preparing
+echo.
+echo   HWID CHECKER
+echo   [1/3] Preparing startup...
 set "HWID_SCRIPT=%~f0"
 set "HWID_CURRENT_WINDOW=%~1"
 set "HWID_ENGINE="
 set "HWID_OLD_ENGINE="
 set "HWID_BLOCKED_ENGINE="
+echo   [2/3] Checking for compatible PowerShell...
 call :hwid_try_engine "%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
 if defined HWID_BLOCKED_ENGINE goto hwid_runtime_blocked
 if defined HWID_ENGINE goto hwid_run
@@ -36,8 +40,10 @@ echo Ask your administrator about approved execution. Security settings were not
 set "HWID_EXIT=13"
 goto hwid_finish
 :hwid_run
-"%HWID_ENGINE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "try { $raw = [IO.File]::ReadAllText($env:HWID_SCRIPT); & ([scriptblock]::Create(($raw -split '(?m)^# POWERSHELL_START\r?$',2)[1])) } catch { Write-Host ('[START-01] Unable to start checker: ' + $_.Exception.Message); exit 1 }"
+echo   [3/3] Starting checker. The readable window may take a moment to open...
+"%HWID_ENGINE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "try { $raw = [IO.File]::ReadAllText($env:HWID_SCRIPT); $parts = $raw -split '(?m)^# POWERSHELL_START\r?$',2; if ($parts.Count -ne 2 -or [string]::IsNullOrWhiteSpace($parts[1])) { throw 'The checker content is missing or incomplete. Download a complete copy of hwid.bat.' }; & ([scriptblock]::Create($parts[1])) } catch { Write-Host ('[START-01] Unable to start checker: ' + $_.Exception.Message); exit 1 }"
 set "HWID_EXIT=%errorlevel%"
+if not "%HWID_EXIT%"=="0" echo [START-02] Checker ended with exit code %HWID_EXIT%. See the error details above.
 :hwid_finish
 echo.
 if not "%HWID_EXIT%"=="0" (
@@ -58,6 +64,36 @@ if "%errorlevel%"=="1260" set "HWID_BLOCKED_ENGINE=1"
 exit /b 0
 # POWERSHELL_START
 $ErrorActionPreference = 'Stop'
+function Restore-CheckerOperation {
+    try {if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose()}}catch{}finally{$script:scanQueryWorker=$null}
+    try {if($null -ne $script:scanProgressClock){$script:scanProgressClock.Stop()}}catch{}finally{$script:scanProgressClock=$null}
+    $script:scanProgressState=$null;$script:scanProgressTotal=$null;$script:scanViewState=$null
+    $script:reportBookmarks=[ordered]@{}
+    if($ownedConsole -and -not $redirected){try{[Console]::CursorVisible=$true}catch{}}
+}
+function Show-CheckerFailure($Failure,[string]$Phase,[switch]$Fatal) {
+    Restore-CheckerOperation
+    $message=if($Failure -is [System.Management.Automation.ErrorRecord]){$Failure.Exception.Message}elseif($Failure -is [Exception]){$Failure.Message}else{[string]$Failure}
+    $message=([string]$message -replace '[\x00-\x1f\x7f]',' ')
+    if([string]::IsNullOrWhiteSpace($message)){$message='No additional error detail was supplied.'}
+    if($message.Length -gt 320){$message=$message.Substring(0,317)+'...'}
+    $phaseText=([string]$Phase -replace '[\x00-\x1f\x7f]',' ')
+    if([string]::IsNullOrWhiteSpace($phaseText)){$phaseText='Preparing checker'}
+    $code=if($Fatal){'CRASH-01'}else{'UI-01'}
+    $title=if($Fatal){'Unexpected checker failure.'}else{'This action could not finish.'}
+    $next=if($Fatal){'Reopen the checker and try again. Existing saved reports remain available.'}else{'The current scan is retained. Press Enter to return to the main menu.'}
+    $color=if($null -ne $palette -and $palette.Error){$palette.Error}else{'Red'}
+    $lines=@('',('['+$code+'] '+$title),('During: '+$phaseText),('Detail: '+$message),$next)
+    foreach($line in $lines){try{Write-Host $line -ForegroundColor $color}catch{try{[Console]::Error.WriteLine($line)}catch{}}}
+}
+$script:checkerPhase='Preparing checker'
+trap {
+    Show-CheckerFailure $_ -Phase $script:checkerPhase -Fatal
+    if($env:HWID_OWN_CONSOLE -eq '1'){
+        try{if(-not [Console]::IsInputRedirected){Read-Host 'Press Enter to close' | Out-Null}}catch{}
+    }
+    exit 1
+}
 function Get-RuntimeCompatibility($Version,$Platform,$LanguageMode) {
     if([string]$Platform -ne 'Win32NT'){return [pscustomobject]@{Supported=$false;Message='This checker requires Windows; other operating systems do not expose its hardware providers.'}}
     if([version](([string]$Version -split '-')[0]) -lt [version]'5.1'){return [pscustomobject]@{Supported=$false;Message='Use Windows PowerShell 5.1 or PowerShell 7. Older engines cannot parse all checker features.'}}
@@ -74,14 +110,20 @@ function Test-ProjectionReadFailure($Failure) {
     for($depth=0;$null -ne $exception -and $depth -lt 16;$depth++) {
         $code=$exception.HResult.ToString('X8')
         $status=if($exception.PSObject.Properties['StatusCode']){[string]$exception.StatusCode}elseif($exception.PSObject.Properties['ErrorCode']){[string]$exception.ErrorCode}else{''}
-        if($exception -is [UnauthorizedAccessException] -or $exception -is [TimeoutException] -or $code -in @('80070005','80041003','800705B4') -or $status -in @('AccessDenied','Timeout')){return $false}
+        if($exception -is [UnauthorizedAccessException] -or $exception -is [TimeoutException] -or $code -in @('80070005','80041003','80041062','800705B4','80041069','80041088') -or $status -in @('AccessDenied','PrivilegeNotHeld','Timeout','Timedout')){return $false}
         if($code -in @('80041017','80041031') -or $status -in @('InvalidQuery','InvalidProperty','NoSuchProperty')){$projection=$true}
         $exception=$exception.InnerException
     }
     if($Failure.CategoryInfo.Category -in @('PermissionDenied','OperationTimeout')){return $false}
     $text=[string]$Failure
-    if($text -match '(?i)access\s+(is\s+)?denied|unauthori[sz]ed|permission denied|timed out|timeout|0x80070005|0x80041003|0x800705b4'){return $false}
+    if($text -match '(?i)access\s+(is\s+)?denied|unauthori[sz]ed|permission denied|timed out|timeout|0x80070005|0x80041003|0x80041062|0x800705b4|0x80041069|0x80041088'){return $false}
     return $projection -or ($text -match '(?i)invalid query|invalid property|no such property|0x80041017|0x80041031')
+}
+function Invoke-BufferedHardwareRead([scriptblock]$ReadOperation) {
+    # Validate an entire reader attempt before returning any rows or choosing a fallback.
+    $output=@(& $ReadOperation 2>&1)
+    foreach($record in $output){if($record -is [System.Management.Automation.ErrorRecord]){throw $record}}
+    return $output
 }
 function Get-HwidInstance {
     param([Parameter(Position=0)][string]$ClassName,[string]$Namespace='root/cimv2',[string]$Filter,[string[]]$Property,[int]$OperationTimeoutSec=20)
@@ -100,13 +142,13 @@ function Get-HwidInstance {
         if($Property){$arguments.Property=$Property}
         $reader=$wmi
     }
-    try {$records=@(& $reader @arguments)}
+    try {$records=@(Invoke-BufferedHardwareRead {& $reader @arguments})}
     catch {
         if(-not $Property -or -not (Test-ProjectionReadFailure $_)){throw}
         $primary=$_.Exception.Message
         # Keep the same reader, namespace, filter and timeout; only relax the requested fields once.
         $arguments.Remove('Property')
-        try {$records=@(& $reader @arguments)}
+        try {$records=@(Invoke-BufferedHardwareRead {& $reader @arguments})}
         catch {
             $exception=[Exception]::new(('Requested fields failed: '+$primary+' / Compatible read failed: '+$_.Exception.Message),$_.Exception)
             $exception.Data['HwidFallbackFailure']=$_.Exception.Message
@@ -143,10 +185,12 @@ try {
     if($PSVersionTable.PSVersion -lt [version]'5.1'){throw 'PowerShell 5.1 or 7 is required.'}
     if($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage'){throw 'PowerShell language mode is restricted. Ask your administrator about approved execution.'}
     $raw = [IO.File]::ReadAllText($env:HWID_SCRIPT)
-    & ([scriptblock]::Create(($raw -split '(?m)^# POWERSHELL_START\r?$',2)[1]))
+    $parts = $raw -split '(?m)^# POWERSHELL_START\r?$',2
+    if($parts.Count -ne 2 -or [string]::IsNullOrWhiteSpace($parts[1])){throw 'The checker content is missing or incomplete. Download a complete copy of hwid.bat.'}
+    & ([scriptblock]::Create($parts[1]))
 } catch {
-    Write-Host ('Unable to run checker: ' + $_.Exception.Message) -ForegroundColor Red
-    Read-Host 'Press Enter to close' | Out-Null
+    Write-Host ('[START-01] Unable to start checker: ' + $_.Exception.Message) -ForegroundColor Red
+    try{if(-not [Console]::IsInputRedirected){Read-Host 'Press Enter to close' | Out-Null}}catch{}
     exit 1
 }
 '@
@@ -358,7 +402,9 @@ $runtime=Get-RuntimeCompatibility $PSVersionTable.PSVersion ([Environment]::OSVe
 if(-not $runtime.Supported){Write-Host ('[COMPAT-04] '+$runtime.Message);return}
 $redirected = [Console]::IsInputRedirected -or [Console]::IsOutputRedirected
 $ownedConsole = $env:HWID_OWN_CONSOLE -eq '1'
+$script:checkerPhase='Opening readable console'
 if (Start-ReadableConsole $env:HWID_SCRIPT $redirected $ownedConsole $env:HWID_CURRENT_WINDOW) { return }
+$script:checkerPhase='Preparing display'
 $display = Initialize-ReadableConsole $ownedConsole $redirected
 $script:report = [ordered]@{}
 $script:warnings = New-Object 'System.Collections.Generic.List[string]'
@@ -381,12 +427,12 @@ $sectionGroups = [ordered]@{
 function Write-Heading($Title) {
     $width = 72
     try { if ([Console]::WindowWidth -gt 0) { $width = [math]::Min(88, [math]::Max(8, [Console]::WindowWidth - 2)) } } catch { }
-    Write-Host ''
+    Write-PnpLine '' $palette.Muted
     $inner=$width-4
     $text=Limit-TableText $Title $inner
-    Write-Host ('  +' + ('-' * ($width-4)) + '+') -ForegroundColor $palette.Border
-    Write-Host ('  |' + $text.PadRight($inner) + '|') -ForegroundColor $palette.Heading
-    Write-Host ('  +' + ('-' * ($width-4)) + '+') -ForegroundColor $palette.Border
+    Write-PnpLine ('  +' + ('-' * ($width-4)) + '+') $palette.Border
+    Write-PnpLine ('  |' + $text.PadRight($inner) + '|') $palette.Heading
+    Write-PnpLine ('  +' + ('-' * ($width-4)) + '+') $palette.Border
 }
 function Get-UiTransitionFrame($Direction,$Step,$Width,$Destination) {
     $cells=[math]::Max(4,[math]::Min(32,[math]::Floor(($Width-8)*0.45)))
@@ -475,6 +521,7 @@ function Show-UiTransition([ValidateSet('Back','Next','Exit')]$Direction,$Destin
 }
 function Reset-UiPage {
     $script:reportBookmarks=[ordered]@{}
+    $script:scanViewState=$null
     if ($ownedConsole -and -not $redirected) {
         try {
             [Console]::Clear()
@@ -483,10 +530,73 @@ function Reset-UiPage {
         } catch { }
     }
 }
-function Start-UiReport {
+function Start-UiReport([switch]$Scanning) {
     if($ownedConsole -and -not $redirected) {
-        try {[Console]::SetBufferSize([Console]::WindowWidth,[math]::Max([Console]::BufferHeight,[math]::Max(4096,[Console]::WindowHeight)))}catch{}
+        try {
+            if($Scanning){
+                $script:scanViewState=[pscustomobject]@{FollowLatest=$true;LastTop=[Console]::WindowTop}
+                [Console]::SetBufferSize([Console]::WindowWidth,[math]::Max([Console]::WindowHeight,[Console]::CursorTop+8))
+            }else{[Console]::SetBufferSize([Console]::WindowWidth,[math]::Max([Console]::BufferHeight,[math]::Max(4096,[Console]::WindowHeight)))}
+        }catch{}
     }
+}
+function Get-ScanViewAnchor {
+    if($null -eq $script:scanViewState -or -not $ownedConsole -or $redirected){return $null}
+    try {
+        $top=[Console]::WindowTop
+        if($top -ne $script:scanViewState.LastTop){$script:scanViewState.FollowLatest=($top -ge [Console]::BufferHeight-[Console]::WindowHeight)}
+        return [pscustomobject]@{Top=$top;FollowLatest=$script:scanViewState.FollowLatest}
+    }catch{return $null}
+}
+function Ensure-ScanBuffer([int]$ExtraRows=4) {
+    if($null -eq $script:scanViewState -or -not $ownedConsole -or $redirected){return}
+    try {
+        $rows=[math]::Min(32766,[math]::Max([Console]::WindowHeight,[Console]::CursorTop+[math]::Max(4,$ExtraRows)))
+        if([Console]::BufferHeight -lt $rows){[Console]::SetBufferSize([Console]::BufferWidth,$rows)}
+    }catch{}
+}
+function Complete-ScanDisplayWrite($Anchor) {
+    if($null -eq $Anchor -or $null -eq $script:scanViewState){return}
+    try {
+        $rows=Get-ReportHistoryRows ([Console]::WindowHeight) ([Console]::CursorTop)
+        $maximum=[math]::Max(0,$rows-[Console]::WindowHeight)
+        [Console]::SetWindowPosition(0,[math]::Min([Console]::WindowTop,$maximum))
+        [Console]::SetBufferSize([Console]::WindowWidth,$rows)
+        $top=if($Anchor.FollowLatest){$maximum}else{[math]::Max(0,[math]::Min($Anchor.Top,$maximum))}
+        [Console]::SetWindowPosition(0,$top)
+        $script:scanViewState.LastTop=$top
+    }catch{}
+}
+function Read-ScanNavigation([scriptblock]$AvailableReader,[scriptblock]$KeyReader) {
+    if($null -eq $script:scanViewState -or -not $ownedConsole -or $redirected){return}
+    try {
+        $null=Get-ScanViewAnchor
+        # Bound each pass so held keys cannot monopolize the query/progress loop.
+        for($count=0;$count -lt 32;$count++){
+            $available=if($AvailableReader){& $AvailableReader}else{[Console]::KeyAvailable}
+            if(-not $available){break}
+            $key=if($KeyReader){& $KeyReader}else{[Console]::ReadKey($true)}
+            if($null -eq $key){break}
+            $name=$key.Key.ToString()
+            if($name -notin @('UpArrow','DownArrow','PageUp','PageDown','Home','End')){continue}
+            Move-UiReportView $name
+            $script:scanViewState.LastTop=[Console]::WindowTop
+            $script:scanViewState.FollowLatest=($name -eq 'End' -or ($name -in @('DownArrow','PageDown') -and [Console]::WindowTop -ge [Console]::BufferHeight-[Console]::WindowHeight))
+        }
+    }catch{}
+}
+function Write-ScanStatus($State,$Text,$Color) {
+    if($null -eq $State -or -not $ownedConsole -or $redirected){return $false}
+    try {
+        if([Console]::WindowWidth -ne $State.Width){return $false}
+        $left=[int]$State.Left;$width=$State.Width-$left-1
+        if($width -lt 1){return $false}
+        $patch=[HwidConsoleDisplay]::CaptureRegion($left,$State.Top,$width,1)
+        if($null -eq $patch){return $false}
+        $text=Limit-TableText ([string]$Text -replace '[\x00-\x1f\x7f]',' ') $width
+        $attributes=[uint16](([int][Console]::BackgroundColor -shl 4) -bor [int][ConsoleColor]$Color)
+        return [HwidConsoleDisplay]::PaintRegion($patch,@($text),@($attributes))
+    }catch{return $false}
 }
 function Get-ReportHistoryRows($WindowRows,$LastRow) { return [math]::Max($WindowRows,$LastRow+3) }
 function Complete-UiReport {
@@ -719,7 +829,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.59' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.67' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -1024,7 +1134,7 @@ function Get-OverviewSummary($Inventory,$IdRows,$QueryWarnings) {
         $classNames=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
         foreach($device in $devices){if(-not [string]::IsNullOrWhiteSpace([string]$device.PNPClass)){[void]$classNames.Add(([string]$device.PNPClass).Trim())}}
         $classes=$classNames.Count
-        $models=@($devices | Where-Object {@($_.HardwareID | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_)}).Count -gt 0}).Count
+        $models=@($devices | Where-Object {(Get-DeviceIdListInfo $_.HardwareID).Values.Count -gt 0}).Count
     }
     $extraState='NOT SCANNED'; $known=$null; $hidden=$null; $remembered=$null; $visibilityUnread=$null; $presenceUnknown=$null; $captured=$null
     if($Inventory.Contains('Extended scan info')) {
@@ -1182,7 +1292,7 @@ function Get-ReviewReadFailures($Inventory,$QueryWarnings) {
         else{& $add $name 'No records returned by Windows.' $null}
     }
     if($extraFailed) {
-        $message=if($extraInfo.Error){$extraInfo.Error}else{(@($QueryWarnings | Where-Object {$_ -like 'Extended device inventory: *'} | Select-Object -First 1) -join '') -ireplace '^Extended device inventory: ',''}
+        $message=if($extra.ExtendedFailureDetails){$extra.ExtendedFailureDetails}elseif($extra.ExtendedAttempted){(@($QueryWarnings | Where-Object {$_ -like 'Extended device inventory: *'} | Select-Object -First 1) -join '') -ireplace '^Extended device inventory: ',''}elseif($extraInfo.Error){$extraInfo.Error}else{(@($QueryWarnings | Where-Object {$_ -like 'Extended device inventory: *'} | Select-Object -First 1) -join '') -ireplace '^Extended device inventory: ',''}
         if(-not $message){$message='The latest extended refresh did not complete.'}
         & $add 'Extended device inventory' $message $extraInfo
     }
@@ -1383,7 +1493,7 @@ function Get-NetworkAddressInfo($Addresses,$Explicit=$null) {
 }
 function Get-NetworkIdentifiers {
     try {
-        $adapters=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop | Where-Object {$null -ne $_})
+        $adapters=@(Invoke-BufferedHardwareRead {Get-NetAdapter -IncludeHidden -ErrorAction Stop} | Where-Object {$null -ne $_})
         if(-not $adapters.Count){throw 'No adapters returned by Get-NetAdapter.'}
         $rows=@($adapters | Select-Object Name,InterfaceDescription,InterfaceGuid,MacAddress,PermanentAddress,PNPDeviceID,Status,LinkSpeed,HardwareInterface,@{n='CollectionSource';e={'Get-NetAdapter'}})
         return $rows
@@ -1422,13 +1532,35 @@ function Get-DeviceIdListInfo($Value) {
     }
     [pscustomobject]@{Values=@($values.ToArray());InvalidCount=$invalid;Raw=$Value}
 }
+function Get-DeviceInstanceInfo($Device) {
+    foreach($field in @('PNPDeviceID','InstanceId','DeviceID')){
+        $value=$Device.$field
+        if($null -eq $value){continue}
+        $key=Normalize-IdentifierText $value
+        if(-not [string]::IsNullOrWhiteSpace([string]$key)){return [pscustomobject]@{Value=[string]$value;Key=$key;Source=$field}}
+    }
+    [pscustomobject]@{Value=$null;Key=$null;Source='Not supplied'}
+}
+function Get-DevicePropertyIdListInfo($Readings) {
+    $values=New-Object 'System.Collections.Generic.List[string]'
+    $seen=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    $invalid=0;$different=$false;$first=$null
+    foreach($reading in $Readings){
+        $info=Get-DeviceIdListInfo $reading;$invalid+=$info.InvalidCount
+        $current=@($info.Values)
+        if($null -eq $first){$first=$current}
+        elseif($current.Count -ne $first.Count){$different=$true}
+        else{for($index=0;$index -lt $current.Count;$index++){if(-not [string]::Equals($current[$index],$first[$index],[StringComparison]::Ordinal)){$different=$true;break}}}
+        foreach($value in $current){if($seen.Add($value)){$values.Add($value)}}
+    }
+    [pscustomobject]@{Values=@($values.ToArray());InvalidCount=$invalid;DifferentReadings=$different;RawReadings=@($Readings)}
+}
 function Get-PresentDeviceRecords {
     try{
-        $output=@(Get-HwidInstance -OperationTimeoutSec 20 Win32_PnPEntity -Filter 'Present = True' -Property Name,Manufacturer,PNPClass,ClassGuid,Service,Present,PNPDeviceID,HardwareID,CompatibleID,ConfigManagerErrorCode 2>&1)
-        $errors=@($output | Where-Object {$_ -is [System.Management.Automation.ErrorRecord]})
-        if($errors.Count){throw $errors[0]}
+        $output=@(Get-HwidInstance -OperationTimeoutSec 20 Win32_PnPEntity -Filter 'Present = True' -Property Name,Manufacturer,PNPClass,ClassGuid,Service,Present,PNPDeviceID,DeviceID,HardwareID,CompatibleID,ConfigManagerErrorCode)
         $devices=@($output | Where-Object {$null -ne $_})
         if(-not $devices.Count){throw 'No present device records returned by the Win32 reader.'}
+        Assert-DeviceRecords $devices -Raw
         return $devices
     }catch{
         $failure=Get-ScanFailureInfo $_
@@ -1437,16 +1569,15 @@ function Get-PresentDeviceRecords {
     }
     try{
         if(-not (Get-Command Get-PnpDevice -ErrorAction SilentlyContinue)){throw [NotSupportedException]::new('Get-PnpDevice present-only reader is not supported on this runtime.')}
-        $output=@(Get-PnpDevice -PresentOnly -ErrorAction Stop 2>&1)
-        $errors=@($output | Where-Object {$_ -is [System.Management.Automation.ErrorRecord]})
-        if($errors.Count){throw $errors[0]}
+        $output=@(Invoke-BufferedHardwareRead {Get-PnpDevice -PresentOnly -ErrorAction Stop})
         $devices=@($output | Where-Object {$null -ne $_ -and -not ($_.Present -is [bool] -and -not $_.Present)})
         if(-not $devices.Count){throw 'No present device records returned by the fallback reader.'}
+        Assert-DeviceRecords $devices -Raw
         $rows=@(foreach($device in $devices){
             $name=if(-not [string]::IsNullOrWhiteSpace([string]$device.Name)){$device.Name}else{$device.FriendlyName}
             $class=if(-not [string]::IsNullOrWhiteSpace([string]$device.PNPClass)){$device.PNPClass}else{$device.Class}
-            $id=if(-not [string]::IsNullOrWhiteSpace([string]$device.PNPDeviceID)){$device.PNPDeviceID}else{$device.InstanceId}
-            [pscustomobject]@{Name=$name;Manufacturer=$device.Manufacturer;PNPClass=$class;ClassGuid=$device.ClassGuid;Service=$device.Service;Present=$true;PNPDeviceID=$id;HardwareID=$device.HardwareID;CompatibleID=$device.CompatibleID;ConfigManagerErrorCode=$device.ConfigManagerErrorCode;CollectionSource='Get-PnpDevice present-only fallback'}
+            $instance=Get-DeviceInstanceInfo $device
+            [pscustomobject]@{Name=$name;Manufacturer=$device.Manufacturer;PNPClass=$class;ClassGuid=$device.ClassGuid;Service=$device.Service;Present=$true;PNPDeviceID=$instance.Value;InstanceIdSource=$instance.Source;HardwareID=$device.HardwareID;CompatibleID=$device.CompatibleID;ConfigManagerErrorCode=$device.ConfigManagerErrorCode;CollectionSource='Get-PnpDevice present-only fallback'}
         })
         if($null -ne $script:hwidQueryRecoveries){$script:hwidQueryRecoveries.Add([pscustomobject]@{Class='Win32_PnPEntity';Namespace='root/cimv2';Method='Get-PnpDevice present-only fallback';PrimaryFailure=$primaryError})}
         return $rows
@@ -1460,7 +1591,9 @@ function Get-DriverHardwareIds {
     # All present device classes, including physical, virtual, system and peripheral nodes.
     foreach($device in (Get-PresentDeviceRecords | Sort-Object PNPClass,Name,PNPDeviceID)){
         $hardware=Get-DeviceIdListInfo $device.HardwareID;$compatible=Get-DeviceIdListInfo $device.CompatibleID
-        $row=[ordered]@{Name=$device.Name;Manufacturer=$device.Manufacturer;PNPClass=$device.PNPClass;ClassGuid=$device.ClassGuid;Service=$device.Service;Present=$device.Present;DeviceInstanceId=$device.PNPDeviceID;HardwareID=$hardware.Values;CompatibleID=$compatible.Values;ConfigManagerErrorCode=$device.ConfigManagerErrorCode}
+        $instance=Get-DeviceInstanceInfo $device
+        $instanceSource=if($device.InstanceIdSource){$device.InstanceIdSource}else{$instance.Source}
+        $row=[ordered]@{Name=$device.Name;Manufacturer=$device.Manufacturer;PNPClass=$device.PNPClass;ClassGuid=$device.ClassGuid;Service=$device.Service;Present=$device.Present;DeviceInstanceId=$instance.Value;InstanceIdSource=$instanceSource;HardwareID=$hardware.Values;CompatibleID=$compatible.Values;ConfigManagerErrorCode=$device.ConfigManagerErrorCode}
         if($hardware.InvalidCount){$row['HardwareIDReadStatus']="Invalid entries ignored: $($hardware.InvalidCount)";$row['RawHardwareID']=$hardware.Raw}
         if($compatible.InvalidCount){$row['CompatibleIDReadStatus']="Invalid entries ignored: $($compatible.InvalidCount)";$row['RawCompatibleID']=$compatible.Raw}
         if($device.CollectionSource){$row['CollectionSource']=$device.CollectionSource}
@@ -1520,17 +1653,34 @@ public static class HwidNodeStatus {
     }
     try {return [HwidNodeStatus]::Read([string]$InstanceId)}catch{return $null}
 }
+function Get-DeviceUInt32Info($Value) {
+    $number=[uint32]0;$text=$null
+    $validType=$Value -is [string] -or $Value -is [char] -or ($Value -is [ValueType] -and $Value -isnot [bool] -and $Value -isnot [datetime] -and $Value -isnot [datetimeoffset] -and $Value -isnot [timespan] -and $Value -isnot [guid])
+    if($validType){$text=if($Value -is [enum]){[string]$Value.value__}else{[string]$Value}}
+    $valid=$validType -and [uint32]::TryParse($text,[ref]$number)
+    [pscustomobject]@{Value=$(if($valid){$number}else{$null});Valid=$valid;Missing=($null -eq $Value)}
+}
 function Get-ExtendedProblemCode($Device) {
-    if($null -ne $Device.DeviceProblemCode){return $Device.DeviceProblemCode}
-    return $Device.ConfigManagerErrorCode
+    if($Device.ProblemCodeConflict -eq $true){return $null}
+    $code=Get-DeviceUInt32Info $Device.DeviceProblemCode
+    if($code.Valid){return $code.Value}
+    $code=Get-DeviceUInt32Info $Device.ConfigManagerErrorCode
+    return $code.Value
 }
 function Get-ExtendedDeviceReview($Device) {
+    if([string]::IsNullOrWhiteSpace((Normalize-IdentifierText $Device.DeviceInstanceId))){'Device instance ID was not supplied'}
     if([string]::IsNullOrWhiteSpace([string]$Device.Name) -or $Device.Name -match '^Unknown\b'){'Device name is missing or unknown'}
     if([string]::IsNullOrWhiteSpace([string]$Device.PNPClass)){'Device class was not supplied'}
     if($Device.PresenceConflict -eq $true){'Presence sources disagreed during collection; the device may have changed'}
     elseif($null -eq $Device.Present){'Presence was not reported'}
+    if($Device.NodeStatusConflict -eq $true){'Windows node status readings disagreed during collection'}
     if($null -eq $Device.HiddenByNodeFlag){'Windows hiding flag was not read'}
     if($null -eq $Device.HiddenByClass){'Class visibility was not read'}
+    if($Device.ProblemCodeConflict -eq $true){'Device problem-code readings disagreed; status is unknown'}
+    elseif($Device.ProblemCodeReadStatus -match '^Invalid'){'Optional device problem-code data was invalid; available native status is shown'}
+    if($Device.ParentReadStatus -match '^Invalid'){'Parent device metadata was invalid; topology was not matched'}
+    if($Device.HardwareIDReadStatus -match '^Invalid' -or $Device.CompatibleIDReadStatus -match '^Invalid'){'Some hardware/compatible ID entries were invalid; valid strings and raw observations were retained'}
+    if($Device.HardwareIDPropertyConflict -eq $true -or $Device.CompatibleIDPropertyConflict -eq $true){'Device-property ID lists differed during collection; combined readings are for inspection'}
     $code=Get-ExtendedProblemCode $Device
     if($null -eq $code){'Device status was not supplied'}
     elseif([string]$code -notin @('0','22','45')){(Get-PnpStatus $code).Text}
@@ -1545,19 +1695,78 @@ function Format-DeviceProblemStatus($Value) {
     }
     return [string]$Value
 }
+function Assert-DeviceRecords($Records,[switch]$Raw) {
+    $items=@($Records)
+    if(-not $items.Count){throw 'No device records returned by Windows.'}
+    $keys=if($Raw){@('PNPDeviceID','InstanceId','DeviceID','ClassGuid')}else{@('DeviceInstanceId','ClassGuid','ParentInstanceId')}
+    $fields=@('Name','FriendlyName','Manufacturer','PNPClass','Class','ClassGuid','Service','Present','PNPDeviceID','InstanceId','DeviceID','DeviceInstanceId','HardwareID','CompatibleID','ConfigManagerErrorCode','DeviceProblemCode','ParentInstanceId','Enumerator','Location','BusDescription','DriverInfPath','DevNodeStatus')
+    foreach($record in $items){
+        if($null -eq $record -or $record -is [string] -or $record -is [ValueType] -or $record -is [System.Collections.IList]){throw [IO.InvalidDataException]::new('Windows returned an invalid device record.')}
+        foreach($key in $keys){
+            $value=$record.$key
+            if($null -eq $value -or $value -is [string] -or $value -is [char]){continue}
+            if($value -is [ValueType] -and $value -isnot [bool] -and $value -isnot [datetime] -and $value -isnot [datetimeoffset] -and $value -isnot [timespan]){continue}
+            throw [IO.InvalidDataException]::new(('Windows returned an invalid device key: '+$key))
+        }
+        $hasData=$false
+        foreach($field in $fields){if(Test-ScanValuePresent $record.$field){$hasData=$true;break}}
+        if(-not $hasData){throw [IO.InvalidDataException]::new('Windows returned a device record with no readable device fields.')}
+    }
+}
+function Assert-ExtendedDeviceCatalog($Catalog) {
+    if($null -eq $Catalog -or $Catalog -is [string] -or $Catalog -is [ValueType] -or $Catalog -is [System.Collections.IList]){throw [IO.InvalidDataException]::new('Windows returned an invalid extended device catalog.')}
+    $info=$Catalog.Info
+    if($null -eq $info -or ($info -isnot [System.Collections.IDictionary] -and $info -isnot [pscustomobject]) -or ($info.Captured -isnot [string] -and $info.Captured -isnot [datetime] -and $info.Captured -isnot [datetimeoffset]) -or [string]::IsNullOrWhiteSpace([string]$info.Captured)){throw [IO.InvalidDataException]::new('The extended device catalog has no readable capture metadata.')}
+    if($info.Error){throw [string]$info.Error}
+    Assert-DeviceRecords $Catalog.Devices
+}
+function Read-DevicePropertyBatches([string[]]$InstanceIds,[string[]]$KeyNames) {
+    $rows=New-Object 'System.Collections.Generic.List[object]'
+    $errors=New-Object 'System.Collections.Generic.List[object]'
+    $batches=0;$retried=0
+    for($start=0;$start -lt $InstanceIds.Count;$start+=32){
+        $last=[math]::Min($start+31,$InstanceIds.Count-1)
+        $batch=@($InstanceIds[$start..$last]);$batches++
+        $batchErrors=@();$terminal=$null
+        try {
+            Get-PnpDeviceProperty -InstanceId $batch -KeyName $KeyNames -ErrorAction SilentlyContinue -ErrorVariable batchErrors 2>&1 | ForEach-Object {
+                if($_ -is [System.Management.Automation.ErrorRecord]){$errors.Add($_)}elseif($null -ne $_){$rows.Add($_)}
+            }
+        }catch{$terminal=$_}
+        foreach($errorRow in @($batchErrors)+@($terminal)){if($null -ne $errorRow -and -not $errors.Contains($errorRow)){$errors.Add($errorRow)}}
+        # A disappearing node can stop a whole call. Retry a failed batch once per
+        # device, preserving earlier rows. Access, timeout and provider failures
+        # stay explicit and cannot expand into a series of per-device retries.
+        if($null -ne $terminal -and $batch.Count -gt 1 -and (Get-ScanFailureInfo $terminal).Code -notin @('READ-01','READ-02','READ-03')){
+            foreach($id in $batch){
+                $retried++;$deviceErrors=@();$deviceFailure=$null
+                try {
+                    Get-PnpDeviceProperty -InstanceId @($id) -KeyName $KeyNames -ErrorAction SilentlyContinue -ErrorVariable deviceErrors 2>&1 | ForEach-Object {
+                        if($_ -is [System.Management.Automation.ErrorRecord]){$errors.Add($_)}elseif($null -ne $_){$rows.Add($_)}
+                    }
+                }catch{$deviceFailure=$_}
+                foreach($errorRow in @($deviceErrors)+@($deviceFailure)){if($null -ne $errorRow -and -not $errors.Contains($errorRow)){$errors.Add($errorRow)}}
+                if($null -ne $deviceFailure -and (Get-ScanFailureInfo $deviceFailure).Code -in @('READ-01','READ-02','READ-03')){break}
+            }
+        }
+    }
+    [pscustomobject]@{Rows=@($rows.ToArray());Errors=@($errors.ToArray());Batches=$batches;RetriedDevices=$retried}
+}
 function Get-ExtendedDeviceInventory {
     $source='Get-PnpDevice / all known nodes'
     $primaryError=$null
     try {
-        $devices=@(Get-PnpDevice -ErrorAction Stop | Where-Object {$null -ne $_})
+        $devices=@(Invoke-BufferedHardwareRead {Get-PnpDevice -ErrorAction Stop} | Where-Object {$null -ne $_})
         if(-not $devices.Count){throw 'No device records returned by Get-PnpDevice.'}
+        Assert-DeviceRecords $devices -Raw
     }
     catch {
         $primaryError=$_.Exception.Message
         $source='Win32_PnPEntity / unfiltered fallback'
         try {
-            $devices=@(Get-HwidInstance -ClassName Win32_PnPEntity -OperationTimeoutSec 20 -Property Name,Manufacturer,PNPClass,ClassGuid,Service,Present,PNPDeviceID,HardwareID,CompatibleID,ConfigManagerErrorCode | Where-Object {$null -ne $_})
+            $devices=@(Get-HwidInstance -ClassName Win32_PnPEntity -OperationTimeoutSec 20 -Property Name,Manufacturer,PNPClass,ClassGuid,Service,Present,PNPDeviceID,DeviceID,HardwareID,CompatibleID,ConfigManagerErrorCode | Where-Object {$null -ne $_})
             if(-not $devices.Count){throw 'No device records returned by the CIM/WMI fallback.'}
+            Assert-DeviceRecords $devices -Raw
         }catch {
             $message="Extended devices unavailable. Primary: $primaryError / Fallback: "+$_.Exception.Message
             $exception=[Exception]::new($message,$_.Exception)
@@ -1566,78 +1775,131 @@ function Get-ExtendedDeviceInventory {
         }
     }
     if(-not $devices.Count){throw 'No device records returned by Windows.'}
-    $flags=New-Object 'System.Collections.Generic.Dictionary[string,uint32]' ([StringComparer]::OrdinalIgnoreCase)
+    $presenceReadings=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
+    $nodeReadings=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
+    $problemReadings=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
+    $problemRaw=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
+    $problemInvalid=New-Object 'System.Collections.Generic.Dictionary[string,int]' ([StringComparer]::OrdinalIgnoreCase)
+    $hardwareReadings=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
+    $compatibleReadings=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
     $details=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
     $classes=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
-    $ids=@($devices | ForEach-Object {if($_.PNPDeviceID){[string]$_.PNPDeviceID}else{[string]$_.InstanceId}} | Where-Object {-not [string]::IsNullOrWhiteSpace($_)} | Select-Object -Unique)
-    $propertyErrors=@()
+    $idKeys=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $ids=@(foreach($device in $devices){$instance=Get-DeviceInstanceInfo $device;if($instance.Key -and $idKeys.Add($instance.Key)){$instance.Key}})
+    $propertyErrors=@();$invalidPropertyRows=0;$propertyBatches=0;$propertyRetries=0
     $keys=@('DEVPKEY_Device_DevNodeStatus','DEVPKEY_Device_IsPresent','DEVPKEY_Device_HardwareIds','DEVPKEY_Device_CompatibleIds','DEVPKEY_Device_Parent','DEVPKEY_Device_EnumeratorName','DEVPKEY_Device_LocationInfo','DEVPKEY_Device_BusReportedDeviceDesc','DEVPKEY_Device_ProblemCode','DEVPKEY_Device_ProblemStatus','DEVPKEY_Device_DriverInfPath')
     if($ids.Count) {
-        try {
-            # Process successful property rows immediately, even if a later row terminates.
-            Get-PnpDeviceProperty -InstanceId $ids -KeyName $keys -ErrorAction SilentlyContinue -ErrorVariable propertyErrors | ForEach-Object {
+        $propertyRead=Read-DevicePropertyBatches $ids $keys
+        $propertyErrors=@($propertyRead.Errors);$propertyBatches=$propertyRead.Batches;$propertyRetries=$propertyRead.RetriedDevices
+        $propertyRead.Rows | ForEach-Object {
                 $property=$_
                 $number=[uint32]0
-                if($property.InstanceId -and $property.KeyName -in $keys -and $null -ne $property.Data) {
-                    $propertyId=[string]$property.InstanceId
+                if($property.InstanceId -isnot [string] -or [string]::IsNullOrWhiteSpace($property.InstanceId) -or $property.KeyName -isnot [string]){$invalidPropertyRows++}
+                elseif($property.KeyName -in $keys -and $null -ne $property.Data) {
+                    $propertyId=Normalize-IdentifierText $property.InstanceId
+                    if([string]::IsNullOrWhiteSpace($propertyId)){$invalidPropertyRows++;return}
                     if(-not $details.ContainsKey($propertyId)){$details[$propertyId]=@{}}
                     $details[$propertyId][[string]$property.KeyName]=$property.Data
-                    if($property.KeyName -eq 'DEVPKEY_Device_DevNodeStatus' -and [uint32]::TryParse([string]$property.Data,[ref]$number)) {$flags[$propertyId]=$number}
+                    if($property.KeyName -eq 'DEVPKEY_Device_HardwareIds'){
+                        if(-not $hardwareReadings.ContainsKey($propertyId)){$hardwareReadings[$propertyId]=New-Object 'System.Collections.Generic.List[object]'}
+                        $hardwareReadings[$propertyId].Add($property.Data)
+                    }
+                    if($property.KeyName -eq 'DEVPKEY_Device_CompatibleIds'){
+                        if(-not $compatibleReadings.ContainsKey($propertyId)){$compatibleReadings[$propertyId]=New-Object 'System.Collections.Generic.List[object]'}
+                        $compatibleReadings[$propertyId].Add($property.Data)
+                    }
+                    if($property.KeyName -eq 'DEVPKEY_Device_ProblemCode'){
+                        if(-not $problemRaw.ContainsKey($propertyId)){$problemRaw[$propertyId]=New-Object 'System.Collections.Generic.List[object]';$problemReadings[$propertyId]=New-Object 'System.Collections.Generic.List[uint32]';$problemInvalid[$propertyId]=0}
+                        $problemRaw[$propertyId].Add($property.Data)
+                        $codeInfo=Get-DeviceUInt32Info $property.Data
+                        if($codeInfo.Valid){if(-not $problemReadings[$propertyId].Contains($codeInfo.Value)){$problemReadings[$propertyId].Add($codeInfo.Value)}}else{$problemInvalid[$propertyId]++}
+                    }
+                    if($property.KeyName -eq 'DEVPKEY_Device_IsPresent' -and $property.Data -is [bool]){
+                        if(-not $presenceReadings.ContainsKey($propertyId)){$presenceReadings[$propertyId]=New-Object 'System.Collections.Generic.List[bool]'}
+                        if(-not $presenceReadings[$propertyId].Contains($property.Data)){$presenceReadings[$propertyId].Add($property.Data)}
+                    }
+                    if($property.KeyName -eq 'DEVPKEY_Device_DevNodeStatus' -and $property.Data -isnot [bool] -and $property.Data -isnot [System.Collections.IList] -and $property.Data -isnot [System.Collections.IDictionary] -and $property.Data -isnot [pscustomobject] -and [uint32]::TryParse([string]$property.Data,[ref]$number)) {
+                        if(-not $nodeReadings.ContainsKey($propertyId)){$nodeReadings[$propertyId]=New-Object 'System.Collections.Generic.List[uint32]'}
+                        if(-not $nodeReadings[$propertyId].Contains($number)){$nodeReadings[$propertyId].Add($number)}
+                    }
                 }
-            }
-        }catch{$propertyErrors=@($_)}
+        }
     }
     $rows=@(foreach($device in $devices) {
-        $id=if($device.PNPDeviceID){[string]$device.PNPDeviceID}else{[string]$device.InstanceId}
+        $instance=Get-DeviceInstanceInfo $device;$id=$instance.Value;$lookupKey=$instance.Key
         $classGuid=[string]$device.ClassGuid
         if(-not $classes.ContainsKey($classGuid)){
             try {$classes[$classGuid]=Get-ClassHiddenState $classGuid}catch{$classes[$classGuid]=$null}
         }
-        $properties=if($details.ContainsKey($id)){$details[$id]}else{@{}}
+        $properties=if($lookupKey -and $details.ContainsKey($lookupKey)){$details[$lookupKey]}else{@{}}
+        $presenceValues=@(if($lookupKey -and $presenceReadings.ContainsKey($lookupKey)){$presenceReadings[$lookupKey].ToArray()})
+        $nodeValues=@(if($lookupKey -and $nodeReadings.ContainsKey($lookupKey)){$nodeReadings[$lookupKey].ToArray()})
+        $problemValues=@(if($lookupKey -and $problemReadings.ContainsKey($lookupKey)){$problemReadings[$lookupKey].ToArray()})
+        $rawProblemValues=@(if($lookupKey -and $problemRaw.ContainsKey($lookupKey)){$problemRaw[$lookupKey].ToArray()})
+        $rawHardwareValues=@(if($lookupKey -and $hardwareReadings.ContainsKey($lookupKey)){$hardwareReadings[$lookupKey].ToArray()})
+        $rawCompatibleValues=@(if($lookupKey -and $compatibleReadings.ContainsKey($lookupKey)){$compatibleReadings[$lookupKey].ToArray()})
         $nodeFlags=$null;$nodeHidden=$null;$nodeSource='Not supplied'
-        if($flags.ContainsKey($id)){$nodeFlags=$flags[$id];$nodeSource='Device properties'}
+        $nodeConflict=$nodeValues.Count -gt 1
+        if($nodeConflict){$nodeSource='Conflicting device properties'}
+        elseif($nodeValues.Count -eq 1){$nodeFlags=$nodeValues[0];$nodeSource='Device properties'}
         else {
-            try {$native=Get-NativeNodeStatus $id;if($null -ne $native){$nodeFlags=[uint32]$native;$nodeSource='Configuration Manager'}}catch{}
+            try {$native=Get-NativeNodeStatus $lookupKey;if($null -ne $native){$nodeFlags=[uint32]$native;$nodeSource='Configuration Manager'}}catch{}
         }
         if($null -ne $nodeFlags){$nodeHidden=($nodeFlags -band [uint32]0x40000000) -ne 0}
         $present=if($device.Present -is [bool]){$device.Present}else{$null}
         $presenceSource=if($null -eq $present){'Not supplied'}else{'PnP record'}
         $presenceConflict=$false
-        if($null -ne $present -and $properties['DEVPKEY_Device_IsPresent'] -is [bool] -and $present -ne $properties['DEVPKEY_Device_IsPresent']) {
+        if($presenceValues.Count -gt 1){
+            $present=$null;$presenceSource='Conflicting device properties';$presenceConflict=$true
+        }elseif($null -ne $present -and $presenceValues.Count -eq 1 -and $present -ne $presenceValues[0]) {
             $present=$null;$presenceSource='Conflicting readings';$presenceConflict=$true
         }
-        if(-not $presenceConflict -and $null -eq $present -and $properties['DEVPKEY_Device_IsPresent'] -is [bool]){$present=$properties['DEVPKEY_Device_IsPresent'];$presenceSource='Device properties'}
-        $hardware=@($device.HardwareID | Where-Object {$_ -is [string] -and -not [string]::IsNullOrWhiteSpace($_)})
-        $compatible=@($device.CompatibleID | Where-Object {$_ -is [string] -and -not [string]::IsNullOrWhiteSpace($_)})
+        if(-not $presenceConflict -and $null -eq $present -and $presenceValues.Count -eq 1){$present=$presenceValues[0];$presenceSource='Device properties'}
+        $hardwareInfo=Get-DeviceIdListInfo $device.HardwareID;$compatibleInfo=Get-DeviceIdListInfo $device.CompatibleID
+        $propertyHardware=Get-DevicePropertyIdListInfo $rawHardwareValues;$propertyCompatible=Get-DevicePropertyIdListInfo $rawCompatibleValues
+        $hardware=@($hardwareInfo.Values);$compatible=@($compatibleInfo.Values)
         $hardwareSource=if($hardware.Count){'PnP record'}else{'Not supplied'}
-        if(-not $hardware.Count){$hardware=@($properties['DEVPKEY_Device_HardwareIds'] | Where-Object {$_ -is [string] -and -not [string]::IsNullOrWhiteSpace($_)});if($hardware.Count){$hardwareSource='Device properties'}}
-        if(-not $compatible.Count){$compatible=@($properties['DEVPKEY_Device_CompatibleIds'] | Where-Object {$_ -is [string] -and -not [string]::IsNullOrWhiteSpace($_)})}
+        if(-not $hardware.Count){$hardware=@($propertyHardware.Values);if($hardware.Count){$hardwareSource='Device properties'}}
+        if(-not $compatible.Count){$compatible=@($propertyCompatible.Values)}
+        $hardwareInvalid=$hardwareInfo.InvalidCount+$propertyHardware.InvalidCount;$compatibleInvalid=$compatibleInfo.InvalidCount+$propertyCompatible.InvalidCount
         $name=$device.Name;$nameSource='PnP name'
         if([string]::IsNullOrWhiteSpace([string]$name)){$name=$device.FriendlyName;$nameSource='Friendly name'}
         if([string]::IsNullOrWhiteSpace([string]$name)){$name=$properties['DEVPKEY_Device_BusReportedDeviceDesc'];$nameSource='Bus description'}
         if([string]::IsNullOrWhiteSpace([string]$name)){$nameSource='Not supplied'}
-        $problem=$null;$problemNumber=[uint32]0
-        if($null -ne $properties['DEVPKEY_Device_ProblemCode'] -and [uint32]::TryParse([string]$properties['DEVPKEY_Device_ProblemCode'],[ref]$problemNumber)){$problem=$problemNumber}
-        [pscustomobject][ordered]@{
+        $class=if(-not [string]::IsNullOrWhiteSpace([string]$device.PNPClass)){$device.PNPClass}else{$device.Class}
+        $problem=$(if($problemValues.Count -eq 1){$problemValues[0]}else{$null})
+        $nativeProblem=Get-DeviceUInt32Info $device.ConfigManagerErrorCode
+        $problemConflict=$problemValues.Count -gt 1 -or ($problemValues.Count -eq 1 -and $nativeProblem.Valid -and $problemValues[0] -ne $nativeProblem.Value)
+        $problemReadStatus=if($lookupKey -and $problemInvalid.ContainsKey($lookupKey) -and $problemInvalid[$lookupKey]){'Invalid entries ignored: '+$problemInvalid[$lookupKey]}elseif($problemConflict){'Conflicting readings'}elseif($problemValues.Count){'Device properties'}else{'Not supplied'}
+        $rawParent=$properties['DEVPKEY_Device_Parent'];$parent=$null;$parentReadStatus='Not supplied'
+        if($null -ne $rawParent){
+            if($rawParent -is [string] -or $rawParent -is [char]){if(-not [string]::IsNullOrWhiteSpace([string]$rawParent)){$parent=[string]$rawParent;$parentReadStatus='Device properties'}}
+            else{$parentReadStatus='Invalid parent instance value; not matched'}
+        }
+        $row=[ordered]@{
             Name=$name;NameSource=$nameSource
-            Manufacturer=$device.Manufacturer;PNPClass=$device.PNPClass;ClassGuid=$classGuid;Service=$device.Service
-            Present=$present;PresenceSource=$presenceSource;PresenceConflict=$presenceConflict;DeviceInstanceId=$id
-            HardwareID=$hardware;HardwareIdSource=$hardwareSource;CompatibleID=$compatible
+            Manufacturer=$device.Manufacturer;PNPClass=$class;ClassGuid=$classGuid;Service=$device.Service
+            Present=$present;PresenceSource=$presenceSource;PresenceConflict=$presenceConflict;PresenceReadings=$presenceValues;DeviceInstanceId=$id;InstanceIdSource=$instance.Source
+            HardwareID=$hardware;HardwareIdSource=$hardwareSource;CompatibleID=$compatible;HardwareIDPropertyReadings=$rawHardwareValues;CompatibleIDPropertyReadings=$rawCompatibleValues;HardwareIDPropertyConflict=$propertyHardware.DifferentReadings;CompatibleIDPropertyConflict=$propertyCompatible.DifferentReadings
             ConfigManagerErrorCode=$device.ConfigManagerErrorCode
-            DeviceProblemCode=$problem;ProblemStatus=$properties['DEVPKEY_Device_ProblemStatus']
-            ParentInstanceId=$properties['DEVPKEY_Device_Parent'];ParentName=$null
+            DeviceProblemCode=$problem;ProblemCodeReadings=$problemValues;ProblemCodeConflict=$problemConflict;ProblemCodeReadStatus=$problemReadStatus;RawProblemCode=$rawProblemValues;ProblemStatus=$properties['DEVPKEY_Device_ProblemStatus']
+            ParentInstanceId=$parent;ParentName=$null;ParentReadStatus=$parentReadStatus;RawParentInstanceId=$rawParent
             Enumerator=$properties['DEVPKEY_Device_EnumeratorName'];Location=$properties['DEVPKEY_Device_LocationInfo']
             BusDescription=$properties['DEVPKEY_Device_BusReportedDeviceDesc'];DriverInfPath=$properties['DEVPKEY_Device_DriverInfPath']
-            DevNodeStatus=$nodeFlags;NodeStatusSource=$nodeSource;HiddenByNodeFlag=$nodeHidden;HiddenByClass=$classes[$classGuid]
+            DevNodeStatus=$nodeFlags;NodeStatusSource=$nodeSource;NodeStatusConflict=$nodeConflict;NodeStatusReadings=$nodeValues;HiddenByNodeFlag=$nodeHidden;HiddenByClass=$classes[$classGuid]
         }
+        if($hardwareInvalid){$row['HardwareIDReadStatus']="Invalid entries ignored: $hardwareInvalid";$row['RawHardwareID']=$hardwareInfo.Raw;$row['RawPropertyHardwareID']=$rawHardwareValues}
+        if($compatibleInvalid){$row['CompatibleIDReadStatus']="Invalid entries ignored: $compatibleInvalid";$row['RawCompatibleID']=$compatibleInfo.Raw;$row['RawPropertyCompatibleID']=$rawCompatibleValues}
+        [pscustomobject]$row
     })
     $names=New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach($row in $rows) {
-        if(-not $row.DeviceInstanceId){continue}
-        if($names.ContainsKey($row.DeviceInstanceId)){$names[$row.DeviceInstanceId]='(duplicate instance ID; parent name ambiguous)'}
-        else{$names[$row.DeviceInstanceId]=[string]$row.Name}
+        $key=Normalize-IdentifierText $row.DeviceInstanceId
+        if(-not $key){continue}
+        if($names.ContainsKey($key)){$names[$key]='(duplicate instance ID; parent name ambiguous)'}
+        else{$names[$key]=[string]$row.Name}
     }
-    foreach($row in $rows){if($row.ParentInstanceId -and $names.ContainsKey([string]$row.ParentInstanceId)){$row.ParentName=$names[[string]$row.ParentInstanceId]}}
+    foreach($row in $rows){$key=Normalize-IdentifierText $row.ParentInstanceId;if($key -and $names.ContainsKey($key)){$row.ParentName=$names[$key]}}
     [pscustomobject]@{
         Devices=$rows
         Info=[ordered]@{
@@ -1648,15 +1910,23 @@ function Get-ExtendedDeviceInventory {
             ParentLinks=@($rows | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_.ParentInstanceId)}).Count
             HardwareIdRecoveries=@($rows | Where-Object HardwareIdSource -eq 'Device properties').Count
             PropertyReadErrors=@($propertyErrors).Count
+            PropertyBatches=$propertyBatches;PropertyRetryDevices=$propertyRetries
+            InvalidPropertyRows=$invalidPropertyRows
         }
     }
 }
+function Test-ExtendedDeviceGroup($Device,$Key) {
+    switch([string]$Key){
+        '2' {return $Device.Present -is [bool] -and -not $Device.Present}
+        '3' {return $Device.HiddenByNodeFlag -eq $true -or $Device.HiddenByClass -eq $true}
+        '4' {return $Device.Present -is [bool] -and $Device.Present -and [string](Get-ExtendedProblemCode $Device) -eq '22'}
+        '5' {return $Device.Present -is [bool] -and $Device.Present}
+        '6' {return $Device.Present -isnot [bool]}
+    }
+    return $false
+}
 function Get-ExtendedDeviceGroup($Device) {
-    if($Device.Present -is [bool] -and -not $Device.Present){return '2'}
-    if($Device.HiddenByNodeFlag -eq $true -or $Device.HiddenByClass -eq $true){return '3'}
-    if($Device.Present -eq $true -and [string](Get-ExtendedProblemCode $Device) -eq '22'){return '4'}
-    if($Device.Present -eq $true){return '5'}
-    return '6'
+    foreach($key in @('2','3','4','5','6')){if(Test-ExtendedDeviceGroup $Device $key){return $key}}
 }
 function Show-ExtendedDeviceReport {
     Reset-UiPage;Start-UiReport
@@ -1673,15 +1943,16 @@ function Show-ExtendedDeviceReport {
     Write-PnpValue 'Limits' 'Only records exposed by Windows are visible. Unread flags remain unknown; missing serials cannot be recovered from absent hardware.' $palette.Muted
     Write-PnpValue 'Parent links' 'Windows-reported topology; remembered devices may point to the root if their earlier parent is gone.' $palette.Muted
     Write-PnpValue 'Keep results' 'Main [6] saves TXT + JSON. Full PC rescans refresh this catalog too; [9] > [4] refreshes it separately.' $palette.Muted
-    $groups=[ordered]@{'2'='NOT PRESENT / REMEMBERED';'3'='HIDDEN BY WINDOWS FLAG OR CLASS';'4'='DISABLED / PRESENT';'5'='OTHER PRESENT NODES';'6'='PRESENCE UNKNOWN'}
+    Write-PnpValue 'Groups' 'Filters overlap. A hidden node can also be disconnected or disabled; do not add group counts.' $palette.Muted
+    $groups=[ordered]@{'2'='NOT PRESENT / REMEMBERED';'3'='HIDDEN BY WINDOWS FLAG OR CLASS';'4'='DISABLED / PRESENT';'5'='ALL PRESENT NODES';'6'='PRESENCE UNKNOWN'}
     foreach($key in $groups.Keys) {
-        Write-PnpValue ('['+$key+'] '+$groups[$key]) (@($devices | Where-Object {(Get-ExtendedDeviceGroup $_) -eq $key}).Count) $palette.Text
+        Write-PnpValue ('['+$key+'] '+$groups[$key]) (@($devices | Where-Object {Test-ExtendedDeviceGroup $_ $key}).Count) $palette.Text
     }
     $review=@($devices | Where-Object {@(Get-ExtendedDeviceReview $_).Count -gt 0})
     Write-PnpValue '[7] UNKNOWN / REVIEW' ("$($review.Count) records; overlaps the groups above") $palette.Warn
     foreach($key in $groups.Keys) {
         Add-ReportBookmark $key
-        $items=@($devices | Where-Object {(Get-ExtendedDeviceGroup $_) -eq $key})
+        $items=@($devices | Where-Object {Test-ExtendedDeviceGroup $_ $key})
         Write-Heading ($groups[$key]+' / '+$items.Count)
         if($items.Count){Show-PnpRecords $items -Full -Extended}
         else {Write-PnpValue 'Result' 'No records in this group.' $palette.Muted}
@@ -1696,18 +1967,18 @@ function Start-ExtendedDeviceScan {
     $cursor=$null;$queryWorker=$null
     try {
         if($ownedConsole -and -not $redirected){try{$cursor=[Console]::CursorVisible;[Console]::CursorVisible=$false}catch{}}
-        Reset-UiPage;Start-UiReport
+        Reset-UiPage;Start-UiReport -Scanning
         Write-Heading 'READING EXTENDED DEVICE INVENTORY'
         Write-PnpValue 'Scope' 'All known PnP nodes, including non-present records, plus Windows hiding flags.' $palette.Muted
         $line=Start-ScanLine '  Devices and visibility flags: '
         $clock=[Diagnostics.Stopwatch]::StartNew()
         if($ownedConsole -and -not $redirected){try{$script:scanQueryWorker=New-ScanQueryWorker;$queryWorker=$script:scanQueryWorker}catch{}}
         $result=Invoke-ScanQuery {Get-ExtendedDeviceInventory} {Update-ScanWaiting $line $clock.Elapsed.TotalSeconds}
-        if($null -eq $result -or -not @($result.Devices).Count){throw 'No device records captured.'}
+        Assert-ExtendedDeviceCatalog $result
         $report['Extended device inventory']=@($result.Devices)
         $report['Extended scan info']=$result.Info
         $report['Report info']['ExtendedStatus']='Refreshed'
-        foreach($field in @('ExtendedAttempted','ExtendedFailureCode','ExtendedFailureReason','ExtendedNextStep')){$report['Report info'].Remove($field)}
+        foreach($field in @('ExtendedAttempted','ExtendedFailureCode','ExtendedFailureReason','ExtendedFailureDetails','ExtendedNextStep')){$report['Report info'].Remove($field)}
         for($i=$warnings.Count-1;$i -ge 0;$i--){if($warnings[$i].StartsWith('Extended device inventory: ')){$warnings.RemoveAt($i)}}
         $report['Warnings']=@($warnings.ToArray())
     }catch {
@@ -1716,6 +1987,7 @@ function Start-ExtendedDeviceScan {
         $report['Report info']['ExtendedAttempted']=(Get-Date).ToString('o')
         $report['Report info']['ExtendedFailureCode']=$failure.Code
         $report['Report info']['ExtendedFailureReason']=$failure.Reason
+        $report['Report info']['ExtendedFailureDetails']=$failure.Details
         $report['Report info']['ExtendedNextStep']=$failure.Action.Replace('[9] > [1]','[9] > [4]')
         for($i=$warnings.Count-1;$i -ge 0;$i--){if($warnings[$i].StartsWith('Extended device inventory: ')){$warnings.RemoveAt($i)}}
         $warnings.Add('Extended device inventory: '+$failure.Details)
@@ -1726,6 +1998,7 @@ function Start-ExtendedDeviceScan {
         if($report.Contains('Extended device inventory') -and $report.Contains('Extended scan info')){Write-PnpValue 'Previous catalog kept' ('Earlier capture: '+(Format-ScanTime $report['Extended scan info'].Captured)) $palette.Warn}
         return
     }finally{
+        $script:scanViewState=$null
         if($null -ne $queryWorker){$queryWorker.Dispose();$script:scanQueryWorker=$null}
         if($null -ne $clock){$clock.Stop()}
         if($null -ne $cursor){try{[Console]::CursorVisible=$cursor}catch{}}
@@ -1733,10 +2006,11 @@ function Start-ExtendedDeviceScan {
     Show-ExtendedDeviceReport
 }
 function Get-PnpStatus($Code) {
-    $number=[uint32]0
-    if($null -eq $Code -or -not [uint32]::TryParse([string]$Code,[ref]$number)) {
+    $info=Get-DeviceUInt32Info $Code
+    if(-not $info.Valid) {
         return [pscustomobject]@{Text='Status not supplied';Quality='Unknown';Code=$null}
     }
+    $number=$info.Value
     $description=switch($number) {
         0 {'Working'}; 10 {'Cannot start'}; 12 {'Resource conflict'}; 14 {'Restart needed'}
         18 {'Reinstall driver'}; 19 {'Configuration problem'}; 21 {'Being removed'}
@@ -1768,15 +2042,27 @@ function Get-PnpGroup($Device) {
 }
 function Get-PnpIssues($Devices) {
     if(-not (Test-SectionReadable $Devices)){return}
-    $duplicates=@($Devices | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_.DeviceInstanceId)} |
-        Group-Object -Property {([string]$_.DeviceInstanceId).Trim().ToUpperInvariant()} | Where-Object Count -gt 1)
-    $duplicateKeys=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach($duplicate in $duplicates){[void]$duplicateKeys.Add(([string]$duplicate.Group[0].DeviceInstanceId).Trim())}
+    # Use the same edge-padding normalization and ordinal matching as node changes.
+    # Culture-based Group-Object can treat embedded NUL characters as insignificant.
+    $groups=New-Object 'System.Collections.Generic.List[object]'
+    $byKey=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach($device in $Devices){
+        if($null -eq $device){continue}
+        $key=Normalize-IdentifierText $device.DeviceInstanceId
+        if([string]::IsNullOrWhiteSpace($key)){continue}
+        if(-not $byKey.ContainsKey($key)){
+            $group=[pscustomobject]@{Key=$key;Group=(New-Object 'System.Collections.Generic.List[object]')}
+            $byKey.Add($key,$group);$groups.Add($group)
+        }
+        $byKey[$key].Group.Add($device)
+    }
+    $duplicates=@($groups | Where-Object {$_.Group.Count -gt 1})
     foreach($device in $Devices) {
         if($null -eq $device){continue}
+        $key=Normalize-IdentifierText $device.DeviceInstanceId
         # Repeated node rows are one conflict; keep their status observations below.
-        if($duplicateKeys.Contains(([string]$device.DeviceInstanceId).Trim())){continue}
-        if([string]::IsNullOrWhiteSpace([string]$device.DeviceInstanceId)) {
+        if(-not [string]::IsNullOrWhiteSpace($key) -and $byKey[$key].Group.Count -gt 1){continue}
+        if([string]::IsNullOrWhiteSpace($key)) {
             [pscustomobject]@{Device=$device.Name;InstanceId=$device.DeviceInstanceId;Code=$null;Message='Device instance ID was not supplied; this node cannot be matched reliably.';Kind='MissingInstance'}
         }
         if($device.HardwareIDReadStatus -match '^Invalid' -or $device.CompatibleIDReadStatus -match '^Invalid'){
@@ -1793,18 +2079,20 @@ function Get-PnpIssues($Devices) {
     # should identify a unique device node within this single scan.
     foreach($duplicate in $duplicates) {
         $statuses=@($duplicate.Group | ForEach-Object {(Get-PnpStatus $_.ConfigManagerErrorCode).Text} | Select-Object -Unique)
-        [pscustomobject]@{Device=$duplicate.Group[0].Name;InstanceId=$duplicate.Group[0].DeviceInstanceId;Statuses=$statuses;Message=('Repeated instance ID in scan ('+$duplicate.Count+' records): '+$duplicate.Group[0].DeviceInstanceId);Kind='Duplicate'}
+        [pscustomobject]@{Device=$duplicate.Group[0].Name;InstanceId=$duplicate.Group[0].DeviceInstanceId;Statuses=$statuses;Message=('Repeated instance ID in scan ('+$duplicate.Group.Count+' records): '+$duplicate.Group[0].DeviceInstanceId);Kind='Duplicate'}
     }
 }
 function Write-PnpLine($Text,$Color) {
+    $anchor=Get-ScanViewAnchor
     if($ownedConsole -and -not $redirected) {
         try {
-            if([Console]::BufferHeight-[Console]::CursorTop -lt 16 -and [Console]::BufferHeight -lt 32766) {
+            if($null -ne $script:scanViewState){Ensure-ScanBuffer ([int][math]::Ceiling(([string]$Text).Length/[math]::Max(1,[Console]::WindowWidth))+4)}
+            elseif([Console]::BufferHeight-[Console]::CursorTop -lt 16 -and [Console]::BufferHeight -lt 32766) {
                 [Console]::SetBufferSize([Console]::BufferWidth,[math]::Min(32766,[Console]::BufferHeight+512))
             }
         } catch {}
     }
-    Write-Host $Text -ForegroundColor $Color
+    try {Write-Host $Text -ForegroundColor $Color}finally{Complete-ScanDisplayWrite $anchor}
 }
 function Write-PnpValue($Label,$Value,$Color) {
     $width=96
@@ -1991,9 +2279,9 @@ function Show-Records($Records,$SectionName='') {
 }
 function Get-SectionIdentifierInfo($Name,$Records) {
     if($Name -eq 'PnP hardware IDs') {
-        $nodes=@($Records | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_.DeviceInstanceId)}).Count
-        $missingNodes=@($Records | Where-Object {$null -ne $_ -and [string]::IsNullOrWhiteSpace([string]$_.DeviceInstanceId)}).Count
-        $models=@($Records | Where-Object {@($_.HardwareID | Where-Object {$_ -is [string] -and -not [string]::IsNullOrWhiteSpace(($_ -replace '^[\s\x00]+|[\s\x00]+$',''))}).Count -gt 0}).Count
+        $nodes=@($Records | Where-Object {-not [string]::IsNullOrWhiteSpace((Normalize-IdentifierText $_.DeviceInstanceId))}).Count
+        $missingNodes=@($Records | Where-Object {$null -ne $_ -and [string]::IsNullOrWhiteSpace((Normalize-IdentifierText $_.DeviceInstanceId))}).Count
+        $models=@($Records | Where-Object {(Get-DeviceIdListInfo $_.HardwareID).Values.Count -gt 0}).Count
         $review=@(Get-PnpIssues $Records).Count
         $text="$nodes instance IDs; $models with model IDs"
         if($missingNodes){$text+="; $missingNodes instance IDs missing"}
@@ -2032,17 +2320,16 @@ function Get-ScanProgressText([int]$Completed,[int]$Total,[double]$Seconds,[int]
 function Update-ScanProgress([int]$Completed=$script:scanStep) {
     if($null -eq $script:scanProgressState -or $null -eq $script:scanProgressClock){return}
     try {
-        $left=[Console]::CursorLeft;$top=[Console]::CursorTop
-        if([Console]::WindowWidth -ne $script:scanProgressState.Width){return}
-        $text='  '+(Get-ScanProgressText $Completed $scanTotal $script:scanProgressClock.Elapsed.TotalSeconds ([Console]::WindowWidth-3))
-        $text=Limit-TableText $text ([Console]::WindowWidth-1)
-        [Console]::SetCursorPosition(0,$script:scanProgressState.Top)
-        Write-Host ($text.PadRight([Console]::WindowWidth-1)) -ForegroundColor $palette.Heading -NoNewline
-    }catch{}finally{
-        if($null -ne $top){try{[Console]::SetCursorPosition($left,$top)}catch{}}
-    }
+        $total=if($null -ne $script:scanProgressTotal){$script:scanProgressTotal}else{$scanTotal}
+        $text='  '+(Get-ScanProgressText $Completed $total $script:scanProgressClock.Elapsed.TotalSeconds ([Console]::WindowWidth-3))
+        $null=Write-ScanStatus $script:scanProgressState $text $palette.Heading
+    }catch{}
 }
 function Start-ScanLine($Prefix) {
+    Read-ScanNavigation
+    $anchor=Get-ScanViewAnchor
+    try {
+    if($null -ne $script:scanViewState){try{Ensure-ScanBuffer ([int][math]::Ceiling(([string]$Prefix).Length/[math]::Max(1,[Console]::WindowWidth))+5)}catch{}}
     Write-Host $Prefix -ForegroundColor $palette.Muted -NoNewline
     if($ownedConsole -and -not $redirected) {
         try {
@@ -2053,21 +2340,20 @@ function Start-ScanLine($Prefix) {
         }catch{}
     }
     return $null
+    }finally{Complete-ScanDisplayWrite $anchor}
 }
 function Update-ScanWaiting($State,[double]$Seconds) {
     if($null -eq $State -or $Seconds -lt 5){return}
     try {
-        $left=[Console]::CursorLeft;$top=[Console]::CursorTop
-        if([Console]::WindowWidth -ne $State.Width){return}
         $text=Limit-TableText ('[WAITING {0:0.0}s] Reading Windows provider' -f $Seconds) ($State.Width-$State.Left-1)
-        [Console]::SetCursorPosition($State.Left,$State.Top)
-        Write-Host $text -ForegroundColor $palette.Muted -NoNewline
-        $State.LastLength=$text.Length
-    }catch{}finally{
-        if($null -ne $top){try{[Console]::SetCursorPosition($left,$top)}catch{}}
-    }
+        if(Write-ScanStatus $State $text $palette.Muted){$State.LastLength=$text.Length}
+    }catch{}
 }
 function Complete-ScanLine($State,$Name,$Text,$Color) {
+    Read-ScanNavigation
+    $anchor=Get-ScanViewAnchor
+    try {
+    if($null -ne $script:scanViewState){try{Ensure-ScanBuffer ([int][math]::Ceiling(([string]$Text).Length/[math]::Max(1,[Console]::WindowWidth))+5)}catch{}}
     if($null -ne $State) {
         try {
             if([Console]::WindowWidth -ne $State.Width){throw 'Console resized'}
@@ -2076,6 +2362,7 @@ function Complete-ScanLine($State,$Name,$Text,$Color) {
         }catch{Write-Host '';Write-Host ($Name+': ') -ForegroundColor $palette.Muted -NoNewline}
     }
     Write-Host $Text -ForegroundColor $Color
+    }finally{Complete-ScanDisplayWrite $anchor}
 }
 function New-ScanQueryWorker {
     $worker=[PowerShell]::Create()
@@ -2083,7 +2370,7 @@ function New-ScanQueryWorker {
         $setup=New-Object Text.StringBuilder
         [void]$setup.AppendLine('$ErrorActionPreference="Stop"')
         # Only collection helpers run here; UI and snapshot state stay on the main thread.
-        foreach($name in @('GiB','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Format-NetworkStatus','Get-NetworkAddressInfo','Get-NetworkIdentifiers','Get-DeviceIdListInfo','Get-PresentDeviceRecords','Get-DriverHardwareIds','Get-ScanFailureInfo','Test-ProjectionReadFailure','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
+        foreach($name in @('GiB','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Format-NetworkStatus','Get-NetworkAddressInfo','Get-NetworkIdentifiers','Get-DeviceIdListInfo','Get-DeviceInstanceInfo','Get-DevicePropertyIdListInfo','Get-PresentDeviceRecords','Get-DriverHardwareIds','Get-ScanFailureInfo','Test-ProjectionReadFailure','Invoke-BufferedHardwareRead','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Test-ScanValuePresent','Normalize-IdentifierText','Assert-DeviceRecords','Get-DeviceUInt32Info','Read-DevicePropertyBatches','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
             $function=Get-Item -LiteralPath ('Function:\'+$name) -ErrorAction SilentlyContinue
             if($null -ne $function -and -not $function.ModuleName){[void]$setup.AppendLine(('function '+$name+' {'+$function.Definition+'}'))}
         }
@@ -2115,6 +2402,7 @@ function Invoke-ScanQuery([scriptblock]$Query,[scriptblock]$Pulse) {
         $feedbackAvailable=$true
         while(-not $pending.IsCompleted) {
             if($pending.AsyncWaitHandle.WaitOne(100)){break}
+            Read-ScanNavigation
             if($Pulse -and $feedbackAvailable){
                 try{& $Pulse | Out-Null}catch{$feedbackAvailable=$false;$script:lastQueryFeedbackFailure=$_.Exception.Message}
             }
@@ -2148,19 +2436,19 @@ function Get-ScanFailureInfo($Failure) {
     for($depth=0;$null -ne $exception -and $depth -lt 16;$depth++) {
         if($exception.Data.Contains('HwidFallbackFailure')){$classificationDetails=[string]$exception.Data['HwidFallbackFailure']}
         $hresult=$exception.HResult.ToString('X8')
-        $cimStatus=if($exception.PSObject.Properties['StatusCode']){[string]$exception.StatusCode}else{''}
-        if($exception -is [UnauthorizedAccessException] -or $hresult -in @('80070005','80041003') -or $cimStatus -eq 'AccessDenied'){$kind='Access';break}
-        if($exception -is [TimeoutException] -or $hresult -eq '800705B4'){$kind='Timeout';break}
+        $cimStatus=if($exception.PSObject.Properties['StatusCode']){[string]$exception.StatusCode}elseif($exception.PSObject.Properties['ErrorCode']){[string]$exception.ErrorCode}else{''}
+        if($exception -is [UnauthorizedAccessException] -or $hresult -in @('80070005','80041003','80041062') -or $cimStatus -in @('AccessDenied','PrivilegeNotHeld')){$kind='Access';break}
+        if($exception -is [TimeoutException] -or $hresult -in @('800705B4','80041069','80041088') -or $cimStatus -in @('Timeout','Timedout')){$kind='Timeout';break}
         if($exception -is [IO.InvalidDataException]){$kind='Data';break}
-        if($exception -is [NotSupportedException] -or $exception -is [System.Management.Automation.CommandNotFoundException] -or $hresult -in @('8004100E','80041010','80041013','800706BA') -or $cimStatus -in @('InvalidClass','InvalidNamespace','NotSupported')){$kind='Provider';break}
+        if($exception -is [NotSupportedException] -or $exception -is [System.Management.Automation.CommandNotFoundException] -or $hresult -in @('8004100C','8004100E','80041010','80041011','80041012','80041013','80041085','800706BA') -or $cimStatus -in @('InvalidClass','InvalidNamespace','NotSupported','ProviderNotFound','InvalidProviderRegistration','ProviderLoadFailure')){$kind='Provider';break}
         $exception=$exception.InnerException
     }
     if($kind -eq 'Other') {
         # Both reader messages stay in Details; classify the final reader alone.
         $reasonText=if($null -ne $classificationDetails){$classificationDetails}else{$details}
-        if($category -eq 'PermissionDenied' -or $reasonText -match '(?i)access\s+(is\s+)?denied|unauthori[sz]ed|permission denied|insufficient privileges?|0x80070005|0x80041003'){$kind='Access'}
-        elseif($category -eq 'OperationTimeout' -or $reasonText -match '(?i)timed out|timeout|time-out|0x800705B4'){$kind='Timeout'}
-        elseif($reasonText -match '(?i)Invalid class|Invalid namespace|not supported|not recognized|No CIM or legacy WMI|0x8004100e|0x80041010|0x80041013|0x800706ba'){$kind='Provider'}
+        if($category -eq 'PermissionDenied' -or $reasonText -match '(?i)access\s+(is\s+)?denied|unauthori[sz]ed|permission denied|insufficient privileges?|0x80070005|0x80041003|0x80041062'){$kind='Access'}
+        elseif($category -eq 'OperationTimeout' -or $reasonText -match '(?i)timed out|timeout|time-out|0x800705B4|0x80041069|0x80041088'){$kind='Timeout'}
+        elseif($reasonText -match '(?i)Invalid class|Invalid namespace|not supported|not recognized|No CIM or legacy WMI|0x8004100c|0x8004100e|0x80041010|0x80041011|0x80041012|0x80041013|0x80041085|0x800706ba'){$kind='Provider'}
         elseif($reasonText -match '(?i)No data returned|No .* returned'){$kind='Empty'}
     }
     $info=switch($kind) {
@@ -2305,24 +2593,26 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     $script:scanStep=0
     $script:scanTimings=New-Object 'System.Collections.Generic.List[object]'
     Reset-UiPage
-    Start-UiReport
+    Start-UiReport -Scanning
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
-Write-Host '  Hardware identity and Windows inventory. Read-only scan.' -ForegroundColor $palette.Text
+Write-PnpLine '  Hardware identity and Windows inventory. Read-only scan.' $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.59'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.67'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
-Write-Host "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" -ForegroundColor $palette.Muted
+Write-PnpLine "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" $palette.Muted
 $scanClock=[Diagnostics.Stopwatch]::StartNew()
 $script:scanProgressClock=$scanClock
 $script:scanProgressState=$null
+$script:scanProgressTotal=$scanTotal+$(if($IncludeExtended){1}else{0})
 $script:scanQueryWorker=$null
 if($ownedConsole -and -not $redirected) {
     try {$script:scanProgressState=[pscustomobject]@{Top=[Console]::CursorTop;Width=[Console]::WindowWidth}}catch{}
 }
 if($null -ne $script:scanProgressState) {
-    Write-PnpLine (Limit-TableText ('  '+(Get-ScanProgressText 0 $scanTotal 0 ([Console]::WindowWidth-3))) ([Console]::WindowWidth-1)) $palette.Heading
-}else{Write-PnpValue 'Progress' (Get-ScanProgressText 0 $scanTotal 0) $palette.Heading}
+    Write-PnpLine (Limit-TableText ('  '+(Get-ScanProgressText 0 $script:scanProgressTotal 0 ([Console]::WindowWidth-3))) ([Console]::WindowWidth-1)) $palette.Heading
+}else{Write-PnpValue 'Progress' (Get-ScanProgressText 0 $script:scanProgressTotal 0) $palette.Heading}
+if($IncludeExtended){Write-PnpValue 'Device scope' 'Present devices + all Windows-known PnP records, including hidden/disconnected nodes.' $palette.Muted}
 try {
 if($UseWorker) {
     try {$script:scanQueryWorker=New-ScanQueryWorker}
@@ -2330,8 +2620,8 @@ if($UseWorker) {
 }
 $report['Report info']['QueryMode']=if($null -ne $script:scanQueryWorker){'Live progress'}else{'Direct queries'}
 Write-Heading "SCANNING $scanTotal SECTIONS"
-Write-Host '  READ = data read. CHECK = values or device records need review; query succeeded.' -ForegroundColor $palette.Muted
-Write-Host '  Found = supplied by Windows. Missing = not supplied. Default = generic value.' -ForegroundColor $palette.Muted
+Write-PnpLine '  READ = query succeeded. CHECK = review IDs/device records; [4] explains.' $palette.Muted
+Write-PnpLine '  Scroll during scan: wheel / Up Down / PgUp PgDn / Home End. Enter is ignored.' $palette.Muted
 Section 'System identity' {
     Get-HwidInstance -OperationTimeoutSec 20 Win32_ComputerSystemProduct -Property Vendor,Name,Version,IdentifyingNumber,UUID | Select-Object Vendor, Name, Version, IdentifyingNumber, UUID
 }
@@ -2382,12 +2672,12 @@ Section 'Windows Machine GUID' {
 }
 Section 'PnP hardware IDs' { Get-DriverHardwareIds }
 if($IncludeExtended) {
-    Write-PnpValue 'Extra scan' 'Normal queries finished; refreshing hidden/disconnected device records.' $palette.Muted
+    Write-PnpValue 'Device catalog' 'Reading all Windows-known nodes and their available ID/property details.' $palette.Muted
     $extraLine=Start-ScanLine '  [EXTRA] Extended device catalog '
     $extraClock=[Diagnostics.Stopwatch]::StartNew()
     try {
         $extra=Invoke-ScanQuery {Get-ExtendedDeviceInventory} {Update-ScanProgress $scanTotal;Update-ScanWaiting $extraLine $extraClock.Elapsed.TotalSeconds}
-        if($null -eq $extra -or -not @($extra.Devices).Count){throw 'No device records returned.'}
+        Assert-ExtendedDeviceCatalog $extra
         $report['Extended device inventory']=@($extra.Devices)
         $report['Extended scan info']=$extra.Info
         $report['Report info']['ExtendedStatus']='Refreshed'
@@ -2401,6 +2691,7 @@ if($IncludeExtended) {
         try {Complete-ScanLine $extraLine 'Extended catalog' ('[NOT READ] '+$failure.Reason+' / '+$failure.Code) $palette.Warn}catch{}
     }finally{$extraClock.Stop()}
 }
+try {Update-ScanProgress $script:scanProgressTotal}catch{}
 $scanClock.Stop()
 $report['Report info']['ScanSeconds']=[math]::Round($scanClock.Elapsed.TotalSeconds,2)
 $report['Report info']['ScanCompleted']=(Get-Date).ToString('o')
@@ -2427,9 +2718,12 @@ $report['Warnings'] = @($warnings.ToArray())
     $scanClock.Stop()
     $script:scanProgressClock=$null
     $script:scanProgressState=$null
+    $script:scanProgressTotal=$null
+    $script:scanViewState=$null
     if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose();$script:scanQueryWorker=$null}
 }
     }finally{
+        $script:scanViewState=$null
         if($null -ne $scanCursorVisible){try{[Console]::CursorVisible=$scanCursorVisible}catch{}}
     }
 }
@@ -3175,7 +3469,7 @@ function Show-RescanResult($Previous,$Current) {
 function Start-HardwareRescan([bool]$UseWorker=($ownedConsole -and -not $redirected),[scriptblock]$ContinueReader) {
     try {
         $next=1+[int]$report['Report info'].ScanNumber
-        $snapshot=Invoke-HardwareScan $next -UseWorker $UseWorker -IncludeExtended ($report.Contains('Extended scan info') -or $report['Report info'].ExtendedStatus -eq 'Unavailable')
+        $snapshot=Invoke-HardwareScan $next -UseWorker $UseWorker -IncludeExtended $true
         if(-not $snapshot.Completed -or $snapshot.Inventory -isnot [System.Collections.IDictionary] -or $snapshot.Inventory['Report info'].ScanNumber -ne $next -or @($snapshot.Inventory['Scan timing']).Count -ne $scanTotal){throw 'The scan did not return a complete snapshot.'}
         foreach($name in @($sectionGroups.Values | ForEach-Object {$_})+@('PnP hardware IDs')) {
             if(-not $snapshot.Inventory.Contains($name)){throw ('The scan did not return section: '+$name)}
@@ -3202,7 +3496,7 @@ function Start-HardwareRescan([bool]$UseWorker=($ownedConsole -and -not $redirec
 function Show-ScanTools {
     Write-Heading 'RESCAN & HELP'
     Write-PnpValue 'Active snapshot' ("#$($report['Report info'].ScanNumber) / "+(Format-ScanTime $report['Report info'].Generated)) $palette.Text
-    Show-MenuItem '1' 'Rescan entire PC' 'Refresh 17 sections plus any previously scanned extended catalog; compare results.'
+    Show-MenuItem '1' 'Rescan entire PC' 'Refresh 17 sections and all Windows-known device records; compare results.'
     Show-MenuItem '2' 'Help / explain IDs and colors' ''
     Show-MenuItem '3' 'Review last rescan changes' ''
     Show-MenuItem '4' 'Extended device scan / hidden & disconnected' ''
@@ -3297,17 +3591,22 @@ $script:lastScanPrevious=$null
 $script:lastScanCurrent=$null
 $script:lastSavedReportPath=$null
 $admin=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$initialScan=Invoke-HardwareScan
+$script:checkerPhase='Initial hardware scan'
+$initialScan=Invoke-HardwareScan -IncludeExtended $true
 $script:report=$initialScan.Inventory
 $script:warnings=$initialScan.Warnings
 $script:identifiers=$initialScan.Identifiers
 $initialScan=$null
+$script:checkerPhase='Finished scan / continue'
 if ($redirected -or -not $ownedConsole) { Show-Overview }
 Wait-ScanContinue 'main menu'
 :MainMenu while ($true) {
+    $script:checkerPhase='Main menu'
     Show-ControlDeck
     $choice = Read-MenuChoice
     if ($null -eq $choice) { return }
+    $script:checkerPhase='Menu option '+$choice
+    try {
     if ($choice -match '^[1-9]$') { Show-UiTransition 'Next' (Get-MenuDestination $choice); Reset-UiPage; Start-UiReport }
     switch ($choice) {
         '2' {
@@ -3336,4 +3635,8 @@ Wait-ScanContinue 'main menu'
     }
     if ($choice -ne '2') { Wait-UiPage }
     Show-UiTransition 'Back'
+    }catch{
+        Show-CheckerFailure $_ -Phase $script:checkerPhase
+        Wait-UiPage
+    }
 }

@@ -4,7 +4,7 @@
 
 **Inspect Windows hardware identifiers, save snapshots, and see what changed.**
 
-[![Version: 3.59](https://img.shields.io/badge/version-3.59-2563eb?style=flat-square)](docs/CHANGELOG.md)
+[![Version: 3.67](https://img.shields.io/badge/version-3.67-2563eb?style=flat-square)](docs/CHANGELOG.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square)](#compatibility)
 [![Language: PowerShell + Batch](https://img.shields.io/badge/language-PowerShell%20%2B%20Batch-5391fe?style=flat-square)](hwid.bat)
 [![License: not declared](https://img.shields.io/badge/license-not%20declared-6b7280?style=flat-square)](#license)
@@ -38,7 +38,7 @@ It is intended for PC owners, support technicians, and developers troubleshootin
 
 ### Hardware and system inventory
 
-The startup scan reads **17 sections**. Fields depend on the hardware, firmware, drivers, Windows providers, and access available on the PC.
+The startup scan reads **17 hardware/system sections**, followed by an **all-known device catalog**. Full rescans refresh both. The catalog includes Windows-exposed present, hidden and remembered PnP nodes; it does not guarantee discovery of hardware Windows cannot expose. Fields depend on the hardware, firmware, drivers, Windows providers, and access available on the PC.
 
 | Area | Information collected when available |
 | --- | --- |
@@ -53,13 +53,13 @@ The startup scan reads **17 sections**. Fields depend on the hardware, firmware,
 ### Inspection, reporting, and comparison
 
 - **Identifier views:** concise grouped serial/ID tables, hardware categories, full values, hardware IDs, compatible IDs, and device instance IDs.
-- **Extended device scan:** inspect Windows' known hidden, disabled, disconnected, and unknown-presence records, with available parent links and status properties.
+- **All-known device catalog:** startup and full rescans collect Windows' known hidden, disabled, disconnected, and unknown-presence records, with available parent links and status properties. The separate extended view can refresh this catalog on demand.
 - **Scan recovery:** compatible property reads and alternative readers where implemented, with timing, source details, explicit failures, and rescan support.
 - **Warnings and conflicts:** review missing/default IDs, unread sections, device-status findings, duplicate keys, and conflicting storage serial readings separately.
 - **TXT and JSON exports:** save a new report pair with scan/save timestamps and final-content verification. Existing snapshots are not overwritten.
 - **Saved snapshot library:** detect older captures, browse paged results, inspect storage/import problems, and use a fallback save folder when needed.
 - **Snapshot comparison:** show previous/current identifier values, character differences, added/removed ID records, and fields that could not be compared reliably. Rescans also review present-device arrivals/removals.
-- **Readable console:** numbered menus, status colors with text labels, scrollable reports, and optional Next/Back/Exit animations.
+- **Readable console:** numbered menus, status colors with text labels, scrollable reports and live scan navigation. Scroll back without timer redraws pulling the view away; End resumes following new results. Next/Back/Exit animations are optional.
 
 **Scope:** comparison covers selected identifier fields. Full PnP model/compatible-ID arrays and partition paths remain inventory details, rather than a complete diff of every exported property. See [identifier meanings and limits](docs/IDENTIFIERS.md).
 
@@ -76,7 +76,7 @@ Scan status, review totals, and numbered shortcuts for inspecting, saving, compa
 <details>
 <summary><strong>Completed scan</strong> — section results and read coverage</summary>
 
-The finished scan lists all 17 sections, identifier counts, query timings, and the prompt to continue.
+The finished scan lists the hardware/system sections, identifier counts, query timings, and the prompt to continue. This screenshot is from an earlier build; current builds also collect the all-known device catalog before reaching 100%.
 
 ![Completed 17-section HWID scan showing READ and CHECK results, timings, and the Enter-to-continue prompt](docs/images/scan-results.png)
 
@@ -123,6 +123,8 @@ Double-click **`hwid.bat`** in the extracted/cloned folder, or run it from Power
 ```powershell
 .\hwid.bat
 ```
+
+CMD shows three startup stages: preparing, checking compatible PowerShell, and starting the checker. These track the launch sequence; they do not add a waiting animation or artificial delay. Missing/blank checker content and failed runtime exits receive explicit errors.
 
 If CMD is unavailable, use the alternative launcher in an approved PowerShell session:
 
@@ -174,7 +176,7 @@ Saving preserves the active capture; it does not scan again. Rescanning does not
 
 The picker prioritizes older usable captures from the same computer and supports paging, refresh, and manual paths. A TXT path uses its matching JSON companion; TXT alone cannot be compared. Missing/default values, unread sections, and ambiguous matches are disclosed rather than treated as confirmed changes.
 
-Use **[9] > [3]** to reopen the last rescan comparison in the current session. Choose **[9] > [4]** for the separate hidden/disconnected-device scan; later PC rescans attempt to refresh an extended catalog that was previously requested.
+Use **[9] > [3]** to reopen the last rescan comparison in the current session. Startup and full rescans include the all-known device catalog automatically. Choose **[9] > [4]** to refresh and browse its hidden/disconnected-device details separately.
 
 In the dedicated readable console, scroll reports with the mouse wheel, arrows, Page Up/Down, or Home/End. Follow each page's numbered shortcuts; Enter returns from report pages. See the [complete usage and troubleshooting guide](docs/USAGE.md) for controls and error codes.
 
@@ -234,6 +236,10 @@ $env:HWID_NO_ANIMATION = '1'
 ### What if the checker cannot start?
 
 Read the displayed `COMPAT` message, confirm an approved PowerShell 5.1/7 runtime is available, and keep both launcher files together. If CMD is unavailable, try `Start-HWID.ps1`. If neither a suitable PowerShell runtime nor an approved execution environment is available, the checker cannot run.
+
+### What happens after an unexpected error?
+
+A recoverable menu action displays **UI-01**, keeps the current scan in memory, and offers a return to the menu. An uncaught application error displays **CRASH-01** with the failure stage and bounded detail, clears active scan/display state, and exits with an error code. Existing saved reports are not deleted. Recovery does not automatically save a snapshot or create a crash log; save normally with **[6]** after a recoverable error. See [startup and recovery guidance](docs/USAGE.md#startup-and-recovery).
 
 ## Roadmap
 

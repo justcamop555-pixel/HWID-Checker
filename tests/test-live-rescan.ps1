@@ -17,13 +17,9 @@ $display=[pscustomobject]@{Mode='Read-only diagnostic'}
 $identifierPattern='^(SerialNumber|IdentifyingNumber|UUID|ProcessorId|MachineGuid|VolumeSerialNumber|UniqueId|Guid|MacAddress|PermanentAddress|InterfaceGuid|PNPDeviceID|SMBIOSAssetTag)$'
 $script:scanTotal=17
 function Write-Host {param($Object,$ForegroundColor,[switch]$NoNewline)}
-$initial=Invoke-HardwareScan 1 -UseWorker $LiveProgress.IsPresent
+$initial=Invoke-HardwareScan 1 -UseWorker $LiveProgress.IsPresent -IncludeExtended $Extended.IsPresent
 $script:report=$initial.Inventory;$script:warnings=$initial.Warnings;$script:identifiers=$initial.Identifiers
-if($Extended) {
-    $catalog=Get-ExtendedDeviceInventory
-    $report['Extended device inventory']=$catalog.Devices
-    $report['Extended scan info']=$catalog.Info
-}
+if($Extended -and $report['Report info'].ExtendedStatus -ne 'Refreshed'){throw 'Initial scan did not read the requested all-known catalog.'}
 $firstRead=(@(Get-ScanCoverage $report) | Measure-Object Read -Sum).Sum
 $firstSeconds=$report['Report info'].ScanSeconds
 Start-HardwareRescan -UseWorker $LiveProgress.IsPresent
@@ -38,6 +34,7 @@ if($Extended -and ($report['Report info'].ExtendedStatus -ne 'Refreshed' -or -no
     PreviousSnapshotKept=($lastScanPrevious['Report info'].ScanNumber -eq 1)
     RescanTimingRecords=$report['Scan timing'].Count
     QueryMode=$report['Report info'].QueryMode
+    InitialExtendedStatus=$initial.Inventory['Report info'].ExtendedStatus
     ExtendedStatus=$report['Report info'].ExtendedStatus
     ExtendedRecords=@($report['Extended device inventory'] | Where-Object {$null -ne $_}).Count
     CurrentDeviceNodes=@($report['PnP hardware IDs'] | Where-Object DeviceInstanceId).Count

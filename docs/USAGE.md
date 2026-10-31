@@ -4,9 +4,13 @@
 
 ## Read a scan
 
-Use **[1]** for the overview. It separates normal query coverage, identifier fields, present devices and optional extended records.
+Use **[1]** for the overview. It separates normal query coverage, identifier fields, present devices and the all-known extended catalog. Startup and full rescans collect the 17 normal sections plus this catalog automatically. The overall progress bar has 18 stages and reaches 100% after the catalog attempt finishes; READ/NOT READ shows whether collection succeeded.
 
 After the startup scan, the finished scan stays visible until you press **Enter** to continue to the main menu. After a rescan, press **Enter** to continue to the snapshot changes. You can scroll before continuing. Release Enter if it was held during scanning; the dedicated console clears scan-time keystrokes so they cannot skip this step. Redirected runs do not pause for this prompt.
+
+In the dedicated console, you can also navigate **during** background scanning with the mouse wheel/scrollbar, Up/Down, Page Up/Down, Home and End. Scrolling back pauses following so new rows and timers preserve your chosen view. **End** resumes following the latest output. Scan history stays close to the content actually written, with a small reserve for the next line, rather than thousands of blank rows. Enter and menu numbers are ignored while collection runs; keyboard processing is bounded so holding a key cannot monopolize the scan loop. If the live worker is unavailable and direct queries are used, keyboard navigation is processed between queries; host mouse scrolling remains available.
+
+Narrow windows retain wrapped scan text. Resizing skips stale timer coordinates; subsequent output remains readable, and the completed report can still be scrolled. Full-screen reports keep their existing history behavior; the main menu clears completed scan history when opened.
 
 If a provider rejects requested fields, the checker retries once using the properties that provider exposes. It keeps the same device filter, namespace and reader. **Compatible read** means that retry succeeded; unsupported fields can still be missing. The finish screen counts recovered sections, and **[5] Full inventory report** includes retry diagnostics under Scan timing. These details are also saved in TXT/JSON. Access failures, timeouts and missing providers keep their normal warnings.
 
@@ -16,6 +20,8 @@ A returned record containing only empty fields receives **READ-06**, instead of 
 
 If the normal Win32 present-device query is unsupported or returns no records, the checker tries **Get-PnpDevice -PresentOnly** when available. Successful recovery is marked **fallback reader**, with its source in **[5]** and saved reports. The normal scan keeps its present-device scope; **[9] > [4]** remains the separate scan for known hidden/disconnected records. Access/timeouts stay explicit, and an unavailable fallback never becomes an empty successful scan. Older systems without either usable reader retain the failure and recovery guidance.
 
+Standard WMI unsupported/missing-provider HRESULTs also enable this fallback on non-English Windows. WMI operation/provider timeouts are **READ-02**; missing access/privileges are **READ-01**. Those failures do not trigger a property retry or present-device fallback. Technical messages remain in **[5]** and saved reports; an unrecognized error remains **READ-05**.
+
 Network fallback scans distinguish operational states such as Up, Down, Dormant and Not present. Invalid status metadata stays unknown, with the raw value retained. When a fallback reader supplies multiple distinct addresses without identifying the current one, Current MAC remains unresolved and its comparison is skipped. The full address list and **Current MAC read status** appear in **[5]** and saved reports. A reported permanent address stays a separate identifier.
 
 | Label | Meaning |
@@ -24,7 +30,7 @@ Network fallback scans distinguish operational states such as Up, Down, Dormant 
 | Missing | An expected field was not supplied |
 | Default | Windows supplied a known placeholder value |
 | NOT READ | A query or optional catalog could not be read |
-| Not scanned | The optional extended scan has not been requested |
+| Not scanned | This capture has no extended catalog, for example an older present-only snapshot |
 | Conflict | Sources disagree, or records cannot be matched reliably |
 | Status not supplied | Windows did not return a readable device status; condition is unknown and included in review |
 
@@ -42,6 +48,8 @@ Found does not prove that an identifier is unique or authentic. Missing/default 
 | Uncertainty | Extended records with unread hiding flags or unknown presence; these groups can overlap |
 
 **PREVIOUS catalog / refresh NOT READ** means the latest extended refresh failed and the older catalog was retained. The displayed extended capture time belongs to that older data. Check **[4]** for the latest failure and retry **[9] > [4]**. If the first attempt failed before a catalog existed, the summary says **NOT READ**, rather than Not scanned. A later successful refresh clears that failure status.
+
+Repeated manual failures keep the latest diagnostic message, code, and attempt time together, even when an earlier failed full-rescan record or good catalog is retained. Successful recovery clears that failure context. An invalid extended result cannot be published as Refreshed: manual refresh keeps the prior catalog, while a PC rescan can publish its new normal data with extended NOT READ and no old catalog attached.
 
 The summary can show all normal queries read while an optional extended refresh failed. Read status remains partial in that case. Class counts ignore casing/edge-space differences, while the full report preserves original provider text.
 
@@ -63,6 +71,8 @@ Main **[4]** groups conflicts, device findings, unreadable sections, and missing
 Failure classification uses available typed errors/codes first, then known message patterns. An unfamiliar localized message without a recognized code remains READ-05. A timeout setting does not guarantee an overall scan deadline.
 
 If a query emits an uncaught error after returning some records, that section is marked NOT READ rather than presented as a complete list. This prevents incomplete data from appearing as confirmed hardware removals during comparison. Successful fallbacks that handle their own errors remain usable. A missing serial within an otherwise valid record remains a missing-ID finding, separate from invalid scan data.
+
+Reader attempts are checked before their partial rows can be accepted. A non-terminating property error can use the existing single compatible-property retry; a failed network or extended-device enumeration can use its compatibility readers. A recovered attempt supplies only the successful reader's records. If no reader succeeds, the section stays NOT READ with its diagnostics. Filter/namespace/timeout selection is preserved, and access/timeouts are not treated as property errors.
 
 Scalar ID fields and device keys are checked before scan results are counted. Arrays/objects/booleans in those fields produce READ-06 rather than an invented joined ID or a later save error. Ordinary boolean fields, numeric disk zero, dates outside ID fields, and hardware-ID arrays remain supported.
 
@@ -95,6 +105,8 @@ All review groups show a count and an explicit result when empty. **Start with**
 Disk sources are joined only when each has one valid record for the same disk number. Duplicate disk numbers remain separate records, preventing guessed matches from producing false serial clashes or filling the wrong device's missing serial. A source disagreement alone does not prove disk failure.
 
 Repeated device-instance rows count as one conflict, with their distinct status readings shown together. This keeps disabled/working/unknown readings available without pretending that duplicate rows are separate devices. Shared hardware-model IDs are normal and are not treated as instance conflicts. Code 22 alone is a disabled-device finding; code 45 describes a disconnected device.
+
+Duplicate review ignores instance-ID case and leading/trailing whitespace or NUL padding, using the same keys as node-change matching. It preserves embedded characters and original ID text. Padding-only instance IDs count as missing. Model coverage includes only nonblank string IDs, consistently in scan progress and the overview.
 
 ## Save a baseline
 
@@ -141,9 +153,21 @@ For two consecutive scans in the same session, **[9] > [3]** reopens the last re
 
 ## Scan hidden and remembered devices
 
-Choose **[9] > [4]**. Windows may expose hidden flags, disabled devices, disconnected records, unknown presence and additional device properties. The extended view provides numbered shortcuts for these groups.
+Startup and full rescans collect the all-known catalog automatically. Choose **[9] > [4]** to refresh it separately and browse its groups. Windows may expose hidden flags, disabled devices, disconnected records, unknown presence and additional device properties. The extended view provides numbered shortcuts for these groups.
 
-Hidden and remembered are different properties, and their groups can overlap. A remembered record does not prove that hardware is still connected. Unknown presence or unread visibility stays unknown. Once an extended catalog has been collected, a PC rescan also attempts to refresh it.
+Hidden and remembered are different properties, and their groups can overlap. A remembered record does not prove that hardware is still connected. Unknown presence or unread visibility stays unknown. Full PC rescans request this catalog even when the previous capture did not include one.
+
+Optional device properties are read in batches of up to 32 nodes. A generic terminating batch failure receives one bounded per-device recovery pass, retaining earlier successful rows and continuing later batches. Access, timeout and unavailable-provider failures do not start per-device retry loops; a retry pass stops if one of those failures occurs. Non-terminating optional errors retain usable rows. **[5]** and saved reports include `PropertyBatches`, `PropertyRetryDevices` and the reader-error count. These are read attempts, not extra devices. Missing properties stay unknown; an unavailable catalog leaves normal scan results usable with an explicit warning.
+
+Contradictory device-property readings keep presence or node visibility unknown and appear in detail review. The full report and JSON retain distinct `PresenceReadings` and `NodeStatusReadings`; repeated equal readings do not create a conflict. Native status fallback is used for missing valid readings, and does not replace an already conflicting set with one chosen value.
+
+Extended view filters overlap: **2** includes disconnected records, **3** includes all records with a Windows hiding flag/class, **4** includes known-present disabled records, **5** includes all known-present records, and **6** includes unknown presence. One device can appear in several views; do not add these counts to estimate unique devices.
+
+Problem-code arrays/objects/booleans are unread metadata rather than numeric status. A usable native code remains available when an optional reading is invalid. Disagreeing valid codes remain unknown, with `ProblemCodeReadings`, `ProblemCodeConflict`, read status and raw observations in **[5]**/JSON. Invalid optional parent data leaves topology unresolved while preserving the device's core identifiers; `ParentReadStatus` and `RawParentInstanceId` explain it.
+
+Normal and extended device scans select the first usable `PNPDeviceID`, `InstanceId`, or Windows `DeviceID` key. `InstanceIdSource` records the field used. Original ID text stays in the report; normalized keys are used to look up properties and parent names. A blank or NUL-only alias cannot replace a valid alternative.
+
+Extended hardware/compatible ID lists keep valid text, order, invalid raw observations, and read-status findings. Usable PnP-record lists stay preferred. If they are absent, collected property lists supply the usable values. `HardwareIDPropertyReadings` and `CompatibleIDPropertyReadings` retain original observations; different lists are flagged, and their combined inspection values do not establish a Windows driver-priority order. **[5]** and saved JSON keep these full details.
 
 ## Navigation
 
@@ -162,6 +186,10 @@ The checker requires Windows and PowerShell 5.1 or newer in FullLanguage mode. C
 | COMPAT-01 / no suitable PowerShell | Use an installed PowerShell 5.1+ runtime approved for your Windows version. The checker does not install one. |
 | COMPAT-02 / restricted execution | Ask your administrator about approved execution. The checker does not change persistent policy. |
 | COMPAT-03 from the PS1 launcher | Read the accompanying message. Keep `Start-HWID.ps1` and `hwid.bat` together. |
+| START-01 | Checker content could not be loaded or parsed. Missing/blank content is rejected; download a complete copy if needed. |
+| START-02 | CMD received a nonzero runtime exit code. Read the earlier error; the exit code is preserved. |
+| UI-01 | A menu action failed. The current scan is retained; press Enter to return to the menu and save normally if needed. |
+| CRASH-01 | An uncaught application error stopped the checker. Note the phase/detail shown, then reopen and retry. |
 | CMD is unavailable | Use `Start-HWID.ps1` in an approved PowerShell session. Normal script policies still apply. |
 | A section is unavailable | Open **[4]**. A provider may be absent, blocked, or unable to expose data. Other sections remain usable. |
 | Access denied | If appropriate, run as administrator and rescan. Permissions cannot supply values missing from firmware. |
@@ -170,3 +198,13 @@ The checker requires Windows and PowerShell 5.1 or newer in FullLanguage mode. C
 | A JSON report cannot be compared | Use the JSON exported by a supported checker version, not TXT. Keep the original error message for troubleshooting. |
 
 If both CMD and a suitable PowerShell runtime are unavailable, this script-based checker cannot run. Windows-specific hardware providers may limit coverage even when the runtime is supported.
+
+## Startup and recovery
+
+The BAT launcher displays **[1/3] Preparing startup**, **[2/3] Checking for compatible PowerShell**, then **[3/3] Starting checker** only after a suitable runtime is found. It does not install software or add a fixed loading delay. The PowerShell-only launcher also shows a preparation message. The BAT, PS1 and dedicated-window loaders all reject missing/blank embedded content before invoking it.
+
+Unexpected menu-action errors use **UI-01**. The current inventory and warnings remain in memory; live worker/timer/navigation state is cleared, and Enter returns to the main menu. Recovery does not rescan or save automatically. Use **[6]** to save the retained capture when needed.
+
+Uncaught application failures use **CRASH-01**, showing the phase and up to 320 characters of error detail. The checker attempts to dispose its query worker, stop its progress clock and restore cursor visibility before exiting with code 1. The dedicated window offers Enter to close on interactive input. Startup/parse failures before the application can run use **START-01** or **COMPAT-03**; CMD preserves nonzero exit codes and keeps its failure message visible.
+
+No automatic crash log or snapshot is written by these handlers. Saved reports are left available. Forced process termination, native runtime failure or Windows shutdown can bypass PowerShell handlers, so an unsaved scan cannot always be recovered.
