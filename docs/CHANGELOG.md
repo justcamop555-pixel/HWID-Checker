@@ -2,6 +2,43 @@
 
 [Back to the main README](../README.md)
 
+## 3.71
+
+- Fixed silent device-property coverage loss reproduced with concurrent Windows queries. Normal and recovery calls now use `Get-PnpDeviceProperty -ThrottleLimit 1`, retaining batches of up to 32 nodes and existing bounded recovery. A development-PC probe returned 169 container rows for only 158 distinct nodes at default concurrency, versus all 169 at limit one. This is a measured local issue, not a universal Windows compatibility claim.
+- Added distinct-node property coverage to extended metadata and its summary. Returned row totals cannot inflate node coverage; individual fields may still be absent. Serial property collection can take longer (2.51s versus 1.40s in that probe).
+- Added optional Windows container/base-container IDs with source read status and original observations. Equivalent GUID formats preserve the first original text; conflicting values stay unresolved, empty GUIDs remain unassigned, and malformed values stay available without discarding valid device records. These are Windows grouping IDs, outside normal component-ID totals and serial comparisons.
+- Fixed native/property hardware-ID and compatible-ID disagreements remaining unflagged. Both exact observations are retained, native lists stay preferred, and device review explains the disagreement. Compatible-ID lists now have their own source and recovery counts. Leading zeros, case, padding and order remain available in saved data.
+- Validation: **1,572 checks per runtime** on Windows PowerShell 5.1 and PowerShell 7.6.5, including 68 new ID-completeness checks in direct/worker modes. The previous build fails the source-conflict fixture. Live audits on both runtimes matched 169 nodes, 252 exact native lists and 338 independently read grouping GUIDs with zero mismatches. A full live scan/rescan read all 17 sections, refreshed both extended catalogs and preserved the previous snapshot (32.10s / 30.79s on this PC).
+
+See [ID scanning accuracy and coverage](IDENTIFIERS.md#id-scanning-accuracy-and-coverage) for field definitions, source evidence and limits. No scan can recover identifiers that Windows or the device does not expose.
+
+## 3.70
+
+- Reorganized **Main [3] > [4] Graphics & network** into compact graphics, network and monitor sections with three jump shortcuts. Network interfaces are grouped by reported hardware flags; raw records remain available in Main [5] and saved reports.
+- Fixed the modern CIM fallback promoting a single reported network address into a confirmed current MAC. It now preserves the candidate/list separately, states that current address is unidentified, and skips unreliable current-address comparisons. Explicit primary/legacy MAC fields remain usable.
+- Replaced the fallback's generic speed claim with receive/transmit rate labels, retained raw directional values, and labeled legacy bandwidth as an estimate. Permanent addresses are labeled Windows-reported; absent optional IDs on non-hardware interfaces no longer claim “not used.”
+- Graphics modes are labeled WMI-reported and require valid positive width/height values. Missing, incomplete and invalid dimensions remain explicit. The hardware viewer also gives raw network Speed fields the correct bits/s context instead of the memory MHz label.
+- Added a [field audit](GRAPHICS-NETWORK.md) comparing previous claims with Windows definitions, including the direct CIM fallback's potentially smaller adapter set. No GPU-to-monitor mapping or internet-performance guarantee is inferred.
+- Validation: **1,504 checks per runtime** on Windows PowerShell 5.1 and PowerShell 7.6.5. Fifty new checks include direct/worker readers, snapshots/comparisons and native 80/24-column navigation. Both live audits matched 16 primary adapter records with zero differences; the forced CIM fallback returned 4 records with correctly unresolved current addresses and directional rates. A full live scan/rescan read all 17 sections, refreshed both extended catalogs and retained the previous snapshot (29.06s / 27.56s on this PC).
+
+## 3.69
+
+- Added the requested 3-second reading pause in CMD preparation before any PowerShell probe starts. The Windows timer displays its countdown with `/nobreak`, so ordinary/held Enter input cannot rush the screen. The dedicated PowerShell window does not repeat this BAT-only pause.
+- Handle missing, blocked or failed timer execution and redirected input as optional presentation failures. Startup shows one informational line and continues; runtime restrictions, body validation and checker exit codes retain their existing behavior. The timer is resolved by its absolute Windows path, so PATH shadowing cannot replace it.
+- Validation: 1,454 checks on each of Windows PowerShell 5.1 and PowerShell 7.6.5. Fourteen new checks cover real attached-console timing with Enter queued, headless input, missing/failed timers, empty/shadowed PATH, blocked/missing runtimes and exit-code preservation. The earlier version fails the preparation-pause regression fixture. Existing local v3.68 scanning fixes are retained.
+
+Microsoft documents the native [`timeout /t` and `/nobreak` options](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/timeout). The countdown is a bounded reading pause rather than a dependency on an installed PowerShell runtime.
+
+## 3.68
+
+- Fixed the normal Win32 present-device reader accepting rows explicitly marked `Present=false`. It now applies the same exclusion as the present-only fallback; an all-disconnected primary result can recover through that fallback. Unknown presence stays unknown, and the all-known catalog continues to retain disconnected records.
+- Fixed singleton containers being string-coerced into apparent RAM/disk sizes, link speeds, drive letters, storage codes or network status. Shared scalar validation rejects lists/objects/booleans/date-like values while preserving zero, numeric strings and supported integer ranges. Integral enums use their underlying numeric value in numeric readers.
+- Fixed nested monitor-code containers and list-shaped text lengths manufacturing decoded values. Invalid fields retain their raw observations without discarding valid neighboring monitor records or identifiers.
+- Fixed calculated raw metadata fields losing singleton-list shape. Storage codes, partition drive letters and fallback network status/speed observations preserve their original scalar/list structure through collection and saved JSON. Scan arrays are copied without serialization decorations so PowerShell 5.1 does not export singleton arrays as `value`/`Count` wrapper objects.
+- Validation: 1,440 checks on each of Windows PowerShell 5.1 and PowerShell 7.6.5, including 41 new scalar/presence checks in direct and worker modes. Baseline fixtures reproduce the old false-present and numeric-container behavior; snapshot round trips preserve raw data and exact identifiers. Read-only live tests cover scanning, rescanning and present-only fallback.
+
+Microsoft documents [memory capacity as a UInt64 scalar](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-physicalmemory), [monitor IDs as UInt16 arrays with scalar lengths](https://learn.microsoft.com/en-us/windows/win32/wmicoreprov/wmimonitorid), and [PnP presence as a Boolean property](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-pnpentity). Coverage still depends on available Windows providers and access.
+
 ## 3.67
 
 - Added visible CMD preparation stages before the checker starts: preparing, checking compatible PowerShell and launching. The PS1 loader also displays preparation. Progress reflects actual steps and adds no fixed delay.

@@ -145,7 +145,7 @@ Assert (-not (Test-SectionReadable @(@{Unavailable='Denied'}))) 'Unavailable mar
 Assert ((Get-CanonicalIdentifier 'MacAddress' 'aa:bb:cc:dd:ee:12') -eq (Get-CanonicalIdentifier 'MacAddress' 'AA-BB-CC-DD-EE-12')) 'MAC separator and case changes do not create false differences'
 Assert ((Get-CanonicalIdentifier 'UUID' '{AB123456-1234-5678-ABCD-123456789012}') -eq (Get-CanonicalIdentifier 'UUID' 'ab12345612345678abcd123456789012')) 'Equivalent GUID formats compare equally'
 Assert ((Get-CanonicalIdentifier 'SerialNumber' 'abc') -cne (Get-CanonicalIdentifier 'SerialNumber' 'ABC')) 'Serial number case is preserved'
-Assert ((Get-FieldQuality 'PermanentAddress' '' ([pscustomobject]@{HardwareInterface=$false})) -eq 'Not applicable') 'Virtual adapter without permanent MAC is not a missing-ID warning'
+Assert ((Get-FieldQuality 'PermanentAddress' '' ([pscustomobject]@{HardwareInterface=$false})) -eq 'Optional') 'An absent non-hardware permanent address is optional rather than proven inapplicable'
 Assert ((Get-FieldQuality 'PermanentAddress' '' ([pscustomobject]@{HardwareInterface=$true})) -eq 'Missing') 'Missing physical adapter MAC remains visible'
 $script:answers.Enqueue('')
 $script:answers.Enqueue('0')
@@ -507,7 +507,7 @@ Assert ((Get-FieldQuality 'VolumeSerialNumber' '' $emptyOptical) -eq 'Not applic
 Assert (@(Get-QuickIds ([ordered]@{Volumes=@($emptyOptical)})).Count -eq 0) 'Quick IDs omit optical-drive serials when no filesystem/media is reported'
 $loadedDrive=[pscustomobject]@{DriveType=2;FileSystem='NTFS';Size_GiB=16;VolumeSerialNumber=''}
 Assert ((Get-FieldQuality 'VolumeSerialNumber' '' $loadedDrive) -eq 'Missing') 'Mounted removable filesystem with an unreadable serial still requires review'
-Assert ((Get-FieldQuality 'MacAddress' '' ([pscustomobject]@{HardwareInterface=$false})) -eq 'Not applicable') 'Virtual interface without an assigned MAC is not treated as physical-ID loss'
+Assert ((Get-FieldQuality 'MacAddress' '' ([pscustomobject]@{HardwareInterface=$false})) -eq 'Optional') 'An absent non-hardware address stays optional without claiming the interface cannot use one'
 Assert ((Get-FieldQuality 'MacAddress' '' ([pscustomobject]@{HardwareInterface=$true})) -eq 'Missing') 'Physical interface with no MAC remains a review item'
 $oldNetwork=[ordered]@{'Network adapters'=@([pscustomobject]@{InterfaceGuid='NIC-1';MacAddress='AA-BB-CC-DD-EE-12'})}
 $newNetwork=[ordered]@{'Network adapters'=@([pscustomobject]@{InterfaceGuid='NIC-1';MacAddress='AA-BB-CC-DD-EE-12';PNPDeviceID='PCI\NEW_FIELD'})}
@@ -742,7 +742,7 @@ try {
     function Get-NetAdapter {param([switch]$IncludeHidden) throw 'Force CIM fallback'}
     function Get-CimInstance {param($Namespace,$ClassName,$OperationTimeoutSec,$Property) [pscustomobject]@{Name='NIC';InterfaceGuid='NIC-1';NetworkAddresses=@('AABBCCDDEE12');PermanentAddress='112233445566';HardwareInterface=$true} }
     $rawNetwork=@(Get-NetworkIdentifiers)
-    Assert ($rawNetwork[0].MacAddress -eq 'AABBCCDDEE12' -and $rawNetwork[0].PermanentAddress -eq '112233445566') 'CIM network fallback derives the current MAC from NetworkAddresses without mixing up the permanent MAC'
+    Assert ($null -eq $rawNetwork[0].MacAddress -and $rawNetwork[0].ReportedNetworkAddress -eq 'AABBCCDDEE12' -and $rawNetwork[0].PermanentAddress -eq '112233445566') 'CIM fallback keeps reported and permanent addresses separate without claiming an unverified current MAC'
     Assert ($rawNetwork[0].NetworkAddresses[0] -eq 'AABBCCDDEE12') 'Network fallback preserves the underlying address list for full reports'
 } finally {Set-Item Function:Get-CimInstance -Value $savedCimScanFunction;Set-Item Function:Get-NetAdapter -Value $savedNetScanFunction}
 $timingReport=$report;$timingWarnings=$warnings;$timingStep=$script:scanStep;$timingList=$script:scanTimings

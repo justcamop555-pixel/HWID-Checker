@@ -22,7 +22,23 @@ If the normal Win32 present-device query is unsupported or returns no records, t
 
 Standard WMI unsupported/missing-provider HRESULTs also enable this fallback on non-English Windows. WMI operation/provider timeouts are **READ-02**; missing access/privileges are **READ-01**. Those failures do not trigger a property retry or present-device fallback. Technical messages remain in **[5]** and saved reports; an unrecognized error remains **READ-05**.
 
-Network fallback scans distinguish operational states such as Up, Down, Dormant and Not present. Invalid status metadata stays unknown, with the raw value retained. When a fallback reader supplies multiple distinct addresses without identifying the current one, Current MAC remains unresolved and its comparison is skipped. The full address list and **Current MAC read status** appear in **[5]** and saved reports. A reported permanent address stays a separate identifier.
+Both present-device readers exclude rows whose `Present` value is explicitly Boolean false. If the Win32 read contains only disconnected rows, the checker tries the present-only fallback rather than counting those rows as connected devices. An empty fallback remains **READ-04**. Missing presence is not converted to false; the all-known catalog still retains remembered/disconnected records separately.
+
+Numeric display metadata must be a supported scalar. A one-item list cannot become a RAM/disk size, link speed, drive letter or storage/network status. Invalid values remain unknown while usable IDs and raw metadata stay available. Raw storage codes, drive letters and network status/speed fields preserve their list shape in JSON. Monitor text still accepts its documented numeric-code arrays, but nested code lists and list-shaped lengths are invalid. Real zero values and supported numeric strings remain usable; integral enums use their numeric values for numeric readers.
+
+Network fallback scans distinguish operational states such as Up, Down, Dormant and Not present. Invalid status metadata stays unknown, with the raw value retained. The direct CIM fallback's address list does not identify the current address, even when it contains only one value. Current MAC therefore remains unresolved and its comparison is skipped. A single distinct candidate is shown separately as unverified; the full address list and **Current MAC read status** appear in **[5]** and saved reports. A Windows-reported permanent address stays a separate identifier.
+
+## Browse graphics, network and monitors
+
+Choose Main **[3] Browse hardware / devices**, then **[4] Graphics & network**. The view uses the captured snapshot; opening it does not rescan. Jump with **1** for graphics, **2** for network or **3** for monitors. Enter or **0** returns to the main menu. Main **[5]** retains the full records and source metadata.
+
+- **Graphics:** adapter name, processor description, WMI-reported mode, driver version/date and Windows device ID. Missing, incomplete or invalid dimensions are described explicitly. A controller's reported mode is not a verified mapping to a particular monitor.
+- **Network:** interfaces grouped as reported hardware/physical, reported non-hardware or type not supplied. Each entry separates state, rate kind, current-address evidence, available permanent address, interface ID and reader. A false hardware flag is not used to guess the interface's specific technology.
+- **Monitors:** reported name, manufacturer, serial, Windows active flag and instance ID. Monitor records remain separate from graphics-controller records.
+
+The modern CIM fallback labels receive and transmit rates separately; the legacy fallback calls its rate a reported bandwidth estimate. Link state/rates do not measure internet connectivity or throughput. A permanent address is Windows-reported and can change. Missing optional addresses/device IDs on a reported non-hardware interface mean **not supplied / may not apply**, rather than proof that the device cannot use them. Those absent optional fields stay outside the quick-ID totals.
+
+Readers can expose different sets of adapters. **Get-NetAdapter -IncludeHidden** requests hidden adapters; the direct CIM compatibility reader does not carry that command's IncludeHidden option and can return fewer records. A successful read means that reader completed, not that every network interface was discovered. The all-known PnP catalog remains a separate device inventory. See the [field audit](GRAPHICS-NETWORK.md) for evidence and tested limits.
 
 | Label | Meaning |
 | --- | --- |
@@ -73,6 +89,10 @@ Failure classification uses available typed errors/codes first, then known messa
 If a query emits an uncaught error after returning some records, that section is marked NOT READ rather than presented as a complete list. This prevents incomplete data from appearing as confirmed hardware removals during comparison. Successful fallbacks that handle their own errors remain usable. A missing serial within an otherwise valid record remains a missing-ID finding, separate from invalid scan data.
 
 Reader attempts are checked before their partial rows can be accepted. A non-terminating property error can use the existing single compatible-property retry; a failed network or extended-device enumeration can use its compatibility readers. A recovered attempt supplies only the successful reader's records. If no reader succeeds, the section stays NOT READ with its diagnostics. Filter/namespace/timeout selection is preserved, and access/timeouts are not treated as property errors.
+
+Device-property reads retain batches of up to 32 nodes and use **one concurrent operation**, including recovery calls. This avoids the duplicate-node output observed with parallel property queries on the development PC. Extended capture metadata shows **PropertyNodesRequested**, **PropertyNodesReturned** and **PropertyNodesWithoutRows**. These count distinct nodes returning property rows, not the number of identifiers or physical devices. Individual values can still be absent.
+
+The extended catalog also reads Windows container/base-container IDs when available. They are optional device-grouping GUIDs, not factory serials. Conflicting GUID observations remain unresolved; malformed values stay raw for inspection. Native and property hardware/compatible-ID lists have separate sources, and disagreement is flagged without replacing the preferred native list. Review and exports retain both observations. See [ID scanning accuracy](IDENTIFIERS.md#id-scanning-accuracy-and-coverage) for definitions, the reproduced concurrency issue and limits.
 
 Scalar ID fields and device keys are checked before scan results are counted. Arrays/objects/booleans in those fields produce READ-06 rather than an invented joined ID or a later save error. Ordinary boolean fields, numeric disk zero, dates outside ID fields, and hardware-ID arrays remain supported.
 
@@ -201,7 +221,9 @@ If both CMD and a suitable PowerShell runtime are unavailable, this script-based
 
 ## Startup and recovery
 
-The BAT launcher displays **[1/3] Preparing startup**, **[2/3] Checking for compatible PowerShell**, then **[3/3] Starting checker** only after a suitable runtime is found. It does not install software or add a fixed loading delay. The PowerShell-only launcher also shows a preparation message. The BAT, PS1 and dedicated-window loaders all reject missing/blank embedded content before invoking it.
+The BAT launcher displays **[1/3] Preparing startup**, holds that screen with a **3-second native CMD countdown**, then begins **[2/3] Checking for compatible PowerShell**. **[3/3] Starting checker** appears only after a suitable runtime is found. The reading pause occurs before the first PowerShell probe; ordinary keys, including held Enter, do not skip it. It is a readability pause, not a hardware-scan percentage.
+
+The countdown uses `%SystemRoot%\System32\timeout.exe` with `/nobreak`, avoiding a similarly named command on PATH. If the timer is absent, blocked, fails or cannot use redirected input, an informational line explains that the countdown is unavailable and startup continues. Timer failure does not replace runtime/checker exit codes or bypass compatibility restrictions. No network-based delay or extra package is used. The PowerShell-only launcher keeps its preparation message; the readable-window handoff loads the embedded PowerShell body without repeating the CMD countdown. All three loaders still reject missing/blank embedded content before invoking it.
 
 Unexpected menu-action errors use **UI-01**. The current inventory and warnings remain in memory; live worker/timer/navigation state is cleared, and Enter returns to the main menu. Recovery does not rescan or save automatically. Use **[6]** to save the retained capture when needed.
 

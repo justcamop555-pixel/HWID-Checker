@@ -4,7 +4,7 @@
 
 **Inspect Windows hardware identifiers, save snapshots, and see what changed.**
 
-[![Version: 3.67](https://img.shields.io/badge/version-3.67-2563eb?style=flat-square)](docs/CHANGELOG.md)
+[![Version: 3.71](https://img.shields.io/badge/version-3.71-2563eb?style=flat-square)](docs/CHANGELOG.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square)](#compatibility)
 [![Language: PowerShell + Batch](https://img.shields.io/badge/language-PowerShell%20%2B%20Batch-5391fe?style=flat-square)](hwid.bat)
 [![License: not declared](https://img.shields.io/badge/license-not%20declared-6b7280?style=flat-square)](#license)
@@ -46,16 +46,18 @@ The startup scan reads **17 hardware/system sections**, followed by an **all-kno
 | CPU | Processor name, manufacturer, ProcessorId, socket, core/thread counts and maximum clock speed |
 | RAM | Module locations, manufacturer, part/serial numbers, capacity and reported/configured speed |
 | Storage | Physical disk serials and firmware, disk unique IDs/GUIDs, partition identifiers, volume serials, filesystem and capacity |
-| Graphics and monitors | GPU name, device/driver information, resolution, and available monitor identification data |
-| Network | Adapter/device identifiers, current and available permanent MAC addresses, link/status information |
+| Graphics and monitors | GPU name, device/driver information, WMI-reported pixel dimensions, and available monitor identification data |
+| Network | Adapter/device identifiers, explicitly reported current addresses, available permanent addresses, and source-labeled link rates/state |
 | Windows and devices | Windows version/build and installation metadata, Machine GUID, and present Plug and Play device records |
 
 ### Inspection, reporting, and comparison
 
 - **Identifier views:** concise grouped serial/ID tables, hardware categories, full values, hardware IDs, compatible IDs, and device instance IDs.
-- **All-known device catalog:** startup and full rescans collect Windows' known hidden, disabled, disconnected, and unknown-presence records, with available parent links and status properties. The separate extended view can refresh this catalog on demand.
+- **Graphics and network view:** separate graphics, network and monitor sections with jump shortcuts, interfaces grouped by reported hardware flags, address evidence, and directional fallback rates. See the [field-label audit and limits](docs/GRAPHICS-NETWORK.md).
+- **All-known device catalog:** startup and full rescans collect Windows' known hidden, disabled, disconnected, and unknown-presence records, with available parent links, container/base-container IDs and status properties. Container IDs describe Windows device grouping, rather than factory serials. The separate extended view can refresh this catalog on demand.
 - **Scan recovery:** compatible property reads and alternative readers where implemented, with timing, source details, explicit failures, and rescan support.
 - **Warnings and conflicts:** review missing/default IDs, unread sections, device-status findings, duplicate keys, and conflicting storage serial readings separately.
+- **ID-source checks:** preserve exact hardware/compatible-ID observations, flag disagreement between native and property readers, and report distinct-node property coverage. Property reads use bounded batches with one concurrent operation to avoid duplicate-node results observed with parallel Windows queries.
 - **TXT and JSON exports:** save a new report pair with scan/save timestamps and final-content verification. Existing snapshots are not overwritten.
 - **Saved snapshot library:** detect older captures, browse paged results, inspect storage/import problems, and use a fallback save folder when needed.
 - **Snapshot comparison:** show previous/current identifier values, character differences, added/removed ID records, and fields that could not be compared reliably. Rescans also review present-device arrivals/removals.
@@ -124,7 +126,7 @@ Double-click **`hwid.bat`** in the extracted/cloned folder, or run it from Power
 .\hwid.bat
 ```
 
-CMD shows three startup stages: preparing, checking compatible PowerShell, and starting the checker. These track the launch sequence; they do not add a waiting animation or artificial delay. Missing/blank checker content and failed runtime exits receive explicit errors.
+CMD shows three startup stages: preparing, checking compatible PowerShell, and starting the checker. In a normal console, a **3-second reading pause** keeps preparation visible before the first PowerShell check. Ordinary keys do not skip it. If the Windows timer cannot run, startup explains that the countdown is unavailable and continues. Missing/blank checker content and failed runtime exits receive explicit errors.
 
 If CMD is unavailable, use the alternative launcher in an approved PowerShell session:
 
@@ -270,6 +272,7 @@ See [developer checks](tests/README.md) for focused suites and diagnostics. Synt
 | --- | --- |
 | [Usage and troubleshooting](docs/USAGE.md) | Scan status, warning codes, saving, comparison, navigation, and compatibility |
 | [Identifier reference](docs/IDENTIFIERS.md) | Identifier meanings, scope, and limitations |
+| [Graphics and network field audit](docs/GRAPHICS-NETWORK.md) | Corrected labels, Windows sources, reader coverage, and validation limits |
 | [Changelog](docs/CHANGELOG.md) | Version history and validation notes |
 | [Developer checks](tests/README.md) | Test coverage, commands, and diagnostic requirements |
 

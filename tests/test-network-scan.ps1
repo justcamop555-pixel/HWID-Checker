@@ -38,8 +38,8 @@ foreach($mode in @('Direct','Worker')){
         Assert ($rows[0].Status -eq 'Up' -and $rows[1].Status -eq 'Down' -and $rows[2].Status -eq 'Dormant') ($mode+' numeric strings and documented operational states have clear labels')
         Assert ($rows[3].Status -match 'invalid' -and $rows[3].RawInterfaceOperationalStatus -eq $true) ($mode+' boolean status cannot masquerade as Up and its raw value is preserved')
         Assert ($null -eq $rows[1].MacAddress -and $rows[1].MacAddressReadStatus -match 'Multiple' -and $rows[1].NetworkAddresses.Count -eq 2) ($mode+' multiple distinct reported addresses remain available without guessing a current MAC')
-        Assert ($rows[2].MacAddress -ceq '00-11-22-33-44-55' -and $rows[2].NetworkAddresses.Count -eq 2) ($mode+' repeated formatting of the same address is not falsely ambiguous')
-        Assert ($rows[3].MacAddress -ceq 'AABBCCDDEEFF' -and $rows[3].PermanentAddress -ceq 'FFEEDDCCBBAA' -and $rows[3].NetworkAddresses[0] -eq $true) ($mode+' malformed address-list entries cannot become MAC IDs or hide valid addresses')
+        Assert ($null -eq $rows[2].MacAddress -and $rows[2].ReportedNetworkAddress -ceq '00-11-22-33-44-55' -and $rows[2].NetworkAddresses.Count -eq 2) ($mode+' repeated formatting keeps one reported candidate without confirming a current MAC')
+        Assert ($null -eq $rows[3].MacAddress -and $rows[3].ReportedNetworkAddress -ceq 'AABBCCDDEEFF' -and $rows[3].PermanentAddress -ceq 'FFEEDDCCBBAA' -and $rows[3].NetworkAddresses[0] -eq $true) ($mode+' malformed address-list entries cannot become current MAC IDs or hide valid reported addresses')
         Assert ((Get-SectionIdentifierInfo 'Network adapters' $rows).Tag -eq 'CHECK') ($mode+' unresolved current addresses remain visible in scan review counts')
         $old=[ordered]@{'Network adapters'=@([pscustomobject]@{InterfaceGuid='NIC-2';MacAddress='001122334455'})}
         $comparison=Compare-Inventories $old $report

@@ -60,7 +60,7 @@ foreach($mode in @('Direct','Worker')){
         Assert ($warnings.Count -eq 0 -and $report.CPU[0].ProcessorId -ceq '0000123' -and $scanTimings[-1].Recoveries.Count -eq 1) ($mode+' the recovered section is readable with preserved scan timing')
         Section 'Network adapters' {Get-NetworkIdentifiers}
         Assert ($warnings.Count -eq 0 -and $report.'Network adapters'.Count -eq 1 -and $report.'Network adapters'[0].InterfaceGuid -ceq 'NIC-1') ($mode+' partial network enumeration triggers a clean compatibility fallback')
-        Assert ($report.'Network adapters'[0].CollectionSource -eq 'MSFT_NetAdapter CIM fallback' -and $report.'Network adapters'[0].MacAddress -ceq '001122334455') ($mode+' network fallback retains its actual reader and current address')
+        Assert ($report.'Network adapters'[0].CollectionSource -eq 'MSFT_NetAdapter CIM fallback' -and $null -eq $report.'Network adapters'[0].MacAddress -and $report.'Network adapters'[0].ReportedNetworkAddress -ceq '001122334455') ($mode+' network fallback retains its reader and reported address without claiming it is current')
         $catalog=@(Invoke-ScanQuery {Get-ExtendedDeviceInventory})[0]
         Assert ($catalog.Devices.Count -eq 2 -and @($catalog.Devices | Where-Object DeviceInstanceId -eq 'USB\PARTIAL').Count -eq 0) ($mode+' partial extended enumeration discards its rows before falling back')
         Assert (@($catalog.Devices | Where-Object {$_.Present -eq $true}).Count -eq 1 -and @($catalog.Devices | Where-Object {$_.Present -is [bool] -and -not $_.Present}).Count -eq 1) ($mode+' extended fallback preserves present and remembered records')
