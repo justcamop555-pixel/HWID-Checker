@@ -52,8 +52,8 @@ Assert ($summary.ConflictCount -eq 1 -and $summary.DeviceCount -eq 0 -and $summa
 Assert ($duplicate[1].DeviceInstanceId -ceq ' usb\dup ' -and $duplicate[0].ConfigManagerErrorCode -eq 0) 'Duplicate matching does not rewrite original IDs or statuses'
 $report.'PnP hardware IDs'=@([pscustomobject]@{Name='Resource device';DeviceInstanceId='PCI\RESOURCE';ConfigManagerErrorCode=12})
 $summary=Get-ReviewSummary $report @() @()
-Assert ($summary.ConflictCount -eq 1 -and $summary.DeviceCount -eq 0 -and $summary.PnpConflicts[0].Kind -eq 'ResourceConflict') 'Windows code 12 belongs in Conflicts and is counted once'
-Assert ((Get-DeviceReviewAction $summary.PnpConflicts[0]) -match 'resource conflict.*Device Manager') 'Resource conflict advice points to the reported resource problem'
+Assert ($summary.ConflictCount -eq 0 -and $summary.DeviceCount -eq 1 -and $summary.DeviceIssues[0].Kind -eq 'Status') 'Windows code 12 remains one device finding without asserting a confirmed conflict'
+Assert ((Get-DeviceReviewAction $summary.DeviceIssues[0]) -match 'resource allocation.*Device Manager') 'Resource shortage advice points to the reported allocation problem'
 $report.'PnP hardware IDs'[0].ConfigManagerErrorCode=22
 Assert ((Get-ReviewSummary $report @() @()).ConflictCount -eq 0 -and (Get-ReviewSummary $report @() @()).DeviceCount -eq 1) 'Disabled status alone is a device finding rather than a resource conflict'
 $report.'PnP hardware IDs'=@([pscustomobject]@{Name='A';DeviceInstanceId='USB\A';ConfigManagerErrorCode=0;HardwareID=@('SHARED')},[pscustomobject]@{Name='B';DeviceInstanceId='USB\B';ConfigManagerErrorCode=0;HardwareID=@('SHARED')})
@@ -71,9 +71,9 @@ Assert ($view -match 'No conflicts detected' -and $view -match 'No device-status
 $report=[ordered]@{'PnP hardware IDs'=@([pscustomobject]@{Name='Same name';DeviceInstanceId='PCI\A';ConfigManagerErrorCode=28},[pscustomobject]@{Name='Same name';DeviceInstanceId='PCI\B';ConfigManagerErrorCode=22})}
 $script:rendered.Clear();Show-Attention
 Assert (($script:rendered -join ' ') -match 'Instance: PCI\\A' -and ($script:rendered -join ' ') -match 'Instance: PCI\\B') 'Device findings include instance context when friendly names are identical'
-$report=[ordered]@{'PnP hardware IDs'=@([pscustomobject]@{Name='Resource device';DeviceInstanceId='PCI\RESOURCE';ConfigManagerErrorCode=12})}
+$report=[ordered]@{'PnP hardware IDs'=@([pscustomobject]@{Name='Resource device';DeviceInstanceId='PCI\RESOURCE';ConfigManagerErrorCode=30})}
 $script:rendered.Clear();Show-Attention
-Assert (($script:rendered -join ' ') -match 'Resource device / Resource conflict' -and ($script:rendered -join ' ') -match 'Instance: PCI\\RESOURCE') 'The conflict view identifies the resource-conflicted device and instance'
+Assert (($script:rendered -join ' ') -match 'Resource device / IRQ resource conflict' -and ($script:rendered -join ' ') -match 'Instance: PCI\\RESOURCE') 'The conflict view identifies the Windows-reported IRQ conflict and instance'
 $report=[ordered]@{'PnP hardware IDs'=$duplicate}
 $script:rendered.Clear();Show-Attention
 Assert (($script:rendered -join ' ') -match 'Status readings: Working.*Driver not installed') 'The duplicate conflict view retains its observed status differences'

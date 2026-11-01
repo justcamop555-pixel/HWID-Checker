@@ -4,7 +4,7 @@
 
 **Inspect Windows hardware identifiers, save snapshots, and see what changed.**
 
-[![Version: 3.71](https://img.shields.io/badge/version-3.71-2563eb?style=flat-square)](docs/CHANGELOG.md)
+[![Version: 3.79](https://img.shields.io/badge/version-3.79-2563eb?style=flat-square)](docs/CHANGELOG.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square)](#compatibility)
 [![Language: PowerShell + Batch](https://img.shields.io/badge/language-PowerShell%20%2B%20Batch-5391fe?style=flat-square)](hwid.bat)
 [![License: not declared](https://img.shields.io/badge/license-not%20declared-6b7280?style=flat-square)](#license)
@@ -55,12 +55,15 @@ The startup scan reads **17 hardware/system sections**, followed by an **all-kno
 - **Identifier views:** concise grouped serial/ID tables, hardware categories, full values, hardware IDs, compatible IDs, and device instance IDs.
 - **Graphics and network view:** separate graphics, network and monitor sections with jump shortcuts, interfaces grouped by reported hardware flags, address evidence, and directional fallback rates. See the [field-label audit and limits](docs/GRAPHICS-NETWORK.md).
 - **All-known device catalog:** startup and full rescans collect Windows' known hidden, disabled, disconnected, and unknown-presence records, with available parent links, container/base-container IDs and status properties. Container IDs describe Windows device grouping, rather than factory serials. The separate extended view can refresh this catalog on demand.
-- **Scan recovery:** compatible property reads and alternative readers where implemented, with timing, source details, explicit failures, and rescan support.
-- **Warnings and conflicts:** review missing/default IDs, unread sections, device-status findings, duplicate keys, and conflicting storage serial readings separately.
+- **Organized scanning:** seven group headings keep firmware, CPU/memory, storage, graphics/network, Windows, present-device IDs and the all-known catalog together. The overall progress still counts 17 normal queries plus the catalog attempt.
+- **Readable scan results:** compact successful rows, separate CHECK/device-ID/error details, word wrapping for narrow windows, and fractional elapsed times. Record counts and selected ID-field counts are explained separately.
+- **Scan recovery:** compatible property reads and alternative readers where implemented, with timing, source details, explicit failures, and rescan support. Empty/malformed adapter records and container-shaped scalar IDs trigger a compatible reader before acceptance. Query diagnostics retain earlier recovery attempts even if a later read fails; incomplete records stay rejected. Full reports and exports keep the details.
+- **Warnings and conflicts:** review missing/default IDs, unread sections, device-status findings, duplicate keys, and conflicting storage serial readings separately. Resource shortages and reported conflicts have separate categories. A readable device name alone does not imply a fault; the extended scan can recover usable name/class aliases while retaining malformed raw labels.
 - **ID-source checks:** preserve exact hardware/compatible-ID observations, flag disagreement between native and property readers, and report distinct-node property coverage. Property reads use bounded batches with one concurrent operation to avoid duplicate-node results observed with parallel Windows queries.
 - **TXT and JSON exports:** save a new report pair with scan/save timestamps and final-content verification. Existing snapshots are not overwritten.
+- **Consistent field reading:** hardware views and TXT use section-specific labels. RAM `Speed` stays a raw Windows value; a configured memory clock of zero is shown as unknown. JSON retains the original values.
 - **Saved snapshot library:** detect older captures, browse paged results, inspect storage/import problems, and use a fallback save folder when needed.
-- **Snapshot comparison:** show previous/current identifier values, character differences, added/removed ID records, and fields that could not be compared reliably. Rescans also review present-device arrivals/removals.
+- **Snapshot comparison:** show previous/current identifier values, character differences, added/removed ID records, and fields that could not be compared reliably. Different or unknown network readers leave unmatched interfaces not compared; shared interfaces still compare usable IDs. Rescans also review present-device arrivals/removals.
 - **Readable console:** numbered menus, status colors with text labels, scrollable reports and live scan navigation. Scroll back without timer redraws pulling the view away; End resumes following new results. Next/Back/Exit animations are optional.
 
 **Scope:** comparison covers selected identifier fields. Full PnP model/compatible-ID arrays and partition paths remain inventory details, rather than a complete diff of every exported property. See [identifier meanings and limits](docs/IDENTIFIERS.md).
@@ -127,6 +130,8 @@ Double-click **`hwid.bat`** in the extracted/cloned folder, or run it from Power
 ```
 
 CMD shows three startup stages: preparing, checking compatible PowerShell, and starting the checker. In a normal console, a **3-second reading pause** keeps preparation visible before the first PowerShell check. Ordinary keys do not skip it. If the Windows timer cannot run, startup explains that the countdown is unavailable and continues. Missing/blank checker content and failed runtime exits receive explicit errors.
+
+The original window waits for the readable window to confirm startup. A failed handoff shows **START-03** and continues in the original window, including failures occurring after the old short launch check. Slow unconfirmed launches keep the original window open. CMD command extensions are enabled locally, and an inherited `ERRORLEVEL` environment variable cannot replace actual runtime/checker exit codes.
 
 If CMD is unavailable, use the alternative launcher in an approved PowerShell session:
 
@@ -241,7 +246,7 @@ Read the displayed `COMPAT` message, confirm an approved PowerShell 5.1/7 runtim
 
 ### What happens after an unexpected error?
 
-A recoverable menu action displays **UI-01**, keeps the current scan in memory, and offers a return to the menu. An uncaught application error displays **CRASH-01** with the failure stage and bounded detail, clears active scan/display state, and exits with an error code. Existing saved reports are not deleted. Recovery does not automatically save a snapshot or create a crash log; save normally with **[6]** after a recoverable error. See [startup and recovery guidance](docs/USAGE.md#startup-and-recovery).
+A recoverable menu action displays **UI-01**, keeps the current scan in memory, and offers a return to the menu. An uncaught application error displays **CRASH-01** with the failure stage and bounded detail, clears active scan/display state, and exits with an error code. Existing saved reports are not deleted. A temporary startup signal carries readiness or brief failure detail between launcher windows and is removed during normal cleanup; it contains no inventory. Recovery does not automatically save a snapshot. Save normally with **[6]** after a recoverable error. See [startup and recovery guidance](docs/USAGE.md#startup-and-recovery).
 
 ## Roadmap
 

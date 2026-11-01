@@ -78,7 +78,7 @@ Assert (@($rendered | Where-Object {$_ -match '[\x00-\x1f\x7f]'}).Count -eq 0) '
 $rendered.Clear();Show-CheckerFailure ([Exception]::new(('x'*1000))) -Phase 'Test' -Fatal
 $detail=@($rendered | Where-Object {$_ -like 'Detail:*'})[0]
 Assert ($detail.Length -le 328 -and $detail.EndsWith('...') -and ($rendered -join ' ') -match '\[CRASH-01\]') 'Fatal diagnostics are bounded and use a distinct error code'
-$helpers=$functions['Restore-CheckerOperation']+[Environment]::NewLine+$functions['Show-CheckerFailure']
+$helpers=$functions['Set-CheckerStartupStatus']+[Environment]::NewLine+$functions['Restore-CheckerOperation']+[Environment]::NewLine+$functions['Show-CheckerFailure']
 $trapDefinition=$ast.FindAll({param($n) $n -is [Management.Automation.Language.TrapStatementAst]},$false) | Select-Object -First 1
 $trapText=$trapDefinition.Extent.Text
 $fatalBody='$ErrorActionPreference="Stop";'+[Environment]::NewLine+$helpers+[Environment]::NewLine+$trapText+[Environment]::NewLine+'$script:checkerPhase="Initial hardware scan";throw "Synthetic fatal startup failure"'

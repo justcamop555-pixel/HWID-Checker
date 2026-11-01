@@ -6,6 +6,24 @@
 
 Use **[1]** for the overview. It separates normal query coverage, identifier fields, present devices and the all-known extended catalog. Startup and full rescans collect the 17 normal sections plus this catalog automatically. The overall progress bar has 18 stages and reaches 100% after the catalog attempt finishes; READ/NOT READ shows whether collection succeeded.
 
+The scan display groups related queries together:
+
+| Group | Contents |
+| --- | --- |
+| 1. System & firmware | System identity/hardware, motherboard, BIOS and chassis |
+| 2. CPU & memory | CPU and memory modules |
+| 3. Storage | Physical disks, storage identifiers, volumes and partitions |
+| 4. Graphics & network | Graphics adapters, monitors and network adapters |
+| 5. Windows | Operating-system details and Machine GUID |
+| 6. Present device IDs | Present PnP nodes and their reported ID lists |
+| 7. All-known device catalog | Windows-known nodes, including hidden/disconnected records |
+
+Group numbers organize the display; they do not replace the 17 query counters or 18-stage overall progress. Section-only diagnostic scans show six groups. Firmware queries stay together before CPU/memory. Every new scan resets group numbering, and the scrollbar continues to track written content rather than empty reserved rows.
+
+Short successful results stay compact. **CHECK**, PnP coverage and unread-result details use indented continuation lines, keeping record/time status separate from longer explanations. Result details wrap at word boundaries in narrow windows; they are not shortened with ellipses. The formatter uses the current width after resizing, while completed query metadata keeps its full summary. Progress displays retain fractional elapsed seconds.
+
+**Records** are rows returned by Windows, while **IDs** count selected identifier fields. A record can contain several IDs. **NOT READ / no usable data** explains a missing result without claiming that no physical devices exist; the reason, READ code and Main **[4]** reference follow below it.
+
 After the startup scan, the finished scan stays visible until you press **Enter** to continue to the main menu. After a rescan, press **Enter** to continue to the snapshot changes. You can scroll before continuing. Release Enter if it was held during scanning; the dedicated console clears scan-time keystrokes so they cannot skip this step. Redirected runs do not pause for this prompt.
 
 In the dedicated console, you can also navigate **during** background scanning with the mouse wheel/scrollbar, Up/Down, Page Up/Down, Home and End. Scrolling back pauses following so new rows and timers preserve your chosen view. **End** resumes following the latest output. Scan history stays close to the content actually written, with a small reserve for the next line, rather than thousands of blank rows. Enter and menu numbers are ignored while collection runs; keyboard processing is bounded so holding a key cannot monopolize the scan loop. If the live worker is unavailable and direct queries are used, keyboard navigation is processed between queries; host mouse scrolling remains available.
@@ -15,6 +33,10 @@ Narrow windows retain wrapped scan text. Resizing skips stale timer coordinates;
 If a provider rejects requested fields, the checker retries once using the properties that provider exposes. It keeps the same device filter, namespace and reader. **Compatible read** means that retry succeeded; unsupported fields can still be missing. The finish screen counts recovered sections, and **[5] Full inventory report** includes retry diagnostics under Scan timing. These details are also saved in TXT/JSON. Access failures, timeouts and missing providers keep their normal warnings.
 
 If live progress updates fail, the query continues and keeps its hardware results. The finish screen reports affected sections, and **[5] Scan timing** retains a separate progress-display warning. Provider-read failures still use their own READ codes.
+
+Group-heading failures follow the same rule. Catalog heading/timer failures are retained under **Extended scan info / ProgressWarning**, shown as **Catalog display** at completion and included in TXT/JSON. They do not turn a successfully read catalog into a failed query or inflate the normal-section display-warning count.
+
+Completed-result rendering errors are also retained: normal rows use **Scan timing / ProgressWarning**, and catalog rows use **Extended scan info / ProgressWarning**. A plain-text fallback is attempted without replacing the captured hardware data. Collection failures retain their own read reason and code.
 
 A returned record containing only empty fields receives **READ-06**, instead of inflating readable-section coverage. Real zero/false values remain data; an identifiable component with an omitted serial remains readable and its missing ID is shown separately. In the present-device scan, malformed hardware/compatible ID-list entries are excluded from usable model IDs, retained in raw fields in **[5]**, and listed in **[4]** for review. Valid neighboring IDs and other devices are preserved.
 
@@ -88,6 +110,8 @@ Failure classification uses available typed errors/codes first, then known messa
 
 If a query emits an uncaught error after returning some records, that section is marked NOT READ rather than presented as a complete list. This prevents incomplete data from appearing as confirmed hardware removals during comparison. Successful fallbacks that handle their own errors remain usable. A missing serial within an otherwise valid record remains a missing-ID finding, separate from invalid scan data.
 
+Direct and background queries retain completed compatible-read attempts when a later step fails. **[5] > Scan timing > Recoveries** and TXT/JSON reports show that earlier history alongside the final FailureCode. Recovery history does not make an incomplete section readable or add it to the compatible-read success total. The final terminating error takes priority over earlier non-terminating errors; original provider error identities/categories remain available. Each new query clears earlier query state. A background worker that ends without a complete attempt result produces READ-06 rather than a successful empty result.
+
 Reader attempts are checked before their partial rows can be accepted. A non-terminating property error can use the existing single compatible-property retry; a failed network or extended-device enumeration can use its compatibility readers. A recovered attempt supplies only the successful reader's records. If no reader succeeds, the section stays NOT READ with its diagnostics. Filter/namespace/timeout selection is preserved, and access/timeouts are not treated as property errors.
 
 Device-property reads retain batches of up to 32 nodes and use **one concurrent operation**, including recovery calls. This avoids the duplicate-node output observed with parallel property queries on the development PC. Extended capture metadata shows **PropertyNodesRequested**, **PropertyNodesReturned** and **PropertyNodesWithoutRows**. These count distinct nodes returning property rows, not the number of identifiers or physical devices. Individual values can still be absent.
@@ -98,11 +122,15 @@ Scalar ID fields and device keys are checked before scan results are counted. Ar
 
 Optional scan metadata is converted separately from identifiers. Unsupported storage codes are shown explicitly; invalid sizes remain unknown while real zero stays zero. Raw storage codes, drive-letter values and byte sizes remain in the full report/JSON. A malformed partition letter is labeled unknown rather than unassigned. These optional values do not discard otherwise usable IDs.
 
+For RAM, **Speed** is labeled **Windows-reported raw** rather than assumed to be MHz. **ConfiguredClockSpeed** has the documented MHz label, but a reported zero means **Unknown**, not a measured zero-frequency clock. Missing and invalid configured values remain distinguishable; unknown values use muted text. Hardware views and TXT share these interpretations, while JSON preserves the original fields, including zero and leading-zero strings. Raw network `Speed` fields in TXT use bits/s rather than inheriting a memory-speed label. See Microsoft's [Win32_PhysicalMemory definitions](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-physicalmemory).
+
 Monitor character codes are decoded numerically, including numeric strings and null padding. Name lengths reported by Windows bound name decoding when available; the query does not require optional length fields. Invalid text codes/lengths remain unread with an explicit read-status field; the original code arrays stay available in the full report and JSON. A valid monitor record with an unread serial remains CHECK rather than a failed whole query.
 
 Network and extended-device readers retry their fallback when the primary reader fails or returns no records, including null-only results. Extended fallback enumeration stays unfiltered so remembered records can be included. The full report records which reader succeeded; extended capture information also records why fallback was needed. If no reader succeeds, technical details retain the attempted readers' messages; the failure reason describes the final reader. Direct and live-progress scans preserve the same error categories.
 
-Network collection tries **Get-NetAdapter**, then **MSFT_NetAdapter**, then **Win32_NetworkAdapter** as a final compatibility fallback. A successful fallback is labeled on the scan row; **[5]** shows its CollectionSource. The final reader retains available GUIDs, device IDs and current MAC addresses. It leaves permanent MAC addresses unknown, includes virtual/disabled records, and preserves unread link-speed values as raw details without inventing a formatted speed. If every network reader fails, technical details retain all three messages and classify the final failure.
+Network reader attempts are also checked for scalar/list-shaped records, empty adapter fields, and malformed scalar identifiers before derived labels are added. A list/object/boolean in a selected interface GUID, MAC/permanent address or PnP device ID rejects that reader attempt and allows the next reader to run. Validation applies to fields used by that reader. An invalid attempt cannot leak partial rows or fabricate a device. If every reader returns invalid records, the section becomes READ-06 with zero accepted results. Missing IDs remain reviewable device data; optional status/rate metadata is kept separately, including actual zero/false values. Source and rate-kind labels alone cannot make an empty record readable, and an unread network section is skipped during comparison rather than treated as confirmed device removal.
+
+Network collection tries **Get-NetAdapter**, then **MSFT_NetAdapter**, then **Win32_NetworkAdapter** as a final compatibility fallback. A successful fallback adds **compatible read** to the scan result and contributes to the finished scan's compatible-read section count. **[5]** shows each record's CollectionSource and the network query's Recoveries: the chosen method and earlier reader errors. TXT and JSON exports retain these diagnostics. The final reader retains available GUIDs, device IDs and current MAC addresses. It leaves permanent MAC addresses unknown, includes virtual/disabled records, and preserves unread link-speed values as raw details without inventing a formatted speed. If every network reader fails, technical details retain all three messages and classify the final failure.
 
 ## Understand warnings and conflicts
 
@@ -117,7 +145,9 @@ All review groups show a count and an explicit result when empty. **Start with**
 | Source clash | Two unambiguously matched Windows storage records report different serials | Review both displayed values, rescan, and inspect the sources in **[5]** |
 | Duplicate device key | More than one record has the same matching key | Rescan and inspect records in **[5]**; comparisons skip ambiguous keys |
 | Repeated instance ID | Multiple PnP records claim the same instance ID | Rescan before comparing; this does not prove two physical devices share a factory serial |
-| Resource conflict | Windows reports code 12 | Inspect the device's reported resources in Device Manager, then rescan |
+| Resource conflict | Windows reports a boot configuration conflict (code 6) or an IRQ resource already in use (code 30) | Inspect the reported resource assignment in Device Manager, then rescan |
+| Insufficient resources | Windows reports code 12; a shortage or conflict may be involved | Check resource allocation in Device Manager; the finding stays visible under Device status & records |
+| Ambiguous presence/driver status | Windows reports code 24: not present, malfunctioning, or incomplete drivers | Check presence, operation and drivers in Device Manager; this code alone does not determine presence |
 | Disabled | Windows reports code 22 | Check whether disabling was intentional in Device Manager |
 | Disconnected | Windows reports code 45 | Check the connection and refresh the scan |
 | Unknown status | Windows supplied no readable status | Rescan and inspect device details; do not assume working or broken |
@@ -125,6 +155,8 @@ All review groups show a count and an explicit result when empty. **Start with**
 Disk sources are joined only when each has one valid record for the same disk number. Duplicate disk numbers remain separate records, preventing guessed matches from producing false serial clashes or filling the wrong device's missing serial. A source disagreement alone does not prove disk failure.
 
 Repeated device-instance rows count as one conflict, with their distinct status readings shown together. This keeps disabled/working/unknown readings available without pretending that duplicate rows are separate devices. Shared hardware-model IDs are normal and are not treated as instance conflicts. Code 22 alone is a disabled-device finding; code 45 describes a disconnected device.
+
+Code 12 contributes one device finding to the review total and keeps the scan marked CHECK. Codes 6 and 30 contribute reported conflict findings. The dashboard, summary, review page and device views use the same interpretation. Windows can report code 12 when firmware has not allocated enough resources, so the checker does not assert a collision from that code alone. See Microsoft's [code 12 explanation](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/cm-prob-normal-conflict) and [Windows status-code definitions](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-pnpentity). Raw codes remain unchanged in TXT/JSON and older snapshots are interpreted using these current labels.
 
 Duplicate review ignores instance-ID case and leading/trailing whitespace or NUL padding, using the same keys as node-change matching. It preserves embedded characters and original ID text. Padding-only instance IDs count as missing. Model coverage includes only nonblank string IDs, consistently in scan progress and the overview.
 
@@ -167,6 +199,8 @@ Choosing a TXT report automatically uses the JSON with the same filename stem. T
 
 Comparison also identifies added/removed records. Missing or duplicate matching keys can prevent a reliable match; the checker explains skipped comparisons rather than guessing. A changed device-instance ID can reflect a different port or Windows device record.
 
+**Network reader coverage:** fallback readers can expose a different adapter set. When the readers differ, are mixed, or are not recorded in an older snapshot, interfaces present in only one report are marked **not compared** instead of becoming added/removed IDs. Both the saved-file comparison and rescan summary show **Reader coverage**, the two readers and the number of unmatched interfaces. Interfaces matched by their interface GUID still compare usable IDs, including real changes. When both captures identify the same known reader, one-sided ID records remain comparable. A provider transition with all interfaces matched adds no coverage warning. Raw snapshots remain unchanged; a coverage finding is not a hardware conflict or proof of hardware removal.
+
 Capitalization of recognized JSON section/field names does not count as an ID change. Actual identifier values remain case-sensitive and keep leading zeros. If a system or firmware section contains multiple records without a reliable device key, its comparison is skipped and Main **[4]** shows the ambiguity; a single record remains comparable. Raw saved files are preserved.
 
 For two consecutive scans in the same session, **[9] > [3]** reopens the last rescan comparison. Save with **[6]** if you need a snapshot after closing.
@@ -186,6 +220,10 @@ Extended view filters overlap: **2** includes disconnected records, **3** includ
 Problem-code arrays/objects/booleans are unread metadata rather than numeric status. A usable native code remains available when an optional reading is invalid. Disagreeing valid codes remain unknown, with `ProblemCodeReadings`, `ProblemCodeConflict`, read status and raw observations in **[5]**/JSON. Invalid optional parent data leaves topology unresolved while preserving the device's core identifiers; `ParentReadStatus` and `RawParentInstanceId` explain it.
 
 Normal and extended device scans select the first usable `PNPDeviceID`, `InstanceId`, or Windows `DeviceID` key. `InstanceIdSource` records the field used. Original ID text stays in the report; normalized keys are used to look up properties and parent names. A blank or NUL-only alias cannot replace a valid alternative.
+
+Extended device names use readable text from **PnP name**, then **Friendly name**, then **Bus description**. Classes use readable **PNPClass**, then the **Class** alias. NUL-only/blank text and non-text containers cannot block usable alternatives or become joined labels. If all alternatives are unread, the name/class remains unknown and detail review explains the missing text. Unusable provided values remain in **Raw PnP name**, **Raw friendly name**, **Raw bus description**, **Raw PnP class** or **Raw class alias** in the full report/JSON. NameSource identifies the selected name source.
+
+Names beginning with **Unknown**, or their localized equivalents, do not independently determine device condition. Windows status codes, missing data and contradictory readings still receive their own findings. A readable label does not manufacture a working status when the code is missing. Class grouping ignores edge whitespace/NUL padding while preserving original values; names and hardware identifiers are not rewritten into guessed manufacturer data.
 
 Extended hardware/compatible ID lists keep valid text, order, invalid raw observations, and read-status findings. Usable PnP-record lists stay preferred. If they are absent, collected property lists supply the usable values. `HardwareIDPropertyReadings` and `CompatibleIDPropertyReadings` retain original observations; different lists are flagged, and their combined inspection values do not establish a Windows driver-priority order. **[5]** and saved JSON keep these full details.
 
@@ -225,8 +263,22 @@ The BAT launcher displays **[1/3] Preparing startup**, holds that screen with a 
 
 The countdown uses `%SystemRoot%\System32\timeout.exe` with `/nobreak`, avoiding a similarly named command on PATH. If the timer is absent, blocked, fails or cannot use redirected input, an informational line explains that the countdown is unavailable and startup continues. Timer failure does not replace runtime/checker exit codes or bypass compatibility restrictions. No network-based delay or extra package is used. The PowerShell-only launcher keeps its preparation message; the readable-window handoff loads the embedded PowerShell body without repeating the CMD countdown. All three loaders still reject missing/blank embedded content before invoking it.
 
+The BAT enables CMD command extensions within its local environment and clears an inherited variable named `ERRORLEVEL`. This makes its label calls and runtime checks work with command extensions disabled by the caller, and prevents a shadow variable from replacing real process exit codes. Actual blocked-runtime checks still stop startup.
+
+The original window now waits for the readable child to confirm readiness before starting hardware collection. **START-03** means the new window failed, exited without confirmation or could not be created; the checker explains the failure and continues in the original window. Missing/invalid content and pre-ready fatal errors can send their bounded detail back to the launcher. A normal completed child is distinguished from an unexplained early zero exit.
+
+After 12 seconds without confirmation, **START-04** explains that the readable window is still starting. The original window stays open until that child finishes, so this condition does not start a duplicate scan. A failed child then falls back to the original window. A small temporary file carries startup state and up to 320 characters of error detail, and the launcher attempts to remove it during cleanup. Parent environment state and process handles are restored/released; no hardware inventory is written to the signal.
+
+To keep everything in the current console while troubleshooting, launch from the extracted repository folder:
+
+```powershell
+.\hwid.bat --current-window
+```
+
+To keep a CMD prompt open after the checker exits, use `cmd.exe /d /k hwid.bat --current-window` from that same folder. The `/d` option skips Command Processor AutoRun commands for that new CMD session. Existing runtime and organization policies still apply.
+
 Unexpected menu-action errors use **UI-01**. The current inventory and warnings remain in memory; live worker/timer/navigation state is cleared, and Enter returns to the main menu. Recovery does not rescan or save automatically. Use **[6]** to save the retained capture when needed.
 
-Uncaught application failures use **CRASH-01**, showing the phase and up to 320 characters of error detail. The checker attempts to dispose its query worker, stop its progress clock and restore cursor visibility before exiting with code 1. The dedicated window offers Enter to close on interactive input. Startup/parse failures before the application can run use **START-01** or **COMPAT-03**; CMD preserves nonzero exit codes and keeps its failure message visible.
+Uncaught application failures use **CRASH-01**, showing the phase and up to 320 characters of error detail. The checker attempts to dispose its query worker, stop its progress clock and restore cursor visibility before exiting with code 1. After a successful handoff, the dedicated window offers Enter to close on interactive input. A pre-ready failure is reported back to the original launcher for fallback instead. Startup/parse failures before the application can run use **START-01** or **COMPAT-03**; CMD preserves nonzero exit codes and keeps its failure message visible.
 
-No automatic crash log or snapshot is written by these handlers. Saved reports are left available. Forced process termination, native runtime failure or Windows shutdown can bypass PowerShell handlers, so an unsaved scan cannot always be recovered.
+These handlers do not save an inventory snapshot or permanent crash log. The temporary handoff signal described above is separate from saved reports. Forced process termination, native runtime failure or Windows shutdown can bypass PowerShell handlers and normal signal cleanup, so an unsaved scan cannot always be recovered.

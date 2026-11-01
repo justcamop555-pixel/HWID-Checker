@@ -355,7 +355,7 @@ Assert ((Get-PnpStatus '').Quality -eq 'Unknown') 'Empty device status remains u
 Assert ((Get-PnpStatus 0).Text -eq 'Working (code 0)') 'Working device status has a readable label'
 Assert ((Get-PnpStatus 22).Text -eq 'Disabled (code 22)') 'Disabled devices are identified without claiming an ID conflict'
 Assert ((Get-PnpStatus 28).Text -eq 'Driver not installed (code 28)') 'Missing driver has a readable explanation'
-Assert ((Get-PnpStatus 12).Text -match 'Resource conflict') 'Actual Windows resource conflicts are identified'
+Assert ((Get-PnpStatus 12).Text -match 'Insufficient resources') 'A Windows resource shortage is not asserted as a confirmed conflict'
 Assert ((Get-PnpStatus 999).Text -eq 'Device issue (code 999)') 'Unmapped status codes retain their numeric value'
 $usbKeyboard=[pscustomobject]@{Name='Keyboard';PNPClass='HIDClass';DeviceInstanceId='USB\VID_TEST\KEYBOARD';HardwareID=@('USB\MODEL','USB\GENERAL');CompatibleID=@('USB\CLASS');ConfigManagerErrorCode=0}
 Assert ((Get-PnpGroup $usbKeyboard) -eq 'INPUT') 'USB input devices are grouped by function rather than their transport'

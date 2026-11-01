@@ -23,11 +23,17 @@ Choose Main **[3]**, then **[4] Graphics & network**. Shortcuts **1**, **2** and
 
 The primary reader uses [Get-NetAdapter -IncludeHidden](https://learn.microsoft.com/en-us/powershell/module/netadapter/get-netadapter), which requests visible and hidden adapters. The direct CIM fallback has no matching switch in this application and can expose fewer records. The legacy reader is another compatibility source; its returned set can differ too. A read count is not proof of complete physical-device discovery.
 
+Since 3.77, comparison uses recorded reader scope before interpreting one-sided interfaces. Different, unknown or mixed readers leave those interfaces **not compared**; they cannot establish absence. Usable ID values on shared interface GUIDs still compare normally, and matching known readers retain one-sided ID differences. The comparison and rescan views disclose the skipped interface count and reader names separately from duplicate-key conflicts. Older snapshots without CollectionSource receive the same conservative handling for unmatched interfaces. Reader metadata is matched without case/outer-whitespace differences; raw ID/source values are preserved.
+
+Reader validation runs before fallback selection. Malformed scalar IDs reject the entire attempt so a usable compatibility reader can recover; partial rows from the rejected attempt are discarded. Missing IDs and invalid optional status/rate values remain distinct from malformed identifier fields. Successful fallback queries are marked **compatible read** and retain earlier reader errors in **[5] > Scan timing > Recoveries** and exported reports. Legacy recovery records both earlier attempts; a later primary success clears previous query diagnostics.
+
 Only explicitly supplied current addresses participate in current-address comparison. An unverified candidate cannot create a current-MAC change. Old snapshots that contain an inferred current address may consequently show a field as not compared with a new CIM-fallback capture. JSON preserves the reported candidate, raw list, directional rates and reader; existing saved files are not rewritten.
 
 The application does not test internet speed/connectivity, verify factory addresses, calculate GPU VRAM, or establish GPU-to-monitor wiring from these fields.
 
 ## Validation on the development PC
+
+In the 3.77 same-session audit, the primary reader returned 18 adapters and the modern CIM fallback returned 4 on both PowerShell 5.1 and 7. The previous comparison generated 29 apparent difference entries. The reader-aware comparison found no differences in 11 shared usable fields and disclosed 14 unmatched interfaces as not compared. Snapshot serialization kept the same result. This verifies handling of differing coverage on this PC, rather than guaranteeing that every device is discoverable.
 
 - 50 focused checks cover direct/worker readers, labels, malformed metadata, grouping, snapshots, comparisons and native scrolling at 80/24 columns.
 - Live audits on Windows PowerShell 5.1 and PowerShell 7.6.5: each matched 16 primary adapters by interface ID, with zero differences across current/permanent address, hardware flag, link rate and state.
