@@ -4,7 +4,7 @@
 
 **Inspect Windows hardware identifiers, save snapshots, and see what changed.**
 
-[![Version: 3.79](https://img.shields.io/badge/version-3.79-2563eb?style=flat-square)](docs/CHANGELOG.md)
+[![Version: 3.83](https://img.shields.io/badge/version-3.83-2563eb?style=flat-square)](docs/CHANGELOG.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square)](#compatibility)
 [![Language: PowerShell + Batch](https://img.shields.io/badge/language-PowerShell%20%2B%20Batch-5391fe?style=flat-square)](hwid.bat)
 [![License: not declared](https://img.shields.io/badge/license-not%20declared-6b7280?style=flat-square)](#license)
@@ -55,8 +55,12 @@ The startup scan reads **17 hardware/system sections**, followed by an **all-kno
 - **Identifier views:** concise grouped serial/ID tables, hardware categories, full values, hardware IDs, compatible IDs, and device instance IDs.
 - **Graphics and network view:** separate graphics, network and monitor sections with jump shortcuts, interfaces grouped by reported hardware flags, address evidence, and directional fallback rates. See the [field-label audit and limits](docs/GRAPHICS-NETWORK.md).
 - **All-known device catalog:** startup and full rescans collect Windows' known hidden, disabled, disconnected, and unknown-presence records, with available parent links, container/base-container IDs and status properties. Container IDs describe Windows device grouping, rather than factory serials. The separate extended view can refresh this catalog on demand.
+- **Device relationships:** parent links use consistent Windows-reported observations. Conflicting or malformed readings are labeled, with all observations retained in full reports and snapshot exports.
 - **Organized scanning:** seven group headings keep firmware, CPU/memory, storage, graphics/network, Windows, present-device IDs and the all-known catalog together. The overall progress still counts 17 normal queries plus the catalog attempt.
 - **Readable scan results:** compact successful rows, separate CHECK/device-ID/error details, word wrapping for narrow windows, and fractional elapsed times. Record counts and selected ID-field counts are explained separately.
+- **Scan completion:** a clear finished summary separates read coverage, selected ID fields and review findings. Unread sections stay explicit, Enter continues to the menu, and summary/cleanup errors preserve finished snapshots with diagnostic details.
+- **Accurate scan errors:** query cleanup problems retain their own diagnostics. They preserve validated hardware results and the original provider failure code, including during extended-device refreshes.
+- **Native CIM error handling:** named Windows error codes identify blocked access, timeouts and unavailable providers even when the message is localized. Rejected optional-property queries can recover through one compatible read.
 - **Scan recovery:** compatible property reads and alternative readers where implemented, with timing, source details, explicit failures, and rescan support. Empty/malformed adapter records and container-shaped scalar IDs trigger a compatible reader before acceptance. Query diagnostics retain earlier recovery attempts even if a later read fails; incomplete records stay rejected. Full reports and exports keep the details.
 - **Warnings and conflicts:** review missing/default IDs, unread sections, device-status findings, duplicate keys, and conflicting storage serial readings separately. Resource shortages and reported conflicts have separate categories. A readable device name alone does not imply a fault; the extended scan can recover usable name/class aliases while retaining malformed raw labels.
 - **ID-source checks:** preserve exact hardware/compatible-ID observations, flag disagreement between native and property readers, and report distinct-node property coverage. Property reads use bounded batches with one concurrent operation to avoid duplicate-node results observed with parallel Windows queries.

@@ -131,13 +131,23 @@ function Get-QueryBackend {
     if(Get-Command Get-WmiObject -ErrorAction SilentlyContinue){return 'Legacy WMI'}
     return 'Unavailable'
 }
+function Get-HwidExceptionStatuses($Exception) {
+    # CIM can expose a zero StatusCode while NativeErrorCode contains the failure.
+    # Read all named status fields; numeric codes from different APIs are not interchangeable.
+    foreach($name in @('NativeErrorCode','StatusCode','ErrorCode')){
+        $property=$Exception.PSObject.Properties[$name]
+        if($null -eq $property){continue}
+        try{$value=$property.Value}catch{continue}
+        if($value -is [string] -or $value -is [enum]){[string]$value}
+    }
+}
 function Test-ProjectionReadFailure($Failure) {
     $exception=$Failure.Exception;$projection=$false
     for($depth=0;$null -ne $exception -and $depth -lt 16;$depth++) {
         $code=$exception.HResult.ToString('X8')
-        $status=if($exception.PSObject.Properties['StatusCode']){[string]$exception.StatusCode}elseif($exception.PSObject.Properties['ErrorCode']){[string]$exception.ErrorCode}else{''}
-        if($exception -is [UnauthorizedAccessException] -or $exception -is [TimeoutException] -or $code -in @('80070005','80041003','80041062','800705B4','80041069','80041088') -or $status -in @('AccessDenied','PrivilegeNotHeld','Timeout','Timedout')){return $false}
-        if($code -in @('80041017','80041031') -or $status -in @('InvalidQuery','InvalidProperty','NoSuchProperty')){$projection=$true}
+        $status=@(Get-HwidExceptionStatuses $exception)
+        if($exception -is [UnauthorizedAccessException] -or $exception -is [TimeoutException] -or $code -in @('80070005','80041003','80041062','800705B4','80041069','80041088') -or ($status -match '^(AccessDenied|PrivilegeNotHeld|Timeout|Timedout|InvalidOperationTimeout)$')){return $false}
+        if($code -in @('80041017','80041031') -or ($status -match '^(InvalidQuery|InvalidProperty|NoSuchProperty)$')){$projection=$true}
         $exception=$exception.InnerException
     }
     if($Failure.CategoryInfo.Category -in @('PermissionDenied','OperationTimeout')){return $false}
@@ -901,7 +911,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.79' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.83' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -962,6 +972,11 @@ function Get-FieldLabel($Name,$SectionName='') {
         CurrentHorizontalResolution='WMI-reported width (pixels)';CurrentVerticalResolution='WMI-reported height (pixels)';DriverDate='Driver date (Windows-reported)';HardwareInterface='Hardware-backed interface flag'
         MacAddressReadStatus='Current MAC read status';NetworkAddresses='Reported network addresses';RawInterfaceOperationalStatus='Raw interface status code'
         SavedAt='Saved at';ProgressWarning='Progress display warning'
+        CompletionDisplayWarning='Scan completion display warning';WorkerCleanupWarning='Scan cleanup warning'
+        QueryCleanupWarning='Query cleanup warning';QueryCleanupSections='Sections with query cleanup warnings'
+        ExtendedQueryCleanupWarning='Extended query cleanup warning';ExtendedWorkerCleanupWarning='Extended worker cleanup warning'
+        ParentInstanceId='Parent device instance ID';ParentName='Parent device name';ParentReadStatus='Parent-link read status'
+        ParentInstanceIdReadings='Reported parent-instance observations';ParentInstanceIdConflict='Conflicting parent-instance readings';ParentLinkConflicts='Unresolved parent-link conflicts';RawParentInstanceId='Last reported parent-instance value (raw)'
         HardwareIDReadStatus='Model-ID read status';CompatibleIDReadStatus='Compatible-ID read status';RawHardwareID='Raw reported model IDs';RawCompatibleID='Raw reported compatible IDs'
         CollectionSource='Read using'; UniqueIdFormat='Storage ID format (Windows code)'
         RawPartitionStyle='Raw partition-style code';RawBusType='Raw bus-type code';RawHealthStatus='Raw disk-health code'
@@ -1773,6 +1788,21 @@ function Get-DeviceGuidReadings($Readings) {
     $status=if($conflict){'Conflicting readings; unresolved'}elseif($invalid){'Invalid entries ignored: '+$invalid}elseif($null -ne $value){'Device properties'}elseif($seen.Count){'Empty GUID; not assigned'}else{'Not supplied (optional)'}
     [pscustomobject]@{Value=$value;Status=$status;Conflict=$conflict;InvalidCount=$invalid;Readings=@($Readings)}
 }
+function Get-DeviceParentReadings($Readings) {
+    $seen=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $first=$null;$invalid=0
+    foreach($reading in $Readings){
+        if($null -eq $reading){continue}
+        if($reading -isnot [string] -and $reading -isnot [char]){$invalid++;continue}
+        $key=Normalize-IdentifierText $reading
+        if([string]::IsNullOrWhiteSpace($key)){continue}
+        if($seen.Add($key) -and $null -eq $first){$first=[string]$reading}
+    }
+    $conflict=$seen.Count -gt 1
+    $value=if($seen.Count -eq 1){$first}else{$null}
+    $status=if($conflict){'Conflicting readings; topology not matched'}elseif($invalid){if($null -ne $value){'Invalid entries ignored: '+$invalid}else{'Invalid parent instance value; not matched'}}elseif($null -ne $value){'Device properties'}else{'Not supplied'}
+    [pscustomobject]@{Value=$value;Status=$status;Conflict=$conflict;InvalidCount=$invalid;Readings=@($Readings)}
+}
 function Get-PresentDeviceRecords {
     try{
         $output=@(Get-HwidInstance -OperationTimeoutSec 20 Win32_PnPEntity -Filter 'Present = True' -Property Name,Manufacturer,PNPClass,ClassGuid,Service,Present,PNPDeviceID,DeviceID,HardwareID,CompatibleID,ConfigManagerErrorCode)
@@ -1910,7 +1940,11 @@ function Get-ExtendedDeviceReview($Device) {
     if($null -eq $Device.HiddenByClass){'Class visibility was not read'}
     if($Device.ProblemCodeConflict -eq $true){'Device problem-code readings disagreed; status is unknown'}
     elseif($Device.ProblemCodeReadStatus -match '^Invalid'){'Optional device problem-code data was invalid; available native status is shown'}
-    if($Device.ParentReadStatus -match '^Invalid'){'Parent device metadata was invalid; topology was not matched'}
+    if($Device.ParentInstanceIdConflict -eq $true){'Parent device readings disagreed; topology was not matched'}
+    elseif($Device.ParentReadStatus -match '^Invalid'){
+        if(-not [string]::IsNullOrWhiteSpace((Normalize-IdentifierText $Device.ParentInstanceId))){'Some parent metadata was invalid; a valid parent reading was retained'}
+        else{'Parent device metadata was invalid; topology was not matched'}
+    }
     if($Device.HardwareIDReadStatus -match '^Invalid' -or $Device.CompatibleIDReadStatus -match '^Invalid'){'Some hardware/compatible ID entries were invalid; valid strings and raw observations were retained'}
     if($Device.HardwareIDPropertyConflict -eq $true -or $Device.CompatibleIDPropertyConflict -eq $true){'Device-property ID lists differed during collection; combined readings are for inspection'}
     if($Device.HardwareIDSourceConflict -eq $true -or $Device.CompatibleIDSourceConflict -eq $true){'PnP record and device-property ID lists disagree; both observations are in Main [5]'}
@@ -2029,6 +2063,7 @@ function Get-ExtendedDeviceInventory {
     $compatibleReadings=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
     $containerReadings=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
     $baseContainerReadings=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
+    $parentReadings=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
     $details=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
     $classes=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
     $idKeys=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
@@ -2060,6 +2095,10 @@ function Get-ExtendedDeviceInventory {
                         $map=if($property.KeyName -eq 'DEVPKEY_Device_ContainerId'){$containerReadings}else{$baseContainerReadings}
                         if(-not $map.ContainsKey($propertyId)){$map[$propertyId]=New-Object 'System.Collections.Generic.List[object]'}
                         $map[$propertyId].Add($property.Data)
+                    }
+                    if($property.KeyName -eq 'DEVPKEY_Device_Parent'){
+                        if(-not $parentReadings.ContainsKey($propertyId)){$parentReadings[$propertyId]=New-Object 'System.Collections.Generic.List[object]'}
+                        $parentReadings[$propertyId].Add($property.Data)
                     }
                     if($property.KeyName -eq 'DEVPKEY_Device_ProblemCode'){
                         if(-not $problemRaw.ContainsKey($propertyId)){$problemRaw[$propertyId]=New-Object 'System.Collections.Generic.List[object]';$problemReadings[$propertyId]=New-Object 'System.Collections.Generic.List[uint32]';$problemInvalid[$propertyId]=0}
@@ -2127,11 +2166,8 @@ function Get-ExtendedDeviceInventory {
         $nativeProblem=Get-DeviceUInt32Info $device.ConfigManagerErrorCode
         $problemConflict=$problemValues.Count -gt 1 -or ($problemValues.Count -eq 1 -and $nativeProblem.Valid -and $problemValues[0] -ne $nativeProblem.Value)
         $problemReadStatus=if($lookupKey -and $problemInvalid.ContainsKey($lookupKey) -and $problemInvalid[$lookupKey]){'Invalid entries ignored: '+$problemInvalid[$lookupKey]}elseif($problemConflict){'Conflicting readings'}elseif($problemValues.Count){'Device properties'}else{'Not supplied'}
-        $rawParent=$properties['DEVPKEY_Device_Parent'];$parent=$null;$parentReadStatus='Not supplied'
-        if($null -ne $rawParent){
-            if($rawParent -is [string] -or $rawParent -is [char]){if(-not [string]::IsNullOrWhiteSpace([string]$rawParent)){$parent=[string]$rawParent;$parentReadStatus='Device properties'}}
-            else{$parentReadStatus='Invalid parent instance value; not matched'}
-        }
+        $rawParent=$properties['DEVPKEY_Device_Parent']
+        $parentInfo=Get-DeviceParentReadings @(if($lookupKey -and $parentReadings.ContainsKey($lookupKey)){$parentReadings[$lookupKey].ToArray()})
         $row=[ordered]@{
             Name=$name;NameSource=$nameSource
             Manufacturer=$device.Manufacturer;PNPClass=$class;ClassGuid=$classGuid;Service=$device.Service
@@ -2142,7 +2178,7 @@ function Get-ExtendedDeviceInventory {
             BaseContainerId=$baseContainer.Value;BaseContainerIdReadStatus=$baseContainer.Status;BaseContainerIdConflict=$baseContainer.Conflict;BaseContainerIdReadings=$baseContainer.Readings
             ConfigManagerErrorCode=$device.ConfigManagerErrorCode
             DeviceProblemCode=$problem;ProblemCodeReadings=$problemValues;ProblemCodeConflict=$problemConflict;ProblemCodeReadStatus=$problemReadStatus;RawProblemCode=$rawProblemValues;ProblemStatus=$properties['DEVPKEY_Device_ProblemStatus']
-            ParentInstanceId=$parent;ParentName=$null;ParentReadStatus=$parentReadStatus;RawParentInstanceId=$rawParent
+            ParentInstanceId=$parentInfo.Value;ParentName=$null;ParentReadStatus=$parentInfo.Status;ParentInstanceIdConflict=$parentInfo.Conflict;ParentInstanceIdReadings=$parentInfo.Readings;RawParentInstanceId=$rawParent
             Enumerator=$properties['DEVPKEY_Device_EnumeratorName'];Location=$properties['DEVPKEY_Device_LocationInfo']
             BusDescription=$properties['DEVPKEY_Device_BusReportedDeviceDesc'];DriverInfPath=$properties['DEVPKEY_Device_DriverInfPath']
             DevNodeStatus=$nodeFlags;NodeStatusSource=$nodeSource;NodeStatusConflict=$nodeConflict;NodeStatusReadings=$nodeValues;HiddenByNodeFlag=$nodeHidden;HiddenByClass=$classes[$classGuid]
@@ -2173,6 +2209,7 @@ function Get-ExtendedDeviceInventory {
             ClassFlagsRead=@($rows | Where-Object {$null -ne $_.HiddenByClass}).Count
             NativeStatusRecoveries=@($rows | Where-Object NodeStatusSource -eq 'Configuration Manager').Count
             ParentLinks=@($rows | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_.ParentInstanceId)}).Count
+            ParentLinkConflicts=@($rows | Where-Object ParentInstanceIdConflict -eq $true).Count
             HardwareIdRecoveries=@($rows | Where-Object HardwareIdSource -eq 'Device properties').Count
             CompatibleIdRecoveries=@($rows | Where-Object CompatibleIdSource -eq 'Device properties').Count
             IdSourceConflicts=@($rows | Where-Object {$_.HardwareIDSourceConflict -or $_.CompatibleIDSourceConflict}).Count
@@ -2214,6 +2251,7 @@ function Show-ExtendedDeviceReport {
     Write-PnpValue 'Meaning' 'Hidden flags and disconnected records can be normal. They do not prove that hardware is physically hidden or unsafe.' $palette.Muted
     Write-PnpValue 'Limits' 'Only records exposed by Windows are visible. Unread flags remain unknown; missing serials cannot be recovered from absent hardware.' $palette.Muted
     Write-PnpValue 'Parent links' 'Windows-reported topology; remembered devices may point to the root if their earlier parent is gone.' $palette.Muted
+    if($info.ParentLinkConflicts){Write-PnpValue 'Parent conflicts' ("$($info.ParentLinkConflicts) unresolved relationships; all readings are kept in Main [5]. Windows device status is shown separately.") $palette.Warn}
     Write-PnpValue 'Keep results' 'Main [6] saves TXT + JSON. Full PC rescans refresh this catalog too; [9] > [4] refreshes it separately.' $palette.Muted
     Write-PnpValue 'Groups' 'Filters overlap. A hidden node can also be disconnected or disabled; do not add group counts.' $palette.Muted
     $groups=[ordered]@{'2'='NOT PRESENT / REMEMBERED';'3'='HIDDEN BY WINDOWS FLAG OR CLASS';'4'='DISABLED / PRESENT';'5'='ALL PRESENT NODES';'6'='PRESENCE UNKNOWN'}
@@ -2237,6 +2275,8 @@ function Show-ExtendedDeviceReport {
 }
 function Start-ExtendedDeviceScan {
     $cursor=$null;$queryWorker=$null
+    $script:lastQueryCleanupFailure=$null
+    foreach($field in @('ExtendedQueryCleanupWarning','ExtendedWorkerCleanupWarning')){$report['Report info'].Remove($field)}
     try {
         if($ownedConsole -and -not $redirected){try{$cursor=[Console]::CursorVisible;[Console]::CursorVisible=$false}catch{}}
         Reset-UiPage;Start-UiReport -Scanning
@@ -2271,10 +2311,13 @@ function Start-ExtendedDeviceScan {
         return
     }finally{
         $script:scanViewState=$null
-        if($null -ne $queryWorker){$queryWorker.Dispose();$script:scanQueryWorker=$null}
+        if($script:lastQueryCleanupFailure){$report['Report info']['ExtendedQueryCleanupWarning']=$script:lastQueryCleanupFailure}
+        $script:scanQueryWorker=$null
+        if($null -ne $queryWorker){try{$queryWorker.Dispose()}catch{$report['Report info']['ExtendedWorkerCleanupWarning']=$_.Exception.Message}}
         if($null -ne $clock){$clock.Stop()}
         if($null -ne $cursor){try{[Console]::CursorVisible=$cursor}catch{}}
     }
+    if($report['Report info'].ExtendedQueryCleanupWarning -or $report['Report info'].ExtendedWorkerCleanupWarning){Write-PnpValue 'Extended cleanup' 'Catalog data kept; cleanup reported a problem. Main [5] has details.' $palette.Warn}
     Show-ExtendedDeviceReport
 }
 function Get-PnpStatus($Code) {
@@ -2415,6 +2458,8 @@ function Show-PnpRecords($Devices,[switch]$Full,[switch]$Extended) {
                 }
                 Write-PnpValue 'Parent device' $device.ParentName $palette.Muted
                 Write-PnpValue 'Parent instance' $device.ParentInstanceId $palette.Muted
+                if($device.ParentInstanceIdConflict -eq $true){Write-PnpValue 'Parent link' 'Unresolved: parent readings disagreed. Main [5] keeps all observations.' $palette.Warn}
+                elseif($device.ParentReadStatus -match '^Invalid'){Write-PnpValue 'Parent read' $device.ParentReadStatus $palette.Warn}
                 Write-PnpValue 'Enumerator / bus' $device.Enumerator $palette.Muted
                 Write-PnpValue 'Location' $device.Location $palette.Muted
                 Write-PnpValue 'Bus description' $device.BusDescription $palette.Muted
@@ -2729,7 +2774,7 @@ function New-ScanQueryWorker {
         $setup=New-Object Text.StringBuilder
         [void]$setup.AppendLine('$ErrorActionPreference="Stop"')
         # Only collection helpers run here; UI and snapshot state stay on the main thread.
-        foreach($name in @('GiB','Test-ScanScalarValue','Get-ScanUInt64Info','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Format-NetworkStatus','Get-NetworkAddressInfo','Assert-NetworkReaderRecords','Get-NetworkIdentifiers','Get-DeviceIdListInfo','Get-DeviceInstanceInfo','Get-DevicePropertyIdListInfo','Test-DeviceIdSourceConflict','Get-DeviceGuidReadings','Get-PresentDeviceRecords','Get-DriverHardwareIds','Get-ScanFailureInfo','Test-ProjectionReadFailure','Invoke-BufferedHardwareRead','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Test-ScanValuePresent','Test-DeviceDisplayText','Normalize-IdentifierText','Assert-DeviceRecords','Get-DeviceUInt32Info','Read-DevicePropertyBatches','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
+        foreach($name in @('GiB','Test-ScanScalarValue','Get-ScanUInt64Info','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Format-NetworkStatus','Get-NetworkAddressInfo','Assert-NetworkReaderRecords','Get-NetworkIdentifiers','Get-DeviceIdListInfo','Get-DeviceInstanceInfo','Get-DevicePropertyIdListInfo','Test-DeviceIdSourceConflict','Get-DeviceGuidReadings','Get-DeviceParentReadings','Get-PresentDeviceRecords','Get-DriverHardwareIds','Get-ScanFailureInfo','Get-HwidExceptionStatuses','Test-ProjectionReadFailure','Invoke-BufferedHardwareRead','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Test-ScanValuePresent','Test-DeviceDisplayText','Normalize-IdentifierText','Assert-DeviceRecords','Get-DeviceUInt32Info','Read-DevicePropertyBatches','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
             $function=Get-Item -LiteralPath ('Function:\'+$name) -ErrorAction SilentlyContinue
             if($null -ne $function -and -not $function.ModuleName){[void]$setup.AppendLine(('function '+$name+' {'+$function.Definition+'}'))}
         }
@@ -2742,6 +2787,7 @@ function New-ScanQueryWorker {
 function Invoke-ScanQuery([scriptblock]$Query,[scriptblock]$Pulse) {
     $script:lastQueryRecoveries=@()
     $script:lastQueryFeedbackFailure=$null
+    $script:lastQueryCleanupFailure=$null
     if($null -eq $script:scanQueryWorker) {
         # An explicit -ErrorAction Continue can override the query preference.
         # Capture errors that escape the query so partial data is never an all-clear.
@@ -2796,8 +2842,12 @@ $script:hwidQueryRecoveries=$null
         if($worker.Streams.Error.Count){throw $worker.Streams.Error[0]}
         return $output[0].Records
     }finally{
-        if($null -ne $pending -and $pending.IsCompleted){$pending.AsyncWaitHandle.Close()}
-        $worker.Dispose()
+        # Cleanup must not replace an accepted result or the original provider error.
+        # Always try both releases, even if the first resource reports a failure.
+        $cleanupFailures=@()
+        try{if($null -ne $pending -and $pending.IsCompleted){$pending.AsyncWaitHandle.Close()}}catch{$cleanupFailures+=('Wait handle: '+$_.Exception.Message)}
+        try{$worker.Dispose()}catch{$cleanupFailures+=('Query command: '+$_.Exception.Message)}
+        if($cleanupFailures.Count){$script:lastQueryCleanupFailure=$cleanupFailures -join ' / '}
     }
 }
 function Get-ScanFailureInfo($Failure) {
@@ -2812,11 +2862,11 @@ function Get-ScanFailureInfo($Failure) {
     for($depth=0;$null -ne $exception -and $depth -lt 16;$depth++) {
         if($exception.Data.Contains('HwidFallbackFailure')){$classificationDetails=[string]$exception.Data['HwidFallbackFailure']}
         $hresult=$exception.HResult.ToString('X8')
-        $cimStatus=if($exception.PSObject.Properties['StatusCode']){[string]$exception.StatusCode}elseif($exception.PSObject.Properties['ErrorCode']){[string]$exception.ErrorCode}else{''}
-        if($exception -is [UnauthorizedAccessException] -or $hresult -in @('80070005','80041003','80041062') -or $cimStatus -in @('AccessDenied','PrivilegeNotHeld')){$kind='Access';break}
-        if($exception -is [TimeoutException] -or $hresult -in @('800705B4','80041069','80041088') -or $cimStatus -in @('Timeout','Timedout')){$kind='Timeout';break}
+        $cimStatus=@(Get-HwidExceptionStatuses $exception)
+        if($exception -is [UnauthorizedAccessException] -or $hresult -in @('80070005','80041003','80041062') -or ($cimStatus -match '^(AccessDenied|PrivilegeNotHeld)$')){$kind='Access';break}
+        if($exception -is [TimeoutException] -or $hresult -in @('800705B4','80041069','80041088') -or ($cimStatus -match '^(Timeout|Timedout|InvalidOperationTimeout)$')){$kind='Timeout';break}
         if($exception -is [IO.InvalidDataException]){$kind='Data';break}
-        if($exception -is [NotSupportedException] -or $exception -is [System.Management.Automation.CommandNotFoundException] -or $hresult -in @('8004100C','8004100E','80041010','80041011','80041012','80041013','80041085','800706BA') -or $cimStatus -in @('InvalidClass','InvalidNamespace','NotSupported','ProviderNotFound','InvalidProviderRegistration','ProviderLoadFailure')){$kind='Provider';break}
+        if($exception -is [NotSupportedException] -or $exception -is [System.Management.Automation.CommandNotFoundException] -or $hresult -in @('8004100C','8004100E','80041010','80041011','80041012','80041013','80041085','800706BA') -or ($cimStatus -match '^(InvalidClass|InvalidNamespace|NotSupported|ProviderNotFound|InvalidProviderRegistration|ProviderLoadFailure)$')){$kind='Provider';break}
         $exception=$exception.InnerException
     }
     if($kind -eq 'Other') {
@@ -2912,7 +2962,7 @@ function Section($Name, [scriptblock]$Query) {
         $resultWarning=Show-ScanReadResult $line $Name 'NOT READ' 0 ($summary+' / Main [4] / '+$failure.Code) $timer.Elapsed.TotalSeconds $palette.Warn
     } finally {
         $timer.Stop()
-        if($null -ne $script:scanTimings){$script:scanTimings.Add([pscustomobject]@{Section=$Name;Status=$status;Results=$results;Seconds=[math]::Round($timer.Elapsed.TotalSeconds,3);Summary=$summary;FailureCode=$failureCode;NextStep=$nextStep;Recoveries=@($script:lastQueryRecoveries);ProgressWarning=(@($groupWarning,$resultWarning,$script:lastQueryFeedbackFailure) | Where-Object {$_}) -join ' / '})}
+        if($null -ne $script:scanTimings){$script:scanTimings.Add([pscustomobject]@{Section=$Name;Status=$status;Results=$results;Seconds=[math]::Round($timer.Elapsed.TotalSeconds,3);Summary=$summary;FailureCode=$failureCode;NextStep=$nextStep;Recoveries=@($script:lastQueryRecoveries);QueryCleanupWarning=$script:lastQueryCleanupFailure;ProgressWarning=(@($groupWarning,$resultWarning,$script:lastQueryFeedbackFailure) | Where-Object {$_}) -join ' / '})}
         Update-ScanProgress
     }
 }
@@ -2959,6 +3009,27 @@ function GiB($Bytes) {
     if(-not $parsed.Valid){return $null}
     return [math]::Round($parsed.Value / 1GB,2)
 }
+function Show-ScanCompletion($Inventory,$Identifiers,[int]$Read,[int]$Total,[bool]$Complete,[string]$ExtendedNote='') {
+    try {
+        $info=$Inventory['Report info']
+        Ensure-ScanBuffer 8
+        Write-Heading $(if($Complete){'SCAN COMPLETE'}else{'SCAN FINISHED / READ GAPS'})
+        Write-PnpValue 'Finished' ("$Total/$Total finished / $Read read / $($Total-$Read) not read$ExtendedNote / $($info.ScanSeconds)s") $(if($Complete){$palette.Good}else{$palette.Warn})
+        $found=@($Identifiers | Where-Object Quality -eq 'Reported').Count
+        Write-PnpValue 'Selected IDs' ("$found identifier fields reported by Windows") $(if($found){$palette.Good}else{$palette.Warn})
+        $review=Get-ReviewSummary $Inventory $Identifiers $Inventory['Warnings']
+        Write-PnpValue 'Review' ("$($review.Total) findings -> Main [4] after Enter.") $(if($review.Total){$palette.Warn}else{$palette.Good})
+        if($info.CompatibleReadSections){Write-PnpValue 'Compatible reads' ("$($info.CompatibleReadSections) sections recovered through a compatible reader/query. Main [5] shows details.") $palette.Good}
+        if($info.ProgressFallbackSections){Write-PnpValue 'Progress display' ("$($info.ProgressFallbackSections) sections finished after live display updates failed. Read results are shown above; Main [5] has details.") $palette.Warn}
+        if($info.QueryCleanupSections -or $Inventory['Extended scan info'].QueryCleanupWarning){Write-PnpValue 'Query cleanup' 'Query resources reported cleanup problems; read status is shown above. Main [5] keeps the details.' $palette.Warn}
+        if($Inventory['Extended scan info'].ParentLinkConflicts){Write-PnpValue 'Device relationships' ("$($Inventory['Extended scan info'].ParentLinkConflicts) unresolved parent links; Main [5] keeps conflicting observations.") $palette.Warn}
+        if($Inventory['Extended scan info'].ProgressWarning){Write-PnpValue 'Catalog display' 'Live catalog feedback failed; collection status is shown above. Main [5] keeps the display warning.' $palette.Warn}
+    }catch {
+        $message=$_.Exception.Message
+        try{Write-Host '  Scan finished. Completion summary unavailable; Main [1] or [5] has the collected results.' -ForegroundColor $palette.Warn}catch{}
+        return $message
+    }
+}
 function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole -and -not $redirected),[bool]$IncludeExtended=$false) {
     $scanCursorVisible=$null
     if($ownedConsole -and -not $redirected) {
@@ -2967,6 +3038,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     try {
     # Build a separate snapshot; publish only after every query finishes.
     $report=[ordered]@{}
+    $finishedSnapshot=$null
     $warnings=New-Object 'System.Collections.Generic.List[string]'
     $script:scanStep=0
     $script:scanGroupState=[pscustomobject]@{LastGroup='';Index=0;Total=$(if($IncludeExtended){7}else{6})}
@@ -2976,7 +3048,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-PnpLine '  Hardware identity and Windows inventory. Read-only scan.' $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.79'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.83'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-PnpLine "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" $palette.Muted
@@ -3074,13 +3146,17 @@ if($IncludeExtended) {
     }finally{
         $extraClock.Stop()
         $extraFeedback=(@($extraGroupWarning,$extraResultWarning,$script:lastQueryFeedbackFailure) | Where-Object {$_}) -join ' / '
+        if($script:lastQueryCleanupFailure){
+            $info=$report['Extended scan info']
+            if($info -is [System.Collections.IDictionary]){$info['QueryCleanupWarning']=$script:lastQueryCleanupFailure}else{$info | Add-Member NoteProperty QueryCleanupWarning $script:lastQueryCleanupFailure -Force}
+        }
         if($extraFeedback){
             $info=$report['Extended scan info']
             if($info -is [System.Collections.IDictionary]){$info['ProgressWarning']=$extraFeedback}else{$info | Add-Member NoteProperty ProgressWarning $extraFeedback -Force}
         }
     }
 }
-try {Update-ScanProgress $script:scanProgressTotal}catch{}
+if($script:scanStep -ne $scanTotal -or $scanTimings.Count -ne $scanTotal){throw 'The scan did not finish every section.'}
 $scanClock.Stop()
 $report['Report info']['ScanSeconds']=[math]::Round($scanClock.Elapsed.TotalSeconds,2)
 $report['Report info']['ScanCompleted']=(Get-Date).ToString('o')
@@ -3088,8 +3164,8 @@ $report['Scan timing']=@($scanTimings.ToArray())
 $compatible=@($scanTimings | Where-Object {$_.Status -ne 'UNAVAILABLE' -and $_.Recoveries.Count -gt 0}).Count
 $report['Report info']['CompatibleReadSections']=$compatible
 $report['Report info']['ProgressFallbackSections']=@($scanTimings | Where-Object {$_.ProgressWarning}).Count
+$report['Report info']['QueryCleanupSections']=@($scanTimings | Where-Object {$_.QueryCleanupWarning}).Count
 $report['Warnings'] = @($warnings.ToArray())
-    if($script:scanStep -ne $scanTotal -or $scanTimings.Count -ne $scanTotal){throw 'The scan did not finish every section.'}
     $read=@($scanTimings | Where-Object Status -ne 'UNAVAILABLE').Count
     $complete=($read -eq $scanTotal)
     $extendedNote=''
@@ -3098,19 +3174,27 @@ $report['Warnings'] = @($warnings.ToArray())
         $complete=$complete -and $extraRead
         $extendedNote=if($extraRead){' / extended READ'}else{' / extended NOT READ'}
     }
-    Write-PnpValue 'Finished' ("$scanTotal/$scanTotal finished / $read read / $($scanTotal-$read) not read$extendedNote / $($report['Report info'].ScanSeconds)s") $(if($complete){$palette.Good}else{$palette.Warn})
-    if($compatible){Write-PnpValue 'Compatible reads' ("$compatible sections recovered through a compatible reader/query. Main [5] shows details.") $palette.Good}
-    if($report['Report info'].ProgressFallbackSections){Write-PnpValue 'Progress display' ("$($report['Report info'].ProgressFallbackSections) sections finished after live display updates failed. Read results are shown above; Main [5] has details.") $palette.Warn}
-    if($report['Extended scan info'].ProgressWarning){Write-PnpValue 'Catalog display' 'Live catalog feedback failed; collection status is shown above. Main [5] keeps the display warning.' $palette.Warn}
     $rows=@(Get-IdentifierRows $report)
-    return [pscustomobject]@{Inventory=$report;Warnings=$warnings;Identifiers=$rows;Completed=$true}
+    $finalProgressWarning=$null
+    try {Update-ScanProgress $script:scanProgressTotal}catch{$finalProgressWarning=$_.Exception.Message}
+    $completionWarning=Show-ScanCompletion $report $rows $read $scanTotal $complete $extendedNote
+    $completionFeedback=(@($finalProgressWarning,$completionWarning) | Where-Object {$_}) -join ' / '
+    if($completionFeedback){$report['Report info']['CompletionDisplayWarning']=$completionFeedback}
+    $finishedSnapshot=[pscustomobject]@{Inventory=$report;Warnings=$warnings;Identifiers=$rows;Completed=$true}
+    return $finishedSnapshot
 } finally {
     $scanClock.Stop()
     $script:scanProgressClock=$null
     $script:scanProgressState=$null
     $script:scanProgressTotal=$null
     $script:scanViewState=$null
-    if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose();$script:scanQueryWorker=$null}
+    $workerToRelease=$script:scanQueryWorker;$script:scanQueryWorker=$null
+    if($null -ne $workerToRelease){
+        try{$workerToRelease.Dispose()}catch{
+            $report['Report info']['WorkerCleanupWarning']=$_.Exception.Message
+            if($null -ne $finishedSnapshot){try{Write-Host '  Scan data kept; cleanup reported a problem. Main [5] has details.' -ForegroundColor $palette.Warn}catch{}}
+        }
+    }
 }
     }finally{
         $script:scanGroupState=$null
