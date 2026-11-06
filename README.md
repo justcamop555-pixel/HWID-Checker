@@ -5,8 +5,10 @@
 **Inspect Windows hardware identifiers, save snapshots, and see what changed.**
 
 [![Version: 3.83](https://img.shields.io/badge/version-3.83-2563eb?style=flat-square)](docs/CHANGELOG.md)
+[![Desktop: 1.1.0](https://img.shields.io/badge/desktop-1.1.0-238579?style=flat-square)](desktop/README.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square)](#compatibility)
 [![Language: PowerShell + Batch](https://img.shields.io/badge/language-PowerShell%20%2B%20Batch-5391fe?style=flat-square)](hwid.bat)
+[![Desktop: C# + WPF](https://img.shields.io/badge/desktop-C%23%20%2B%20WPF-5965b0?style=flat-square)](desktop/HwidDesktop.csproj)
 [![License: not declared](https://img.shields.io/badge/license-not%20declared-6b7280?style=flat-square)](#license)
 
 [Get started](#installation) · [Usage guide](docs/USAGE.md) · [Changelog](docs/CHANGELOG.md) · [Report an issue](https://github.com/justcamop555-pixel/HWID-Checker/issues)
@@ -30,7 +32,9 @@
 
 ## Overview
 
-HWID Checker is a local, read-only Windows console tool written in PowerShell with a Batch launcher. It brings hardware information and identifiers from several Windows providers into one inventory, then lets you save that inventory and compare selected ID fields with an earlier capture.
+HWID Checker is a local, read-only Windows hardware inventory tool with a desktop interface and a PowerShell/Batch console. Both interfaces use the scanning and report functions in `hwid.bat`. They bring hardware information and identifiers from Windows providers into one inventory, then let you save it and compare selected ID fields with an earlier capture.
+
+**Desktop 1.1.0** uses a slate and teal theme for the native Windows `.exe` dashboard connected to the **3.83 BAT scanner**. The dashboard includes scan progress, searchable IDs, hardware browsing, review findings, saved captures and old/current comparisons. [Desktop guide and source build](desktop/README.md)
 
 It is intended for PC owners, support technicians, and developers troubleshooting missing identifiers, documenting a system, or checking changes after hardware or Windows updates. It reports what Windows exposes; it does not certify hardware health, authenticity, or identifier uniqueness.
 
@@ -38,7 +42,7 @@ It is intended for PC owners, support technicians, and developers troubleshootin
 
 ### Hardware and system inventory
 
-The startup scan reads **17 hardware/system sections**, followed by an **all-known device catalog**. Full rescans refresh both. The catalog includes Windows-exposed present, hidden and remembered PnP nodes; it does not guarantee discovery of hardware Windows cannot expose. Fields depend on the hardware, firmware, drivers, Windows providers, and access available on the PC.
+Each full scan reads **17 hardware/system sections**, followed by an **all-known device catalog**. Full rescans refresh both. The catalog includes Windows-exposed present, hidden and remembered PnP nodes; it does not guarantee discovery of hardware Windows cannot expose. Fields depend on the hardware, firmware, drivers, Windows providers, and access available on the PC.
 
 | Area | Information collected when available |
 | --- | --- |
@@ -52,6 +56,7 @@ The startup scan reads **17 hardware/system sections**, followed by an **all-kno
 
 ### Inspection, reporting, and comparison
 
+- **Desktop layout.** Shorter headers and wrapping action buttons leave more space for tables and detail panes as the window resizes. Narrow windows use a hardware section picker. Record menus show readable names, and tooltips expose long values and paths.
 - **Identifier views:** concise grouped serial/ID tables, hardware categories, full values, hardware IDs, compatible IDs, and device instance IDs.
 - **Graphics and network view:** separate graphics, network and monitor sections with jump shortcuts, interfaces grouped by reported hardware flags, address evidence, and directional fallback rates. See the [field-label audit and limits](docs/GRAPHICS-NETWORK.md).
 - **All-known device catalog:** startup and full rescans collect Windows' known hidden, disabled, disconnected, and unknown-presence records, with available parent links, container/base-container IDs and status properties. Container IDs describe Windows device grouping, rather than factory serials. The separate extended view can refresh this catalog on demand.
@@ -73,6 +78,12 @@ The startup scan reads **17 hardware/system sections**, followed by an **all-kno
 **Scope:** comparison covers selected identifier fields. Full PnP model/compatible-ID arrays and partition paths remain inventory details, rather than a complete diff of every exported property. See [identifier meanings and limits](docs/IDENTIFIERS.md).
 
 ## Screenshots
+
+### Desktop dashboard
+
+Desktop 1.1.0 displaying a synthetic test inventory. The counts describe the test fixture.
+
+![HWID Checker desktop dashboard with scan coverage, identifiers, review findings and section progress](docs/images/desktop-overview.png)
 
 The following captures show **v3.59**. Identifying values are partially redacted; counts and findings are examples from one PC.
 
@@ -102,6 +113,12 @@ Comparison results show OLD/NEW values and character differences. A difference r
 
 ## Installation
 
+### Desktop EXE
+
+Download and extract the [Desktop 1.1.0 ZIP for Windows x64](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.1.0). Keep **HWID Checker.exe** beside **hwid.bat**, open the EXE, and choose **Scan this PC**. Use **Connect BAT…** to select the scanner when it is stored elsewhere. **Open BAT console** opens the connected scanner.
+
+The current package is a self-contained **Windows x64** build; its .NET runtime is included. PowerShell and the hardware providers listed below are still required. The source repository contains the desktop project and [build/packaging instructions](desktop/README.md#build-from-source).
+
 ### Requirements
 
 | Requirement | Details |
@@ -112,7 +129,7 @@ Comparison results show OLD/NEW values and character differences. A difference r
 | Local components | CIM/WMI and the .NET APIs supplied by the PowerShell runtime; optional Windows device/network/storage providers affect scan coverage |
 | File access | A writable report destination when exporting; a standard user can start the checker |
 
-No build step or third-party package installation is required. Git is optional and only needed for cloning. The checker does not install missing runtimes or providers.
+The console requires no build step or third-party package installation. Building the desktop EXE from source requires the .NET 10 SDK; running the self-contained package does not require a separate .NET installation. Git is optional and only needed for cloning. The checker does not install missing runtimes or providers.
 
 ### Download or clone
 
@@ -147,9 +164,13 @@ Keep `Start-HWID.ps1` beside `hwid.bat`. Start as a standard user; if a section 
 
 ## Usage
 
-### Start a scan and view results
+In the **desktop app**, choose **Scan this PC**, then use the sidebar to view identifiers, hardware, warnings, saved snapshots and comparisons. On **Snapshots**, **Refresh list** updates the list and keeps the selected capture when it is still available. With a completed current scan, double-click a capture row or choose **Compare snapshot** to compare it. [Desktop usage guide](desktop/README.md#use-the-dashboard)
 
-Launching the checker starts the scan automatically. Wait for it to finish, then press **Enter** to open the main menu. The finished scan remains available for scrolling before you continue.
+The following menu instructions apply to the **original console**.
+
+### Start a console scan and view results
+
+Launching the console through `hwid.bat` or `Start-HWID.ps1` starts the scan automatically. Wait for it to finish, then press **Enter** to open the main menu. The finished scan remains available for scrolling before you continue.
 
 Type a menu number and press **Enter**. Empty Enter is ignored on the main menu.
 
@@ -212,6 +233,7 @@ The current local validation environment is **Windows 11 Pro, build 26300**. Reg
 | --- | --- |
 | Windows 11 Pro, build 26300 | Locally validated with synthetic regressions, console checks, and read-only scan/rescan diagnostics |
 | Windows PowerShell 5.1 / PowerShell 7.6.5 | Both used for regression validation; runtime selection and launchers have separate checks |
+| Desktop, Windows x64 | Self-contained .NET 10 package. See [desktop verification](desktop/VERIFICATION.md) for tested versions and Windows builds. |
 | Other Windows builds and Windows Server | Not verified by the current validation record; runtime and provider availability must be checked |
 | Linux / macOS | Unsupported; collection and console behavior depend on Windows APIs |
 
@@ -284,6 +306,8 @@ See [developer checks](tests/README.md) for focused suites and diagnostics. Synt
 | [Graphics and network field audit](docs/GRAPHICS-NETWORK.md) | Corrected labels, Windows sources, reader coverage, and validation limits |
 | [Changelog](docs/CHANGELOG.md) | Version history and validation notes |
 | [Developer checks](tests/README.md) | Test coverage, commands, and diagnostic requirements |
+| [Desktop app](desktop/README.md) | EXE usage, BAT connection, portable packaging and source builds |
+| [Desktop verification](desktop/tests/README.md) | Bridge, process-host and desktop workflow checks |
 
 ```text
 HWID-Checker/
@@ -291,6 +315,7 @@ HWID-Checker/
 ├── Start-HWID.ps1    Alternative launcher; requires hwid.bat beside it
 ├── README.md         Project overview and quick reference
 ├── docs/             Usage, identifiers, and changelog
+├── desktop/          Native WPF desktop app and embedded BAT bridge
 └── tests/            Optional developer checks
 ```
 

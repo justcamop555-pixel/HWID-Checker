@@ -1,0 +1,1349 @@
+{
+  "inventory": {
+    "Report info": {
+      "Generated": "2026-11-04T07:44:31.090545-05:00",
+      "Computer": "SYNTHETIC-PC",
+      "Administrator": false,
+      "Version": "3.83",
+      "Display": "Desktop companion",
+      "ScanNumber": 1,
+      "QueryMode": "Live progress",
+      "ExtendedStatus": "Refreshed",
+      "ScanSeconds": 0.5,
+      "ScanCompleted": "2026-11-04T07:44:31.7380272-05:00",
+      "CompatibleReadSections": 0,
+      "ProgressFallbackSections": 0,
+      "QueryCleanupSections": 0
+    },
+    "Compatibility": {
+      "PowerShellVersion": "5.1.26100.9711",
+      "WindowsVersion": "10.0.26300.0",
+      "LanguageMode": "FullLanguage",
+      "QueryBackend": "CIM",
+      "MissingCommands": [],
+      "Note": "Providers depend on Windows version, drivers and access. Missing sections remain unavailable, not zero or changed IDs."
+    },
+    "System identity": [
+      {
+        "Vendor": "Synthetic",
+        "Name": "Synthetic component",
+        "Version": "1",
+        "IdentifyingNumber": "SYSTEM-000123",
+        "UUID": "11111111-2222-3333-4444-555555555555"
+      }
+    ],
+    "System hardware": [
+      {
+        "Manufacturer": "Synthetic",
+        "Model": "Synthetic",
+        "SystemType": null,
+        "TotalPhysicalMemory": 8589934592,
+        "TotalRAM_GiB": 8
+      }
+    ],
+    "Motherboard": [
+      {
+        "Manufacturer": "Synthetic",
+        "Product": "Synthetic board",
+        "Version": "1",
+        "SerialNumber": "000123"
+      }
+    ],
+    "BIOS": [
+      {
+        "Manufacturer": "Synthetic",
+        "SMBIOSBIOSVersion": null,
+        "SerialNumber": "000123",
+        "ReleaseDate": null,
+        "SMBIOSMajorVersion": null,
+        "SMBIOSMinorVersion": null
+      }
+    ],
+    "Chassis": [
+      {
+        "Manufacturer": "Synthetic",
+        "SerialNumber": "000123",
+        "SMBIOSAssetTag": null,
+        "ChassisTypes": null
+      }
+    ],
+    "CPU": [
+      {
+        "DeviceID": "CPU0",
+        "Name": "Synthetic component",
+        "Manufacturer": "Synthetic",
+        "ProcessorId": "CPU-000123",
+        "SocketDesignation": "SOCKET0",
+        "NumberOfCores": 4,
+        "NumberOfLogicalProcessors": 8,
+        "MaxClockSpeed": 4000
+      }
+    ],
+    "Memory modules": [
+      {
+        "DeviceLocator": "DIMM0",
+        "BankLabel": "BANK0",
+        "Manufacturer": "Synthetic",
+        "PartNumber": "RAM-0001",
+        "SerialNumber": "000123",
+        "Capacity": 8589934592,
+        "Capacity_GiB": 8,
+        "Speed": 3200,
+        "ConfiguredClockSpeed": 0
+      }
+    ],
+    "Physical disks": [
+      {
+        "Index": 0,
+        "Model": "Synthetic",
+        "SerialNumber": "000123",
+        "FirmwareRevision": "1",
+        "InterfaceType": null,
+        "MediaType": null,
+        "Size": 8589934592,
+        "Size_GiB": 8,
+        "PNPDeviceID": "USB\\SYNTHETIC"
+      }
+    ],
+    "Storage identifiers": [
+      {
+        "Number": 0,
+        "FriendlyName": null,
+        "SerialNumber": "000123",
+        "UniqueId": "DISK-000123",
+        "UniqueIdFormat": 0,
+        "Guid": "11111111-2222-3333-4444-555555555555",
+        "Signature": null,
+        "PartitionStyle": "GPT",
+        "BusType": "NVMe",
+        "HealthStatus": "Healthy",
+        "RawPartitionStyle": 2,
+        "RawBusType": 17,
+        "RawHealthStatus": 0
+      }
+    ],
+    "Volumes": [
+      {
+        "DeviceID": "CPU0",
+        "DriveType": 3,
+        "VolumeName": "Synthetic",
+        "VolumeSerialNumber": "00AB12CD",
+        "FileSystem": "NTFS",
+        "Size": 8589934592,
+        "FreeSpace": 4294967296,
+        "Size_GiB": 8,
+        "Free_GiB": 4
+      }
+    ],
+    "Disk partitions": [
+      {
+        "DiskNumber": 0,
+        "PartitionNumber": 1,
+        "DriveLetter": "C",
+        "DriveLetterReadStatus": "Read",
+        "RawDriveLetter": "C",
+        "PartitionGuid": "11111111-2222-3333-4444-555555555555",
+        "GptType": "11111111-2222-3333-4444-555555555555",
+        "MbrType": 0,
+        "AccessPaths": [
+          "C:\\"
+        ],
+        "Size": 8589934592,
+        "Size_GiB": 8
+      }
+    ],
+    "Graphics adapters": [
+      {
+        "Name": "Synthetic component",
+        "VideoProcessor": null,
+        "PNPDeviceID": "USB\\SYNTHETIC",
+        "DriverVersion": null,
+        "DriverDate": null,
+        "CurrentHorizontalResolution": null,
+        "CurrentVerticalResolution": null
+      }
+    ],
+    "Monitors": [
+      {
+        "InstanceName": "MONITOR0",
+        "Active": true,
+        "Manufacturer": "SYN",
+        "Name": "SYN",
+        "ProductCode": "1",
+        "SerialNumber": "001",
+        "SerialNumberReadStatus": "Read",
+        "NameReadStatus": "Read",
+        "WeekOfManufacture": 1,
+        "YearOfManufacture": 2026,
+        "ManufacturerName": [
+          83,
+          89,
+          78
+        ],
+        "ManufacturerNameLength": 3,
+        "UserFriendlyName": [
+          83,
+          89,
+          78
+        ],
+        "UserFriendlyNameLength": 3,
+        "ProductCodeID": [
+          49
+        ],
+        "SerialNumberID": [
+          48,
+          48,
+          49
+        ]
+      }
+    ],
+    "Network adapters": [
+      {
+        "Name": "Synthetic adapter",
+        "InterfaceDescription": "Synthetic network",
+        "InterfaceGuid": "11111111-2222-3333-4444-555555555555",
+        "MacAddress": "001122334455",
+        "PermanentAddress": "001122334455",
+        "PNPDeviceID": "USB\\SYNTHETIC",
+        "Status": "Up",
+        "LinkSpeed": 1000000000,
+        "HardwareInterface": true,
+        "ReceiveLinkSpeed": null,
+        "TransmitLinkSpeed": null,
+        "TransmitLinkRate": null,
+        "MacAddressReadStatus": "Get-NetAdapter reported current address",
+        "LinkSpeedKind": "Adapter link rate (reported)",
+        "CollectionSource": "Get-NetAdapter"
+      }
+    ],
+    "Windows": [
+      {
+        "Caption": "Synthetic Windows",
+        "Version": "1",
+        "BuildNumber": "TEST",
+        "OSArchitecture": "64-bit",
+        "InstallDate": null,
+        "LastBootUpTime": null
+      }
+    ],
+    "Windows Machine GUID": [
+      {
+        "MachineGuid": "SYNTHETIC-MACHINE-0001"
+      }
+    ],
+    "PnP hardware IDs": [
+      {
+        "Name": "Synthetic component",
+        "Manufacturer": "Synthetic",
+        "PNPClass": "USB",
+        "ClassGuid": "TEST",
+        "Service": "Synthetic",
+        "Present": true,
+        "DeviceInstanceId": "USB\\SYNTHETIC",
+        "InstanceIdSource": "PNPDeviceID",
+        "HardwareID": [
+          "MODEL-0001"
+        ],
+        "CompatibleID": [
+          "CLASS-0001"
+        ],
+        "ConfigManagerErrorCode": 0
+      }
+    ],
+    "Extended device inventory": [
+      {
+        "Name": "Synthetic device",
+        "DeviceInstanceId": "USB\\SYNTHETIC",
+        "PNPClass": "USB",
+        "ClassGuid": "TEST",
+        "Present": true,
+        "ConfigManagerErrorCode": 0,
+        "HardwareID": [
+          "MODEL-0001"
+        ]
+      }
+    ],
+    "Extended scan info": {
+      "Captured": "2026-11-04T12:00:00-05:00",
+      "Source": "Synthetic desktop tests",
+      "Records": 1,
+      "PropertyNodesRequested": 1,
+      "PropertyNodesReturned": 1,
+      "PropertyNodesWithoutRows": 0
+    },
+    "Scan timing": [
+      {
+        "Section": "System identity",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.071,
+        "Summary": "IDs: 2 found",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "System hardware",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.026,
+        "Summary": "Inventory details",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "Motherboard",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.005,
+        "Summary": "IDs: 1 found",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "BIOS",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.005,
+        "Summary": "IDs: 1 found",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "Chassis",
+        "Status": "CHECK",
+        "Results": 1,
+        "Seconds": 0.007,
+        "Summary": "IDs: 1 found, 1 missing",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "CPU",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.006,
+        "Summary": "IDs: 1 found",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "Memory modules",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.006,
+        "Summary": "IDs: 1 found",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "Physical disks",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.009,
+        "Summary": "IDs: 2 found",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "Storage identifiers",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.02,
+        "Summary": "IDs: 3 found",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "Volumes",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.009,
+        "Summary": "IDs: 1 found",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "Disk partitions",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.033,
+        "Summary": "Inventory details",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "Graphics adapters",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.006,
+        "Summary": "IDs: 1 found",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "Monitors",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.038,
+        "Summary": "IDs: 1 found",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "Network adapters",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.03,
+        "Summary": "IDs: 4 found",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "Windows",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.006,
+        "Summary": "Inventory details",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "Windows Machine GUID",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.006,
+        "Summary": "IDs: 1 found",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      },
+      {
+        "Section": "PnP hardware IDs",
+        "Status": "READ",
+        "Results": 1,
+        "Seconds": 0.074,
+        "Summary": "1 instance IDs; 1 with model IDs",
+        "FailureCode": null,
+        "NextStep": null,
+        "Recoveries": [],
+        "QueryCleanupWarning": null,
+        "ProgressWarning": ""
+      }
+    ],
+    "Warnings": []
+  },
+  "identifiers": [
+    {
+      "Section": "System identity",
+      "Device": "",
+      "Field": "IdentifyingNumber",
+      "Value": "SYSTEM-000123",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "System identity",
+      "Device": "",
+      "Field": "UUID",
+      "Value": "11111111-2222-3333-4444-555555555555",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Motherboard",
+      "Device": "",
+      "Field": "SerialNumber",
+      "Value": "000123",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "BIOS",
+      "Device": "",
+      "Field": "SerialNumber",
+      "Value": "000123",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Chassis",
+      "Device": "",
+      "Field": "SerialNumber",
+      "Value": "000123",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Chassis",
+      "Device": "",
+      "Field": "SMBIOSAssetTag",
+      "Value": "",
+      "Quality": "Missing"
+    },
+    {
+      "Section": "CPU",
+      "Device": "DeviceID=CPU0",
+      "Field": "ProcessorId",
+      "Value": "CPU-000123",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Memory modules",
+      "Device": "DeviceLocator=DIMM0; BankLabel=BANK0",
+      "Field": "SerialNumber",
+      "Value": "000123",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Physical disks",
+      "Device": "Index=0",
+      "Field": "SerialNumber",
+      "Value": "000123",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Physical disks",
+      "Device": "Index=0",
+      "Field": "PNPDeviceID",
+      "Value": "USB\\SYNTHETIC",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Storage identifiers",
+      "Device": "Number=0",
+      "Field": "SerialNumber",
+      "Value": "000123",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Storage identifiers",
+      "Device": "Number=0",
+      "Field": "UniqueId",
+      "Value": "DISK-000123",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Storage identifiers",
+      "Device": "Number=0",
+      "Field": "Guid",
+      "Value": "11111111-2222-3333-4444-555555555555",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Volumes",
+      "Device": "DeviceID=CPU0",
+      "Field": "VolumeSerialNumber",
+      "Value": "00AB12CD",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Graphics adapters",
+      "Device": "PNPDeviceID=USB\\SYNTHETIC",
+      "Field": "PNPDeviceID",
+      "Value": "USB\\SYNTHETIC",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Monitors",
+      "Device": "InstanceName=MONITOR0",
+      "Field": "SerialNumber",
+      "Value": "001",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Network adapters",
+      "Device": "InterfaceGuid=11111111-2222-3333-4444-555555555555",
+      "Field": "InterfaceGuid",
+      "Value": "11111111-2222-3333-4444-555555555555",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Network adapters",
+      "Device": "InterfaceGuid=11111111-2222-3333-4444-555555555555",
+      "Field": "MacAddress",
+      "Value": "001122334455",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Network adapters",
+      "Device": "InterfaceGuid=11111111-2222-3333-4444-555555555555",
+      "Field": "PermanentAddress",
+      "Value": "001122334455",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Network adapters",
+      "Device": "InterfaceGuid=11111111-2222-3333-4444-555555555555",
+      "Field": "PNPDeviceID",
+      "Value": "USB\\SYNTHETIC",
+      "Quality": "Reported"
+    },
+    {
+      "Section": "Windows Machine GUID",
+      "Device": "",
+      "Field": "MachineGuid",
+      "Value": "SYNTHETIC-MACHINE-0001",
+      "Quality": "Reported"
+    }
+  ],
+  "warnings": [],
+  "review": {
+    "IdIssues": [
+      {
+        "Section": "Chassis",
+        "Device": "",
+        "Field": "SMBIOSAssetTag",
+        "Value": "",
+        "Quality": "Missing"
+      }
+    ],
+    "DiskClashes": [],
+    "RecordConflicts": [],
+    "PnpConflicts": [],
+    "DeviceIssues": [],
+    "Unread": [],
+    "UnreadDetails": [],
+    "ConflictCount": 0,
+    "UnreadCount": 0,
+    "DeviceCount": 0,
+    "MissingCount": 1,
+    "DefaultCount": 0,
+    "Total": 1
+  },
+  "version": "3.83",
+  "captured": "2026-11-04T07:44:31.090545-05:00",
+  "fieldLabels": {
+    "Report info": {
+      "Generated": "Generated",
+      "Computer": "Computer",
+      "Administrator": "Administrator",
+      "Version": "Version",
+      "Display": "Display",
+      "ScanNumber": "Session snapshot number",
+      "QueryMode": "Scan mode",
+      "ExtendedStatus": "Extended Status",
+      "ScanSeconds": "Total scan time (seconds)",
+      "ScanCompleted": "Scan completed",
+      "CompatibleReadSections": "Compatible Read Sections",
+      "ProgressFallbackSections": "Progress Fallback Sections",
+      "QueryCleanupSections": "Sections with query cleanup warnings"
+    },
+    "Compatibility": {
+      "PowerShellVersion": "PowerShell version",
+      "WindowsVersion": "Windows version",
+      "LanguageMode": "PowerShell language mode",
+      "QueryBackend": "Hardware query backend",
+      "MissingCommands": "Unavailable commands (may be optional)",
+      "Note": "Note"
+    },
+    "System identity": {
+      "Vendor": "Vendor",
+      "Name": "Name",
+      "Version": "Version",
+      "IdentifyingNumber": "System serial number",
+      "UUID": "System UUID"
+    },
+    "System hardware": {
+      "Manufacturer": "Manufacturer",
+      "Model": "Model",
+      "SystemType": "System Type",
+      "TotalPhysicalMemory": "Raw installed memory (bytes)",
+      "TotalRAM_GiB": "Total memory (GiB)"
+    },
+    "Motherboard": {
+      "Manufacturer": "Manufacturer",
+      "Product": "Product",
+      "Version": "Version",
+      "SerialNumber": "Serial number"
+    },
+    "BIOS": {
+      "Manufacturer": "Manufacturer",
+      "SMBIOSBIOSVersion": "BIOS version",
+      "SerialNumber": "Serial number",
+      "ReleaseDate": "Release Date",
+      "SMBIOSMajorVersion": "SMBIOS major version",
+      "SMBIOSMinorVersion": "SMBIOS minor version"
+    },
+    "Chassis": {
+      "Manufacturer": "Manufacturer",
+      "SerialNumber": "Serial number",
+      "SMBIOSAssetTag": "Asset tag",
+      "ChassisTypes": "Chassis Types"
+    },
+    "CPU": {
+      "DeviceID": "Device / drive",
+      "Name": "Name",
+      "Manufacturer": "Manufacturer",
+      "ProcessorId": "CPU identifier",
+      "SocketDesignation": "Socket Designation",
+      "NumberOfCores": "CPU cores",
+      "NumberOfLogicalProcessors": "CPU threads",
+      "MaxClockSpeed": "Maximum CPU clock (MHz)"
+    },
+    "Memory modules": {
+      "DeviceLocator": "Memory slot",
+      "BankLabel": "Memory bank",
+      "Manufacturer": "Manufacturer",
+      "PartNumber": "Part Number",
+      "SerialNumber": "Serial number",
+      "Capacity": "Raw module capacity (bytes)",
+      "Capacity_GiB": "Module size (GiB)",
+      "Speed": "Memory speed (Windows-reported raw)",
+      "ConfiguredClockSpeed": "Configured speed (MHz)"
+    },
+    "Physical disks": {
+      "Index": "Index",
+      "Model": "Model",
+      "SerialNumber": "Serial number",
+      "FirmwareRevision": "Firmware Revision",
+      "InterfaceType": "Interface Type",
+      "MediaType": "Media Type",
+      "Size": "Raw size (bytes)",
+      "Size_GiB": "Size (GiB)",
+      "PNPDeviceID": "Windows device ID"
+    },
+    "Storage identifiers": {
+      "Number": "Number",
+      "FriendlyName": "Friendly Name",
+      "SerialNumber": "Serial number",
+      "UniqueId": "Storage unique ID",
+      "UniqueIdFormat": "Storage ID format (Windows code)",
+      "Guid": "GPT disk ID",
+      "Signature": "MBR disk signature",
+      "PartitionStyle": "Partition Style",
+      "BusType": "Bus Type",
+      "HealthStatus": "Health Status",
+      "RawPartitionStyle": "Raw partition-style code",
+      "RawBusType": "Raw bus-type code",
+      "RawHealthStatus": "Raw disk-health code"
+    },
+    "Volumes": {
+      "DeviceID": "Device / drive",
+      "DriveType": "Drive Type",
+      "VolumeName": "Volume Name",
+      "VolumeSerialNumber": "Volume serial number",
+      "FileSystem": "File System",
+      "Size": "Raw size (bytes)",
+      "FreeSpace": "Raw free space (bytes)",
+      "Size_GiB": "Size (GiB)",
+      "Free_GiB": "Free space (GiB)"
+    },
+    "Disk partitions": {
+      "DiskNumber": "Disk number",
+      "PartitionNumber": "Partition number",
+      "DriveLetter": "Drive Letter",
+      "DriveLetterReadStatus": "Drive-letter read status",
+      "RawDriveLetter": "Raw drive-letter value",
+      "PartitionGuid": "Unique GPT partition ID",
+      "GptType": "GPT partition type (shared category)",
+      "MbrType": "MBR partition type code",
+      "AccessPaths": "Volume GUID / access paths",
+      "Size": "Raw size (bytes)",
+      "Size_GiB": "Size (GiB)"
+    },
+    "Graphics adapters": {
+      "Name": "Name",
+      "VideoProcessor": "Video Processor",
+      "PNPDeviceID": "Windows device ID",
+      "DriverVersion": "Driver Version",
+      "DriverDate": "Driver date (Windows-reported)",
+      "CurrentHorizontalResolution": "WMI-reported width (pixels)",
+      "CurrentVerticalResolution": "WMI-reported height (pixels)"
+    },
+    "Monitors": {
+      "InstanceName": "Instance Name",
+      "Active": "Active",
+      "Manufacturer": "Manufacturer",
+      "Name": "Name",
+      "ProductCode": "Product Code",
+      "SerialNumber": "Serial number",
+      "SerialNumberReadStatus": "Monitor serial read status",
+      "NameReadStatus": "Monitor name read status",
+      "WeekOfManufacture": "Week Of Manufacture",
+      "YearOfManufacture": "Year Of Manufacture",
+      "ManufacturerName": "Raw monitor maker codes",
+      "ManufacturerNameLength": "Manufacturer Name Length",
+      "UserFriendlyName": "Raw monitor name codes",
+      "UserFriendlyNameLength": "User Friendly Name Length",
+      "ProductCodeID": "Raw monitor product codes",
+      "SerialNumberID": "Raw monitor serial codes"
+    },
+    "Network adapters": {
+      "Name": "Name",
+      "InterfaceDescription": "Interface Description",
+      "InterfaceGuid": "Network interface ID",
+      "MacAddress": "Current MAC / link address (reported)",
+      "PermanentAddress": "Permanent address (Windows-reported)",
+      "PNPDeviceID": "Windows device ID",
+      "Status": "Status",
+      "LinkSpeed": "Link rate (see rate kind)",
+      "HardwareInterface": "Hardware-backed interface flag",
+      "ReceiveLinkSpeed": "Raw receive link speed (bits/s)",
+      "TransmitLinkSpeed": "Raw transmit link speed (bits/s)",
+      "TransmitLinkRate": "Transmit link rate",
+      "MacAddressReadStatus": "Current MAC read status",
+      "LinkSpeedKind": "Rate kind",
+      "CollectionSource": "Read using"
+    },
+    "Windows": {
+      "Caption": "Caption",
+      "Version": "Version",
+      "BuildNumber": "Build Number",
+      "OSArchitecture": "OSArchitecture",
+      "InstallDate": "Install Date",
+      "LastBootUpTime": "Last Boot Up Time"
+    },
+    "Windows Machine GUID": {
+      "MachineGuid": "Windows installation ID"
+    },
+    "PnP hardware IDs": {
+      "Name": "Name",
+      "Manufacturer": "Manufacturer",
+      "PNPClass": "PNPClass",
+      "ClassGuid": "Class Guid",
+      "Service": "Service",
+      "Present": "Present",
+      "DeviceInstanceId": "Device instance ID",
+      "InstanceIdSource": "Instance Id Source",
+      "HardwareID": "Hardware IDs (driver match)",
+      "CompatibleID": "Compatible driver IDs",
+      "ConfigManagerErrorCode": "Windows device status code"
+    },
+    "Extended device inventory": {
+      "Name": "Name",
+      "DeviceInstanceId": "Device instance ID",
+      "PNPClass": "PNPClass",
+      "ClassGuid": "Class Guid",
+      "Present": "Present",
+      "ConfigManagerErrorCode": "Windows device status code",
+      "HardwareID": "Hardware IDs (driver match)"
+    },
+    "Extended scan info": {
+      "Captured": "Captured",
+      "Source": "Source",
+      "Records": "Records",
+      "PropertyNodesRequested": "Property Nodes Requested",
+      "PropertyNodesReturned": "Property Nodes Returned",
+      "PropertyNodesWithoutRows": "Property Nodes Without Rows"
+    },
+    "Scan timing": {
+      "Section": "Section",
+      "Status": "Status",
+      "Results": "Records returned",
+      "Seconds": "Query time (seconds)",
+      "Summary": "Summary",
+      "FailureCode": "Read error code",
+      "NextStep": "Suggested next step",
+      "Recoveries": "Recoveries",
+      "QueryCleanupWarning": "Query cleanup warning",
+      "ProgressWarning": "Progress display warning"
+    },
+    "Warnings": {}
+  },
+  "fieldValues": {
+    "Report info": [
+      {
+        "Generated": "2026-11-04T07:44:31.090545-05:00",
+        "Computer": "SYNTHETIC-PC",
+        "Administrator": "No",
+        "Version": "3.83",
+        "Display": "Desktop companion",
+        "ScanNumber": "1",
+        "QueryMode": "Live progress",
+        "ExtendedStatus": "Refreshed",
+        "ScanSeconds": "0.5",
+        "ScanCompleted": "2026-11-04T07:44:31.7380272-05:00",
+        "CompatibleReadSections": "0",
+        "ProgressFallbackSections": "0",
+        "QueryCleanupSections": "0"
+      }
+    ],
+    "Compatibility": [
+      {
+        "PowerShellVersion": "5.1.26100.9711",
+        "WindowsVersion": "10.0.26300.0",
+        "LanguageMode": "FullLanguage",
+        "QueryBackend": "CIM",
+        "MissingCommands": "(none reported)",
+        "Note": "Providers depend on Windows version, drivers and access. Missing sections remain unavailable, not zero or changed IDs."
+      }
+    ],
+    "System identity": [
+      {
+        "Vendor": "Synthetic",
+        "Name": "Synthetic component",
+        "Version": "1",
+        "IdentifyingNumber": "SYSTEM-000123",
+        "UUID": "11111111-2222-3333-4444-555555555555"
+      }
+    ],
+    "System hardware": [
+      {
+        "Manufacturer": "Synthetic",
+        "Model": "Synthetic",
+        "SystemType": "(not provided)",
+        "TotalPhysicalMemory": "8589934592",
+        "TotalRAM_GiB": "8"
+      }
+    ],
+    "Motherboard": [
+      {
+        "Manufacturer": "Synthetic",
+        "Product": "Synthetic board",
+        "Version": "1",
+        "SerialNumber": "000123"
+      }
+    ],
+    "BIOS": [
+      {
+        "Manufacturer": "Synthetic",
+        "SMBIOSBIOSVersion": "(not provided)",
+        "SerialNumber": "000123",
+        "ReleaseDate": "(not provided)",
+        "SMBIOSMajorVersion": "(not provided)",
+        "SMBIOSMinorVersion": "(not provided)"
+      }
+    ],
+    "Chassis": [
+      {
+        "Manufacturer": "Synthetic",
+        "SerialNumber": "000123",
+        "SMBIOSAssetTag": "(not provided)",
+        "ChassisTypes": "(not provided)"
+      }
+    ],
+    "CPU": [
+      {
+        "DeviceID": "CPU0",
+        "Name": "Synthetic component",
+        "Manufacturer": "Synthetic",
+        "ProcessorId": "CPU-000123",
+        "SocketDesignation": "SOCKET0",
+        "NumberOfCores": "4",
+        "NumberOfLogicalProcessors": "8",
+        "MaxClockSpeed": "4000"
+      }
+    ],
+    "Memory modules": [
+      {
+        "DeviceLocator": "DIMM0",
+        "BankLabel": "BANK0",
+        "Manufacturer": "Synthetic",
+        "PartNumber": "RAM-0001",
+        "SerialNumber": "000123",
+        "Capacity": "8589934592",
+        "Capacity_GiB": "8",
+        "Speed": "3200",
+        "ConfiguredClockSpeed": "Unknown (Windows reports 0)"
+      }
+    ],
+    "Physical disks": [
+      {
+        "Index": "0",
+        "Model": "Synthetic",
+        "SerialNumber": "000123",
+        "FirmwareRevision": "1",
+        "InterfaceType": "(not provided)",
+        "MediaType": "(not provided)",
+        "Size": "8589934592",
+        "Size_GiB": "8",
+        "PNPDeviceID": "USB\\SYNTHETIC"
+      }
+    ],
+    "Storage identifiers": [
+      {
+        "Number": "0",
+        "FriendlyName": "(not provided)",
+        "SerialNumber": "000123",
+        "UniqueId": "DISK-000123",
+        "UniqueIdFormat": "0",
+        "Guid": "11111111-2222-3333-4444-555555555555",
+        "Signature": "(not provided)",
+        "PartitionStyle": "GPT",
+        "BusType": "NVMe",
+        "HealthStatus": "Healthy",
+        "RawPartitionStyle": "2",
+        "RawBusType": "17",
+        "RawHealthStatus": "0"
+      }
+    ],
+    "Volumes": [
+      {
+        "DeviceID": "CPU0",
+        "DriveType": "3",
+        "VolumeName": "Synthetic",
+        "VolumeSerialNumber": "00AB12CD",
+        "FileSystem": "NTFS",
+        "Size": "8589934592",
+        "FreeSpace": "4294967296",
+        "Size_GiB": "8",
+        "Free_GiB": "4"
+      }
+    ],
+    "Disk partitions": [
+      {
+        "DiskNumber": "0",
+        "PartitionNumber": "1",
+        "DriveLetter": "C",
+        "DriveLetterReadStatus": "Read",
+        "RawDriveLetter": "C",
+        "PartitionGuid": "11111111-2222-3333-4444-555555555555",
+        "GptType": "11111111-2222-3333-4444-555555555555",
+        "MbrType": "0",
+        "AccessPaths": "C:\\",
+        "Size": "8589934592",
+        "Size_GiB": "8"
+      }
+    ],
+    "Graphics adapters": [
+      {
+        "Name": "Synthetic component",
+        "VideoProcessor": "(not provided)",
+        "PNPDeviceID": "USB\\SYNTHETIC",
+        "DriverVersion": "(not provided)",
+        "DriverDate": "(not provided)",
+        "CurrentHorizontalResolution": "(not provided)",
+        "CurrentVerticalResolution": "(not provided)"
+      }
+    ],
+    "Monitors": [
+      {
+        "InstanceName": "MONITOR0",
+        "Active": "Yes",
+        "Manufacturer": "SYN",
+        "Name": "SYN",
+        "ProductCode": "1",
+        "SerialNumber": "001",
+        "SerialNumberReadStatus": "Read",
+        "NameReadStatus": "Read",
+        "WeekOfManufacture": "1",
+        "YearOfManufacture": "2026",
+        "ManufacturerName": "83, 89, 78",
+        "ManufacturerNameLength": "3",
+        "UserFriendlyName": "83, 89, 78",
+        "UserFriendlyNameLength": "3",
+        "ProductCodeID": "49",
+        "SerialNumberID": "48, 48, 49"
+      }
+    ],
+    "Network adapters": [
+      {
+        "Name": "Synthetic adapter",
+        "InterfaceDescription": "Synthetic network",
+        "InterfaceGuid": "11111111-2222-3333-4444-555555555555",
+        "MacAddress": "001122334455",
+        "PermanentAddress": "001122334455",
+        "PNPDeviceID": "USB\\SYNTHETIC",
+        "Status": "Up",
+        "LinkSpeed": "1000000000",
+        "HardwareInterface": "Yes",
+        "ReceiveLinkSpeed": "(not provided)",
+        "TransmitLinkSpeed": "(not provided)",
+        "TransmitLinkRate": "(not provided)",
+        "MacAddressReadStatus": "Get-NetAdapter reported current address",
+        "LinkSpeedKind": "Adapter link rate (reported)",
+        "CollectionSource": "Get-NetAdapter"
+      }
+    ],
+    "Windows": [
+      {
+        "Caption": "Synthetic Windows",
+        "Version": "1",
+        "BuildNumber": "TEST",
+        "OSArchitecture": "64-bit",
+        "InstallDate": "(not provided)",
+        "LastBootUpTime": "(not provided)"
+      }
+    ],
+    "Windows Machine GUID": [
+      {
+        "MachineGuid": "SYNTHETIC-MACHINE-0001"
+      }
+    ],
+    "PnP hardware IDs": [
+      {
+        "Name": "Synthetic component",
+        "Manufacturer": "Synthetic",
+        "PNPClass": "USB",
+        "ClassGuid": "TEST",
+        "Service": "Synthetic",
+        "Present": "Yes",
+        "DeviceInstanceId": "USB\\SYNTHETIC",
+        "InstanceIdSource": "PNPDeviceID",
+        "HardwareID": "MODEL-0001",
+        "CompatibleID": "CLASS-0001",
+        "ConfigManagerErrorCode": "0"
+      }
+    ],
+    "Extended device inventory": [
+      {
+        "Name": "Synthetic device",
+        "DeviceInstanceId": "USB\\SYNTHETIC",
+        "PNPClass": "USB",
+        "ClassGuid": "TEST",
+        "Present": "Yes",
+        "ConfigManagerErrorCode": "0",
+        "HardwareID": "MODEL-0001"
+      }
+    ],
+    "Extended scan info": [
+      {
+        "Captured": "2026-11-04T12:00:00-05:00",
+        "Source": "Synthetic desktop tests",
+        "Records": "1",
+        "PropertyNodesRequested": "1",
+        "PropertyNodesReturned": "1",
+        "PropertyNodesWithoutRows": "0"
+      }
+    ],
+    "Scan timing": [
+      {
+        "Section": "System identity",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.071",
+        "Summary": "IDs: 2 found",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "System hardware",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.026",
+        "Summary": "Inventory details",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "Motherboard",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.005",
+        "Summary": "IDs: 1 found",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "BIOS",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.005",
+        "Summary": "IDs: 1 found",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "Chassis",
+        "Status": "CHECK",
+        "Results": "1",
+        "Seconds": "0.007",
+        "Summary": "IDs: 1 found, 1 missing",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "CPU",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.006",
+        "Summary": "IDs: 1 found",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "Memory modules",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.006",
+        "Summary": "IDs: 1 found",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "Physical disks",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.009",
+        "Summary": "IDs: 2 found",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "Storage identifiers",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.02",
+        "Summary": "IDs: 3 found",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "Volumes",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.009",
+        "Summary": "IDs: 1 found",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "Disk partitions",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.033",
+        "Summary": "Inventory details",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "Graphics adapters",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.006",
+        "Summary": "IDs: 1 found",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "Monitors",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.038",
+        "Summary": "IDs: 1 found",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "Network adapters",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.03",
+        "Summary": "IDs: 4 found",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "Windows",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.006",
+        "Summary": "Inventory details",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "Windows Machine GUID",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.006",
+        "Summary": "IDs: 1 found",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      },
+      {
+        "Section": "PnP hardware IDs",
+        "Status": "READ",
+        "Results": "1",
+        "Seconds": "0.074",
+        "Summary": "1 instance IDs; 1 with model IDs",
+        "FailureCode": "(not provided)",
+        "NextStep": "(not provided)",
+        "Recoveries": "(none reported)",
+        "QueryCleanupWarning": "(not provided)",
+        "ProgressWarning": "(not provided)"
+      }
+    ],
+    "Warnings": []
+  }
+}

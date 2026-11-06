@@ -1,0 +1,96 @@
+# HWID Checker Desktop
+
+A Windows desktop interface for the existing HWID Checker scanner. The application launches the PowerShell scanner embedded in the adjacent `hwid.bat`, then presents its results in a graphical dashboard.
+
+Desktop **1.1.0** uses the **3.83** scanner. The BAT also runs independently.
+
+## Start the application
+
+1. Extract the complete portable package to a local folder.
+2. Keep **HWID Checker.exe** and **hwid.bat** together.
+3. Open **HWID Checker.exe**.
+4. Start a scan from the dashboard.
+
+The package targets **Windows x64** and includes its .NET desktop runtime. The scanner still requires **Windows PowerShell 5.1 or PowerShell 7**, FullLanguage mode, and the Windows CIM/WMI providers used by the console checker. Administrator access is optional; available fields depend on the hardware, Windows providers, drivers and current access.
+
+## Use the dashboard
+
+| Task | Behavior |
+| --- | --- |
+| Scan or rescan | Refresh the same 17 hardware/system sections and all-known device catalog used by the BAT. Progress and per-section results remain visible while the scan runs. |
+| Inspect hardware | Browse the collected system, firmware, CPU, memory, storage, graphics, network and device records. |
+| Inspect identifiers | Read the captured identifier values and their supplied/missing/default status. |
+| Review findings | Inspect unread sections, missing/default values and conflicts reported by the scanning engine. |
+| Save a snapshot | Export a verified TXT and JSON report pair using the BAT engine's existing report writer. |
+| Compare snapshots | Select an older JSON snapshot and compare it with the current scan using the engine's validation and identifier-comparison rules. |
+| Open BAT console | Open the connected scanner in its console. The standard package includes `Start-HWID.ps1` for the standard BAT filename. |
+
+In a narrow window, the scan buttons move below the page title, overview cards reflow, and **Hardware** uses a section dropdown. Scroll the overview to see all scan activity. Hover over truncated text for the full value, or select a table row to read and copy its details.
+
+You can cancel a running scan. The last completed scan remains available until a replacement finishes successfully. A scan can finish with unread sections; those results remain explicitly marked and should be reviewed before interpreting a comparison.
+
+Comparisons show the selected identifier fields supported by the engine. Missing/default fields, unread sections and uncertain reader coverage may be left un-compared. Windows device nodes, grouping IDs and serial numbers have different meanings; a reported difference alone does not establish physical hardware replacement.
+
+For the engine's field definitions, warning codes and limitations, see the [main project documentation](https://github.com/justcamop555-pixel/HWID-Checker#readme) and [usage guide](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/USAGE.md).
+
+## Keep the BAT connection working
+
+The application reads the companion `hwid.bat` at runtime. It does not convert or rewrite the scanner into a second implementation. If the BAT is missing, incomplete or incompatible, restore the files from the same desktop package and retry.
+
+Use **Connect BAT…** to select an existing checker when it is stored elsewhere. The EXE uses your saved connection if that file is available, then checks for an adjacent BAT. The scanning bridge loads collection/report functions from that file and runs them in a separate, hidden PowerShell process. The desktop window presents progress and results.
+
+**Open BAT console** uses `Start-HWID.ps1` when it is beside the standard `hwid.bat` and Windows PowerShell is available. For a renamed BAT or a missing loader, the app opens the connected BAT directly.
+
+## Reports and local data
+
+Scans and exports contain identifiers such as serial numbers, UUIDs, MAC addresses, device-instance paths and the computer name. Choose an appropriate local destination and review identifying values before sharing a report or screenshot. Exports are readable TXT/JSON files.
+
+Saving is explicit. The desktop interface uses the engine's snapshot validation and export functions, so older supported JSON captures can be selected for comparison. Existing report pairs receive new filenames rather than being overwritten.
+
+The saved-capture library searches the BAT's report folder, its per-user fallback, adjacent installations and folders you add. Saving elsewhere keeps earlier report folders in the search. A completed save refreshes the library immediately; the saved-captures page also refreshes periodically. Custom locations are remembered across app launches. The engine validates selected JSON again before comparison.
+
+Temporary bridge/request files are created under the current user's local application data directory. Compare/export operations temporarily stage the current inventory there and attempt to remove those files when the action ends, fails or is cancelled. Desktop settings remember the BAT connection path and snapshot folder paths, without storing the scanned inventory. Report locations may be synchronized by OneDrive or another folder service configured on the PC.
+
+Keyboard shortcuts: **Ctrl+R** scans/rescans; **Ctrl+S** saves the current snapshot. Select an ID or hardware field to read its full value and use the copy button. A new completed scan clears comparison results that referred to the previous current scan.
+
+## Verification
+
+The initial build was checked with synthetic data for 33 bridge integration checks on each of PowerShell 5.1 and 7, 34 process-host checks and 21 desktop workflow checks. Coverage includes Unicode paths, cancellation, complete result validation, verified exports, exact old/new values, older-file discovery and view-state reset. A live standard-user desktop scan read all 17 sections, refreshed the known-device catalog and kept the UI responsive. Live diagnostics recorded counts/status rather than identifiers.
+
+The current portable build targets Windows x64. Other architectures are not packaged by this build script. The desktop runtime is bundled; Windows hardware providers and PowerShell remain system dependencies.
+
+## Build from source
+
+Install the **.NET 10 SDK** on Windows. From the repository root:
+
+```powershell
+.\desktop\build-desktop.ps1 -EngineDirectory .
+```
+
+The script publishes a self-contained `win-x64` executable and creates a new build directory under `desktop/artifacts`. Each package includes the desktop executable, an unchanged copy of the selected BAT, the alternative launcher when available, this README and SHA-256 checksums. SDK publish files are preserved. Original license/notice files from the exact restored .NET Core and Windows Desktop runtime packages are copied under `notices/runtime-packs`; `notices/runtime-package-sources.txt` identifies their package versions and original filenames.
+
+To choose another output location:
+
+```powershell
+.\desktop\build-desktop.ps1 -EngineDirectory . -OutputDirectory .\desktop-builds
+```
+
+To build a folder without creating a ZIP archive:
+
+```powershell
+.\desktop\build-desktop.ps1 -EngineDirectory . -NoZip
+```
+
+Every run creates its own timestamp/GUID build directory. Previous builds and snapshots are preserved. The script checks that the original and packaged BAT hashes match. It does not publish a GitHub release or push repository changes.
+
+## Troubleshooting
+
+- **BAT not found:** extract the whole package and keep the EXE beside `hwid.bat`.
+- **PowerShell unavailable or restricted:** use an approved compatible Windows PowerShell/PowerShell installation. The app does not install a runtime or change system execution policies.
+- **Some sections unread:** review the displayed read reason and the engine's full-report details. Missing optional fields can be normal.
+- **Saved file rejected:** use an original HWID Checker JSON export. TXT reports are intended for reading and cannot serve as the comparison baseline.
+- **Build fails:** check the .NET SDK version and publish diagnostics. A new build directory preserves the failed run for inspection.
+
+## License
+
+The HWID Checker repository currently does not declare a project license. This desktop interface does not add a license grant; see the repository's [license status](https://github.com/justcamop555-pixel/HWID-Checker#license). The `notices` directory contains original files supplied with the bundled runtime packages.

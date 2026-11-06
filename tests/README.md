@@ -2,6 +2,8 @@
 
 [Back to the main README](../README.md)
 
+Desktop EXE tests are documented separately in [desktop verification](../desktop/tests/README.md). The console checks below continue to cover the BAT engine.
+
 Tests are optional for users. Run them from the repository root in a Windows PowerShell 5.1+ session that permits these scripts.
 
 ```powershell

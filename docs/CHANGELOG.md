@@ -2,6 +2,19 @@
 
 [Back to the main README](../README.md)
 
+## Desktop 1.1.0
+
+- Applied a slate and teal theme with shorter headers and action buttons that wrap in narrow windows. Tables and detail panes adjust to the available space, with shorter rows in compact windows.
+- Added a hardware section picker for narrow layouts. The record menu shows readable device names, and tooltips show full values and paths. Rescanning refreshes the hardware records even when the section names and counts match the previous scan.
+- Snapshot refresh keeps the selected capture when its file is still in the list. Double-click a capture row to compare it with the completed current scan.
+
+## Desktop 1.0.0 — BAT scanner 3.83
+
+- Added a native Windows WPF EXE with overview cards, live section progress, searchable identifier tables, full hardware fields, review findings, saved snapshots and exact previous/current comparisons. The embedded bridge loads scan/report functions from the connected BAT; the BAT source and its console behavior are unchanged.
+- Added verified TXT/JSON saves, older-capture discovery across primary/fallback/custom folders, coalesced library refreshes and comparison validation through the existing engine. New completed scans clear stale details and comparisons. Cancellation preserves the last completed snapshot, and closing waits for engine cleanup.
+- Added a self-contained Windows x64 portable package, custom icon, literal process arguments, UTF-8 protocol handling, bounded errors and cancellation/timeouts. The original console opens through the companion Start-HWID.ps1. Desktop settings store the selected BAT path and snapshot-folder paths.
+- Validation: 33 bridge checks on each of PowerShell 5.1 and 7; 34 process-host checks; 21 desktop workflow checks; six rendered UI pages; successful live desktop scans of all 17 sections plus the device catalog. The packaged EXE's live scan retained 176 known device records and 13 UI timer ticks. Live diagnostics saved counts/status only; visual/export fixtures used synthetic IDs. The BAT remains SHA256 66001B42458B87FF1918AE258827979E2D6AE8AC04A7E67795394717825354E9.
+
 ## 3.83
 
 - Fixed repeated parent-device properties silently replacing earlier observations. Different valid parent IDs now remain unresolved regardless of arrival order, with ParentInstanceIdConflict and complete ParentInstanceIdReadings. Consistent readings resolve using normalized keys while preserving original selected text; blank/NUL-only values no longer inflate parent-link counts.

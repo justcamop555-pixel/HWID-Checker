@@ -19,3 +19,12 @@ tests/display-test-result.json
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Desktop source builds and local executable packages.
+desktop/**/bin/
+desktop/**/obj/
+desktop/artifacts/
+desktop/tests/test-output-*/
+desktop-builds/
+/HWID Checker.exe
+*.zip

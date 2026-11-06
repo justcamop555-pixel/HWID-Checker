@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>HWID Checker</AssemblyName>
+    <RootNamespace>HwidDesktop</RootNamespace>
+    <Version>1.1.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\Hwid.ico</ApplicationIcon>
+    <PublishTrimmed>false</PublishTrimmed>
+    <UseSharedCompilation>false</UseSharedCompilation>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="tests\**\*.cs" />
+    <Page Remove="tests\**\*.xaml" />
+    <EmbeddedResource Include="engine\DesktopBridge.ps1" LogicalName="HwidDesktop.EngineBridge" />
+    <Resource Include="assets\Hwid.ico" />
+  </ItemGroup>
+</Project>
