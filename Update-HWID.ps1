@@ -1,4 +1,4 @@
-# HWID_PACKAGE_VERSION = '1.3.0'
+# HWID_PACKAGE_VERSION = '1.4.0'
 [CmdletBinding()]
 param(
     [ValidateSet('Check','Prepare','Apply')][string]$Mode='Check',
