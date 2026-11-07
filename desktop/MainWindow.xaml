@@ -212,7 +212,7 @@
                         <Button Grid.Column="2" Content="Copy value" Click="OnCopyId"/>
                     </Grid>
                     <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0">
-                        <DataGrid x:Name="IdentifiersGrid" Style="{StaticResource PageGrid}" SelectionChanged="OnIdSelected">
+                        <DataGrid x:Name="IdentifiersGrid" Style="{StaticResource PageGrid}" SelectionChanged="OnIdSelected" MouseDoubleClick="OnIdDoubleClicked">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Section" Binding="{Binding Section}" Width="*" MinWidth="86" ElementStyle="{StaticResource CellText}"/>
                                 <DataGridTextColumn Header="Identifier" Binding="{Binding Field}" Width="1.15*" MinWidth="88" ElementStyle="{StaticResource CellText}"/>

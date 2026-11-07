@@ -287,6 +287,24 @@ public partial class MainWindow : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
         finally { try { if (File.Exists(temporary)) File.Delete(temporary); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } }
     }
+    // Synchronous twin used on close paths: an async save started right before
+    // shutdown can be discarded with the process, losing the last page/theme.
+    private bool RememberPreferencesNow(string? destination = null)
+    {
+        if (IsVerification && destination == null) return true;
+        var path = destination ?? SettingsPath;
+        var temporary = path + ".pending-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var preferences = JsonSerializer.Serialize(new { batPath = _engine?.BatPath, lastSaveFolder = _lastSaveFolder, snapshotFolders = _additionalFolders.ToArray(), darkTheme = _darkTheme, lastPage = _page });
+            File.WriteAllText(temporary, preferences);
+            File.Move(temporary, path, true);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+        finally { try { if (File.Exists(temporary)) File.Delete(temporary); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } }
+    }
     private void ConnectEngine(string? path)
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
@@ -603,6 +621,10 @@ public partial class MainWindow : Window
             (needle.Length == 0 || string.Join(" ", x.Section, x.Field, x.Value, x.Device).Contains(needle, StringComparison.OrdinalIgnoreCase))).ToArray();
     }
     private void OnIdSelected(object sender, SelectionChangedEventArgs e) { IdDetail.Text = IdentifiersGrid.SelectedItem is IdentifierRow row ? row.Device + "\n" + row.Field + ": " + (row.Value.Length > 0 ? row.Value : "(not supplied)") : ""; }
+    private void OnIdDoubleClicked(object sender, MouseButtonEventArgs e)
+    {
+        if (IdentifiersGrid.SelectedItem is IdentifierRow row && row.Value.Length > 0) Copy(row.Value);
+    }
     private void OnCopyId(object sender, RoutedEventArgs e) { if (IdentifiersGrid.SelectedItem is IdentifierRow row) Copy(row.Value); }
     private void Copy(string text)
     {
@@ -1144,7 +1166,7 @@ public partial class MainWindow : Window
             return;
         }
         _restarting = true;
-        _ = RememberPreferencesAsync();
+        RememberPreferencesNow();
         Close();
     }
 
@@ -1172,14 +1194,20 @@ public partial class MainWindow : Window
             if (MessageBox.Show(this, "An action is still running. Cancel it and close the app?", "HWID Checker", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
             _closeRequested = true; IsEnabled = false;
             _operationCancellation?.Cancel();
-            if (_operationFinished != null) await _operationFinished.Task;
+            if (_operationFinished != null)
+            {
+                // Never let a hung engine freeze the close; bail out after 10 s.
+                try { await _operationFinished.Task.WaitAsync(TimeSpan.FromSeconds(10)); } catch (Exception) { }
+            }
             if (!PrepareDesktopExit()) { _closeRequested = false; IsEnabled = true; return; }
+            RememberPreferencesNow();
             _closing = true; _timer.Stop(); _engine?.Dispose();
             e.Cancel = true;
             BeginWindowFade(() => Close());
             return;
         }
         if (!PrepareDesktopExit()) { e.Cancel = true; return; }
+        RememberPreferencesNow();
         _closing = true; _timer.Stop(); _operationCancellation?.Cancel(); _engine?.Dispose();
         e.Cancel = true;
         BeginWindowFade(() => { if (_restarting) LaunchRelaunch(); Close(); });
