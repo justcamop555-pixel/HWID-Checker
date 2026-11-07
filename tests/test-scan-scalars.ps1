@@ -7,7 +7,7 @@ foreach($definition in $ast.FindAll({param($n) $n -is [Management.Automation.Lan
 $groups=$ast.FindAll({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$sectionGroups'},$false) | Select-Object -First 1
 . ([scriptblock]::Create($groups.Extent.Text))
 $identifierPattern='^(SerialNumber|IdentifyingNumber|UUID|ProcessorId|MachineGuid|VolumeSerialNumber|UniqueId|Guid|MacAddress|PermanentAddress|InterfaceGuid|PNPDeviceID|SMBIOSAssetTag)$'
-$ownedConsole=$false;$redirected=$true;$scanTotal=17
+$ownedConsole=$false;$redirected=$true;$scanTotal=18
 $palette=@{Heading='Cyan';Text='White';Muted='Gray';Border='DarkGray';Good='Green';Warn='Yellow';Error='Red'}
 $script:checks=0
 function Assert($Value,$Message){if(-not $Value){throw ('FAILED: '+$Message)};$script:checks++;[Console]::WriteLine('PASS: '+$Message)}

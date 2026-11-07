@@ -48,7 +48,7 @@ internal sealed class EngineClient : IDisposable
     }
 
     public Task<JsonElement> ScanAsync(IProgress<BridgeProgress>? progress, CancellationToken ct)
-        => RunAsync("Scan", null, null, progress, ct);
+        => RunAsync("Scan", null, null, null, progress, ct);
 
     public Task<JsonElement> CompareAsync(string previousPath, JsonElement currentInventory, CancellationToken ct)
     {
@@ -56,7 +56,19 @@ internal sealed class EngineClient : IDisposable
         string path = Path.GetFullPath(previousPath);
         if (!File.Exists(path))
             throw new EngineException("The selected earlier snapshot no longer exists. Select another JSON report.", "ENGINE-02");
-        return RunAsync("Compare", currentInventory.Clone(), path, null, ct);
+        return RunAsync("Compare", currentInventory.Clone(), path, null, null, ct);
+    }
+
+    /// <summary>Compares two saved snapshot files without requiring an active scan.</summary>
+    public Task<JsonElement> CompareFilesAsync(string previousPath, string currentPath, CancellationToken ct)
+    {
+        string previous = Path.GetFullPath(previousPath);
+        string current = Path.GetFullPath(currentPath);
+        if (!File.Exists(previous))
+            throw new EngineException("The selected earlier snapshot no longer exists. Select another JSON report.", "ENGINE-02");
+        if (!File.Exists(current))
+            throw new EngineException("The selected second snapshot no longer exists. Select another JSON report.", "ENGINE-02");
+        return RunAsync("Compare", null, previous, current, null, ct);
     }
 
     public Task<JsonElement> ExportAsync(JsonElement inventory, string folder, CancellationToken ct)
@@ -64,7 +76,7 @@ internal sealed class EngineClient : IDisposable
         RequireInventory(inventory);
         if (string.IsNullOrWhiteSpace(folder))
             throw new EngineException("Choose a folder for the TXT and JSON reports.", "ENGINE-02");
-        return RunAsync("Export", inventory.Clone(), Path.GetFullPath(folder), null, ct);
+        return RunAsync("Export", inventory.Clone(), Path.GetFullPath(folder), null, null, ct);
     }
 
     private static void RequireInventory(JsonElement inventory)
@@ -74,7 +86,7 @@ internal sealed class EngineClient : IDisposable
     }
 
     private async Task<JsonElement> RunAsync(string action, JsonElement? inventory, string? argument,
-        IProgress<BridgeProgress>? progress, CancellationToken ct)
+        string? currentArgument, IProgress<BridgeProgress>? progress, CancellationToken ct)
     {
         lock (sync)
         {
@@ -127,9 +139,13 @@ internal sealed class EngineClient : IDisposable
                 object request = action == "Compare"
                     ? new { previousPath = argument, currentPath }
                     : new { inventoryPath = currentPath, folder = argument };
-                requestPath = Path.Combine(operationFolder, "request.json");
-                temporaryFiles.Add(requestPath);
-                await File.WriteAllTextAsync(requestPath, JsonSerializer.Serialize(request), Utf8, token).ConfigureAwait(false);
+                requestPath = await WriteRequestAsync(request, operationFolder, temporaryFiles, token).ConfigureAwait(false);
+            }
+            else if (action == "Compare")
+            {
+                // Two saved snapshots: the bridge reads both sides from disk.
+                object request = new { previousPath = argument, currentPath = currentArgument };
+                requestPath = await WriteRequestAsync(request, operationFolder, temporaryFiles, token).ConfigureAwait(false);
             }
 
             token.ThrowIfCancellationRequested();
@@ -154,7 +170,7 @@ internal sealed class EngineClient : IDisposable
                 {
                     case "progress":
                         if (result.HasValue) throw ProtocolFailure("The engine sent progress after its completed result.");
-                        int total = Math.Max(1, Number(root, "total", 18));
+                        int total = Math.Max(1, Number(root, "total", 19));
                         BridgeProgress update = new(Text(root, "section"), Text(root, "name"),
                             Math.Clamp(Number(root, "completed"), 0, total), total,
                             Text(root, "status"), Math.Max(0, Number(root, "records")), Text(root, "message"),
@@ -237,6 +253,14 @@ internal sealed class EngineClient : IDisposable
             }
             cancellation?.Dispose();
         }
+    }
+
+    private static async Task<string> WriteRequestAsync(object request, string operationFolder, List<string> temporaryFiles, CancellationToken token)
+    {
+        string requestPath = Path.Combine(operationFolder, "request.json");
+        temporaryFiles.Add(requestPath);
+        await File.WriteAllTextAsync(requestPath, JsonSerializer.Serialize(request), Utf8, token).ConfigureAwait(false);
+        return requestPath;
     }
 
     private Process StartBridge(string action, string bridgePath, string? requestPath, string operationFolder)

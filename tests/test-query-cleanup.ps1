@@ -11,7 +11,7 @@ foreach($fn in $ast.FindAll({param($n) $n -is [Management.Automation.Language.Fu
 $groups=$ast.FindAll({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$sectionGroups'},$false) | Select-Object -First 1
 . ([scriptblock]::Create($groups.Extent.Text))
 $identifierPattern='^(SerialNumber|IdentifyingNumber|UUID|ProcessorId|MachineGuid|VolumeSerialNumber|UniqueId|Guid|MacAddress|PermanentAddress|InterfaceGuid|PNPDeviceID|SMBIOSAssetTag)$'
-$ownedConsole=$false;$redirected=$true;$scanTotal=17;$display=[pscustomobject]@{Mode='Synthetic query cleanup'}
+$ownedConsole=$false;$redirected=$true;$scanTotal=18;$display=[pscustomobject]@{Mode='Synthetic query cleanup'}
 $palette=@{Heading='Cyan';Text='White';Muted='Gray';Border='DarkGray';Good='Green';Warn='Yellow';Error='Red'}
 $script:checks=0;$script:closeFailure=$true;$script:disposeFailure=$true;$script:disposed=0;$script:closed=0
 $script:rendered=New-Object 'System.Collections.Generic.List[object]'
@@ -67,13 +67,13 @@ try{
 }finally{$script:scanQueryWorker.Dispose();$script:scanQueryWorker=$null}
 $script:closeFailure=$true;$script:disposeFailure=$true
 $snapshot=Invoke-HardwareScan 1 -UseWorker $true -IncludeExtended $true
-Assert ($snapshot.Completed -and @($snapshot.Inventory['Scan timing'] | Where-Object Status -ne 'UNAVAILABLE').Count -eq 17 -and $snapshot.Warnings.Count -eq 0) 'Full scans keep all seventeen valid reads despite command cleanup failures'
-Assert ($snapshot.Inventory['Report info'].QueryCleanupSections -eq 17 -and @($snapshot.Inventory['Scan timing'] | Where-Object QueryCleanupWarning).Count -eq 17) 'Full scan metadata counts exactly the affected normal sections'
+Assert ($snapshot.Completed -and @($snapshot.Inventory['Scan timing'] | Where-Object Status -ne 'UNAVAILABLE').Count -eq 18 -and $snapshot.Warnings.Count -eq 0) 'Full scans keep all eighteen valid reads despite command cleanup failures'
+Assert ($snapshot.Inventory['Report info'].QueryCleanupSections -eq 18 -and @($snapshot.Inventory['Scan timing'] | Where-Object QueryCleanupWarning).Count -eq 18) 'Full scan metadata counts exactly the affected normal sections'
 Assert ($snapshot.Inventory['Extended scan info'].QueryCleanupWarning -match 'query command cleanup failure' -and $snapshot.Inventory['Report info'].ExtendedStatus -eq 'Refreshed') 'Extended catalog retains valid data and its separate query cleanup diagnostic'
 Assert (@($rendered | Where-Object {$_.Label -eq 'Query cleanup' -and $_.Color -eq $palette.Warn}).Count -eq 1) 'Completion directs users to report details for query cleanup problems'
 $stem=Join-Path $root 'cleanup';Write-ReportPair $stem ((Get-PlainRecords $snapshot.Inventory['Scan timing']) -join [Environment]::NewLine) ($snapshot.Inventory | ConvertTo-Json -Depth 12)
 $saved=Read-SavedReport ($stem+'.json')
-Assert ($saved.'Report info'.QueryCleanupSections -eq 17 -and $saved.'Scan timing'[0].QueryCleanupWarning -match 'wait handle cleanup failure') 'JSON export and import preserve query cleanup details'
+Assert ($saved.'Report info'.QueryCleanupSections -eq 18 -and $saved.'Scan timing'[0].QueryCleanupWarning -match 'wait handle cleanup failure') 'JSON export and import preserve query cleanup details'
 Assert ([IO.File]::ReadAllText($stem+'.txt') -match 'query command cleanup failure') 'TXT reports preserve query cleanup details'
 $comparison=Compare-Inventories $saved $snapshot.Inventory
 Assert ($comparison.Changes.Count -eq 0 -and $comparison.PreviousCount -gt 0 -and $comparison.PreviousCount -eq $comparison.CurrentCount) 'Cleanup diagnostics cannot invent identifier changes'

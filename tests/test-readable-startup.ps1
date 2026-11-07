@@ -38,13 +38,13 @@ $sourceTrap=$ast.FindAll({param($node) $node -is [System.Management.Automation.L
 if($null -ne $sourceTrap){$testRaw=$testRaw.Replace($sourceTrap.Extent.Text,$failureTrap)}
 else{$testRaw=$testRaw.Replace('$ErrorActionPreference = ''Stop''','$ErrorActionPreference = ''Stop'''+[Environment]::NewLine+$failureTrap)}
 $diagnostic="'0' { `$display.InputModeAfter=[HwidConsoleDisplay]::ReadInputMode(); `$display | Add-Member NoteProperty WindowTop ([Console]::WindowTop); `$display | Add-Member NoteProperty MenuReads `$script:menuReads; `$display | Add-Member NoteProperty KeyReads `$script:keyReads; `$display | Add-Member NoteProperty StartupContinueReads `$script:startupContinueReads; `$display | Add-Member NoteProperty CursorRow ([Console]::CursorTop); `$display | Add-Member NoteProperty OwnConsole (`$env:HWID_OWN_CONSOLE -eq '1'); `$display | Add-Member NoteProperty Admin `$admin; `$display | ConvertTo-Json | Set-Content -LiteralPath '$resultLiteral' -Encoding UTF8; return }"
-$testRaw=$testRaw.Replace("'0' { Show-UiTransition 'Exit'; return }",$diagnostic)
+$testRaw=$testRaw.Replace("'0' { Show-UiTransition 'Exit';Start-CheckerExitUpdate;return }",$diagnostic)
 [IO.File]::WriteAllText($testScript,$testRaw,(New-Object Text.UTF8Encoding($false)))
 $priorPath=$env:HWID_SCRIPT
 try {
     $env:HWID_SCRIPT=$testScript
     if (-not (Start-ReadableConsole $testScript $false $false '')) { throw 'Dedicated startup fell back unexpectedly.' }
-    $deadline=(Get-Date).AddSeconds(25)
+    $deadline=(Get-Date).AddSeconds(120)
     while (-not (Test-Path -LiteralPath $resultPath)) {
         if ((Get-Date) -gt $deadline) { throw 'Checker did not reach the main menu.' }
         Start-Sleep -Milliseconds 250

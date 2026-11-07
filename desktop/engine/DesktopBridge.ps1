@@ -170,7 +170,7 @@ try {
             $changes=@(foreach($change in (Get-ComparisonDetails $comparison)){
                 [ordered]@{kind=$change.Kind;section=$change.Section;field=$change.Field;device=$change.Device;previous=$change.Previous;current=$change.Current;difference=$(if($change.Kind -eq 'Changed'){Get-IdentifierChangeText $change.Previous $change.Current}else{''})}
             })
-            $result=[ordered]@{changes=$changes;previousCount=$comparison.PreviousCount;currentCount=$comparison.CurrentCount;skippedSections=@($comparison.SkippedSections);skippedFields=$comparison.SkippedFields;scopeWarnings=@($comparison.ScopeWarnings);previousComputer=[string]$previous.'Report info'.Computer;previousCaptured=[string]$previous.'Report info'.Generated;currentComputer=[string]$current.'Report info'.Computer;currentCaptured=[string]$current.'Report info'.Generated}
+            $result=[ordered]@{changes=$changes;previousCount=$comparison.PreviousCount;currentCount=$comparison.CurrentCount;skippedSections=@($comparison.SkippedSections);skippedFields=$comparison.SkippedFields;scopeWarnings=@($comparison.ScopeWarnings);previousComputer=[string]$previous.'Report info'.Computer;previousCaptured=[string]$previous.'Report info'.Generated;currentComputer=[string]$current.'Report info'.Computer;currentCaptured=[string]$current.'Report info'.Generated;fieldLabels=(Get-DesktopDisplayFields $previous).Labels;fieldValues=$null}
         }
         'Export' {
             $script:bridgeFailureCode='BRIDGE-03'

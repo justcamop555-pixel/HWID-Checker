@@ -135,7 +135,7 @@ try {
     [Console]::SetWindowPosition(0,0);[Console]::SetBufferSize(100,[Console]::BufferHeight);[Console]::SetWindowSize(100,34)
     $report=$quickPreviousReport
     $report['Report info'].Generated='2026-10-25T10:38:04.4334337-04:00'
-    $report['Report info'].ScanSeconds=25.39;$scanTotal=17
+    $report['Report info'].ScanSeconds=25.39;$scanTotal=18
     $report['Scan timing']=@([pscustomobject]@{Section='Storage identifiers';Seconds=11.6;Status='READ';Results=2;Summary='IDs: 6 found'})
     foreach($sectionName in @($sectionGroups.Values | ForEach-Object {$_})) {$report[$sectionName]=@([pscustomobject]@{Name='Fixture'})}
     $report['PnP hardware IDs']=@([pscustomobject]@{Name='Device';PNPClass='System';HardwareID=@('MODEL');DeviceInstanceId='TEST\NODE';ConfigManagerErrorCode=0})
@@ -330,7 +330,7 @@ try {
         $noMotionTimer.Stop()
         if($noMotionTimer.ElapsedMilliseconds -gt 100){throw 'Disabled animation still delayed navigation.'}
     } finally {$env:HWID_NO_ANIMATION=$oldMotion}
-    $script:scanStep=0;$scanTotal=17
+    $script:scanStep=0;$scanTotal=18
     $script:scanTimings=New-Object 'System.Collections.Generic.List[object]'
     $probeRow=[Console]::CursorTop
     Section 'Scan display probe' {[pscustomobject]@{SerialNumber='TEST'}}
@@ -356,10 +356,10 @@ try {
         if([Console]::CursorVisible -ne $beforeScanVisible){throw 'Scanning did not restore the previous cursor visibility.'}
         if($snapshot.Warnings.Count){throw 'Native scan had unavailable sections or exposed the typing cursor during collection.'}
         if($snapshot.Inventory['Report info'].QueryMode -ne 'Live progress'){throw 'The native checker fell back instead of using its live scan worker.'}
-        if($snapshot.Inventory['Scan timing'].Count -ne 17 -or $scanStep -ne 17){throw 'Repeated native scans accumulated timing or counters.'}
+        if($snapshot.Inventory['Scan timing'].Count -ne 18 -or $scanStep -ne 18){throw 'Repeated native scans accumulated timing or counters.'}
         # Group headings and the completion summary can extend past the 34-row viewport.
         $scanRows=[Console]::CursorTop
-        if([Console]::WindowHeight -ne 34 -or $scanRows -lt 17 -or $scanRows -gt 2*[Console]::WindowHeight){throw "The standard scan used an unexpected number of rows ($scanRows)."}
+        if([Console]::WindowHeight -ne 34 -or $scanRows -lt 18 -or $scanRows -gt 2*[Console]::WindowHeight){throw "The standard scan used an unexpected number of rows ($scanRows)."}
         $result | Add-Member NoteProperty ('Scan'+$scan+'CursorRow') $scanRows
         Complete-UiReport
         if([Console]::BufferHeight -ne (Get-ReportHistoryRows 34 $scanRows)){throw 'Scanning left excess history or lost scan rows.'}
@@ -379,7 +379,7 @@ try {
             if([Console]::CursorTop -le $scanBottom){throw 'Continue prompt was not written after the finished scan.'}
             $scanCells=[HwidConsoleDisplay]::CaptureRegion(0,0,99,([Console]::CursorTop))
             $scanText=-join @($scanCells.Cells | ForEach-Object {[char]$_.Character})
-            if($scanText -notmatch 'SCANNING 17 SECTIONS' -or $scanText -notmatch 'Finished:' -or $scanText -notmatch 'Press Enter for main menu'){throw 'Finished scan was cleared before the user could continue.'}
+            if($scanText -notmatch 'SCANNING 18 SECTIONS' -or $scanText -notmatch 'Finished:' -or $scanText -notmatch 'Press Enter for main menu'){throw 'Finished scan was cleared before the user could continue.'}
             return (New-Object ConsoleKeyInfo([char]'0',[ConsoleKey]::D0,$false,$false,$false))
         }
         if($script:scanContinueStep -eq 2){return (New-Object ConsoleKeyInfo([char]0,[ConsoleKey]::Home,$false,$false,$false))}

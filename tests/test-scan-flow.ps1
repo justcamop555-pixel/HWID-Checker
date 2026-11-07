@@ -7,7 +7,7 @@ foreach($fn in $ast.FindAll({param($n) $n -is [Management.Automation.Language.Fu
 $groups=$ast.FindAll({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$sectionGroups'},$false) | Select-Object -First 1
 . ([scriptblock]::Create($groups.Extent.Text))
 $identifierPattern='^(SerialNumber|IdentifyingNumber|UUID|ProcessorId|MachineGuid|VolumeSerialNumber|UniqueId|Guid|MacAddress|PermanentAddress|InterfaceGuid|PNPDeviceID|SMBIOSAssetTag)$'
-$ownedConsole=$false;$redirected=$true;$scanTotal=17;$display=[pscustomobject]@{Mode='Synthetic grouped scan'}
+$ownedConsole=$false;$redirected=$true;$scanTotal=18;$display=[pscustomobject]@{Mode='Synthetic grouped scan'}
 $palette=@{Heading='Cyan';Text='White';Muted='Gray';Border='DarkGray';Good='Green';Warn='Yellow';Error='Red'}
 $checks=0
 function Assert($Value,$Message){if(-not $Value){throw ('FAILED: '+$Message)};$script:checks++;[Console]::WriteLine('PASS: '+$Message)}
@@ -57,16 +57,16 @@ foreach($mode in @('Direct','Worker')){
     }finally{if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose();$script:scanQueryWorker=$null}}
     $script:lines.Clear();$script:failGroup=$null;$script:failCatalogPulse=$false
     $scan=Invoke-HardwareScan 1 -UseWorker ($mode -eq 'Worker') -IncludeExtended $true
-    $groupLines=@($lines | Where-Object {$_ -match '^  \[\d/7\]'})
-    Assert ($groupLines.Count -eq 7 -and ($groupLines -join '|') -match '(?s)SYSTEM & FIRMWARE.*CPU & MEMORY.*STORAGE.*GRAPHICS & NETWORK.*WINDOWS.*PRESENT DEVICE IDS.*ALL-KNOWN DEVICE CATALOG') ($mode+' full scanning presents seven ordered groups without duplicate headings')
+    $groupLines=@($lines | Where-Object {$_ -match '^  \[\d/8\]'})
+    Assert ($groupLines.Count -eq 8 -and ($groupLines -join '|') -match '(?s)SYSTEM & FIRMWARE.*CPU & MEMORY.*STORAGE.*GRAPHICS & NETWORK.*POWER.*WINDOWS.*PRESENT DEVICE IDS.*ALL-KNOWN DEVICE CATALOG') ($mode+' full scanning presents eight ordered groups without duplicate headings')
     Assert (($scan.Inventory['Scan timing'][0..6].Section -join '|') -ceq 'System identity|System hardware|Motherboard|BIOS|Chassis|CPU|Memory modules') ($mode+' firmware queries stay together before CPU/memory queries')
-    Assert ($scan.Completed -and $scan.Inventory['Scan timing'].Count -eq 17 -and $scanStep -eq 17 -and $scan.Inventory['Report info'].ExtendedStatus -eq 'Refreshed') ($mode+' group headings do not change query totals or extended completion')
+    Assert ($scan.Completed -and $scan.Inventory['Scan timing'].Count -eq 18 -and $scanStep -eq 18 -and $scan.Inventory['Report info'].ExtendedStatus -eq 'Refreshed') ($mode+' group headings do not change query totals or extended completion')
     Assert ($null -eq $script:scanGroupState) ($mode+' group state is cleared after scan completion')
     $script:lines.Clear();$again=Invoke-HardwareScan 2 -UseWorker ($mode -eq 'Worker') -IncludeExtended $true
-    Assert (@($lines | Where-Object {$_ -match '^  \[1/7\] SYSTEM'}).Count -eq 1 -and @($lines | Where-Object {$_ -match '^  \[7/7\] ALL-KNOWN'}).Count -eq 1) ($mode+' subsequent scans restart group numbering and include the last catalog group')
+    Assert (@($lines | Where-Object {$_ -match '^  \[1/8\] SYSTEM'}).Count -eq 1 -and @($lines | Where-Object {$_ -match '^  \[8/8\] ALL-KNOWN'}).Count -eq 1) ($mode+' subsequent scans restart group numbering and include the last catalog group')
     Assert ((Compare-Inventories $scan.Inventory $again.Inventory).Changes.Count -eq 0) ($mode+' reorganizing scan order does not manufacture identifier changes')
     $script:lines.Clear();$short=Invoke-HardwareScan 3 -UseWorker ($mode -eq 'Worker') -IncludeExtended $false
-    Assert (@($lines | Where-Object {$_ -match '^  \[\d/6\]'}).Count -eq 6 -and -not $short.Inventory.Contains('Extended scan info')) ($mode+' section-only scans show six groups without a catalog claim')
+    Assert (@($lines | Where-Object {$_ -match '^  \[\d/7\]'}).Count -eq 7 -and -not $short.Inventory.Contains('Extended scan info')) ($mode+' section-only scans show seven groups without a catalog claim')
     $script:failGroup='STORAGE';$damaged=Invoke-HardwareScan 4 -UseWorker ($mode -eq 'Worker') -IncludeExtended $true
     Assert ($damaged.Completed -and $damaged.Inventory['Report info'].ProgressFallbackSections -eq 1 -and $damaged.Inventory['Scan timing'][7].ProgressWarning -match 'group display') ($mode+' group rendering failures stay separate from valid hardware-query results')
     $script:failGroup='ALL-KNOWN DEVICE CATALOG';$catalogDisplay=Invoke-HardwareScan 5 -UseWorker ($mode -eq 'Worker') -IncludeExtended $true

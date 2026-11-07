@@ -47,10 +47,10 @@ $scan=Invoke-Bridge Scan $fixture $null
 Assert ($scan.Results.Count -eq 1 -and $scan.Errors.Count -eq 0) 'A synthetic full scan returns exactly one result and no protocol error'
 Assert (@($scan.Events | Where-Object {$_.type -notin @('progress','result','error')}).Count -eq 0) 'Every stdout line belongs to the documented NDJSON protocol'
 $progress=@($scan.Events | Where-Object type -eq 'progress')
-Assert ($progress.Count -ge 37 -and $progress[0].completed -eq 0 -and $progress[-1].completed -eq 18 -and $progress[-1].total -eq 18) 'Progress covers preparation, seventeen sections and the all-known catalog'
+Assert ($progress.Count -ge 39 -and $progress[0].completed -eq 0 -and $progress[-1].completed -eq 19 -and $progress[-1].total -eq 19) 'Progress covers preparation, eighteen sections and the all-known catalog'
 foreach($event in $progress){foreach($key in @('section','name','completed','total','status','records','message')){if($null -eq $event.PSObject.Properties[$key]){throw ('Missing protocol progress key: '+$key)}}}
 Assert ($true) 'Every progress event includes stable section, status, count and message keys'
-Assert ($scan.Data.inventory.'Scan timing'.Count -eq 17 -and @($scan.Data.inventory.'Scan timing' | Where-Object Status -eq 'UNAVAILABLE').Count -eq 0) 'The desktop uses the BAT collector for all seventeen normal sections'
+Assert ($scan.Data.inventory.'Scan timing'.Count -eq 18 -and @($scan.Data.inventory.'Scan timing' | Where-Object Status -eq 'UNAVAILABLE').Count -eq 0) 'The desktop uses the BAT collector for all eighteen normal sections'
 Assert ($scan.Data.inventory.'Report info'.ExtendedStatus -eq 'Refreshed' -and $scan.Data.inventory.'Extended device inventory'.Count -eq 1) 'The desktop full scan includes the validated extended catalog'
 Assert ($scan.Data.version -eq $scan.Data.inventory.'Report info'.Version -and $scan.Data.captured -eq $scan.Data.inventory.'Report info'.Generated) 'Desktop version and capture metadata come from the actual BAT result'
 Assert ($scan.Data.inventory.CPU[0].ProcessorId -ceq 'CPU-000123' -and $scan.Data.inventory.'Memory modules'[0].SerialNumber -ceq '000123' -and $scan.Data.inventory.'Report info'.Computer -ceq 'SYNTHETIC-PC') 'Synthetic scan results preserve exact identifiers without querying actual hardware IDs'

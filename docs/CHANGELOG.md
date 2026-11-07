@@ -2,6 +2,15 @@
 
 [Back to the main README](../README.md)
 
+## Desktop 1.4.0 and BAT 3.86
+
+- Added a battery section to the normal scan. Absent battery hardware reports an explicit "no battery" record instead of a failed read, and the Windows section now records the Secure Boot state and TPM presence/specification when Windows exposes them. Scan totals moved from 17 to 18 sections.
+- Added **[9] > [6] Watch for changes**: the console can repeat the full scan on a 5/15/30/60-minute interval, compare each cycle against the previous snapshot and list exact identifier changes; any keypress during the countdown stops watching and keeps the latest scan.
+- Comparison input now accepts zero-padded selections (for example 03) in the BAT snapshot picker.
+- The desktop app added searching on the Review and Hardware pages, exports of the current snapshot as CSV and standalone HTML, a text export of comparison results, and comparing two saved snapshots directly without an active scan.
+- The desktop app gained a Midnight/Daylight theme toggle (persisted with the other desktop settings).
+- Test suite: section/group/progress counts moved to 18 sections and eight scan groups; `test-readable-startup` again matches the actual exit menu item (its injection anchor still targeted the pre-3.85 exit case and hung the child checker); scan-scroll, scan-completion and console-update fixtures track the 1.4.0 package version.
+
 ## Desktop 1.3.0 and BAT 3.85
 
 - Use square desktop cards, controls and table borders. Move PC identity to the start of Overview and stack it at narrow widths.

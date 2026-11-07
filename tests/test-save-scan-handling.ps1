@@ -7,7 +7,7 @@ foreach($definition in $ast.FindAll({param($n) $n -is [Management.Automation.Lan
 $groups=$ast.FindAll({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$sectionGroups'},$false) | Select-Object -First 1
 . ([scriptblock]::Create($groups.Extent.Text))
 $identifierPattern='^(SerialNumber|IdentifyingNumber|UUID|ProcessorId|MachineGuid|VolumeSerialNumber|UniqueId|Guid|MacAddress|PermanentAddress|InterfaceGuid|PNPDeviceID|SMBIOSAssetTag)$'
-$ownedConsole=$false;$redirected=$true;$scanTotal=17
+$ownedConsole=$false;$redirected=$true;$scanTotal=18
 $palette=@{Heading='Cyan';Text='White';Muted='Gray';Border='DarkGray';Good='Green';Warn='Yellow';Error='Red'}
 $script:checks=0;$script:rendered=New-Object 'System.Collections.Generic.List[string]'
 function Assert($Condition,$Description){if(-not $Condition){throw ('FAILED: '+$Description)};$script:checks++;[Console]::WriteLine('PASS: '+$Description)}
@@ -82,7 +82,7 @@ $display=[pscustomobject]@{Mode='Synthetic scan handling'}
 try{
     function Update-ScanWaiting {param($State,$Seconds) throw 'Synthetic full-scan display failure'}
     $snapshot=Invoke-HardwareScan 2 -UseWorker $true
-    Assert ($snapshot.Completed -and $snapshot.Warnings.Count -eq 0 -and $snapshot.Inventory['Scan timing'].Count -eq 17 -and $snapshot.Inventory['Report info'].ProgressFallbackSections -ge 1) 'A full scan finishes all sections after progress display failures and counts them separately'
+    Assert ($snapshot.Completed -and $snapshot.Warnings.Count -eq 0 -and $snapshot.Inventory['Scan timing'].Count -eq 18 -and $snapshot.Inventory['Report info'].ProgressFallbackSections -ge 1) 'A full scan finishes all sections after progress display failures and counts them separately'
     Assert ($snapshot.Inventory.CPU[0].ProcessorId -ceq 'CPU-1' -and @($snapshot.Inventory['Scan timing'] | Where-Object {$_.Section -eq 'CPU' -and $_.ProgressWarning -and -not $_.FailureCode}).Count -eq 1) 'Full-scan timing retains the display diagnostic without labeling the CPU read as failed'
 }finally{Set-Item Function:Update-ScanWaiting -Value $originalWaiting}
 [Console]::WriteLine("All $script:checks save-scan-handling checks passed under PowerShell $($PSVersionTable.PSVersion).")

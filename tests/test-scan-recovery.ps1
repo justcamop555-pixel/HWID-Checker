@@ -7,7 +7,7 @@ foreach($definition in $ast.FindAll({param($n) $n -is [Management.Automation.Lan
 $groups=$ast.FindAll({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$sectionGroups'},$false) | Select-Object -First 1
 . ([scriptblock]::Create($groups.Extent.Text))
 $identifierPattern='^(SerialNumber|IdentifyingNumber|UUID|ProcessorId|MachineGuid|VolumeSerialNumber|UniqueId|Guid|MacAddress|PermanentAddress|InterfaceGuid|PNPDeviceID|SMBIOSAssetTag)$'
-$ownedConsole=$false;$redirected=$true;$scanTotal=17
+$ownedConsole=$false;$redirected=$true;$scanTotal=18
 $palette=@{Heading='Cyan';Text='White';Muted='Gray';Border='DarkGray';Good='Green';Warn='Yellow';Error='Red'}
 $script:checks=0;$script:rendered=New-Object 'System.Collections.Generic.List[string]'
 function Assert($Condition,$Description){if(-not $Condition){throw ('FAILED: '+$Description)};$script:checks++;[Console]::WriteLine('PASS: '+$Description)}
@@ -65,11 +65,11 @@ foreach($mode in @('Direct','Worker')){
         Assert ($scanTimings[-1].Recoveries.Count -eq 0 -and $scanTimings[-1].Summary -notmatch 'compatible read') ($mode+' the next section does not inherit old recovery status')
         if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose();$script:scanQueryWorker=$null}
         $snapshot=Invoke-HardwareScan 2 -UseWorker ($mode -eq 'Worker')
-        Assert ($snapshot.Completed -and $snapshot.Inventory['Report info'].CompatibleReadSections -eq 14 -and $snapshot.Inventory['Scan timing'].Count -eq 17 -and $snapshot.Warnings.Count -eq 0) ($mode+' full scans count recovered sections without losing any of seventeen query results')
+        Assert ($snapshot.Completed -and $snapshot.Inventory['Report info'].CompatibleReadSections -eq 15 -and $snapshot.Inventory['Scan timing'].Count -eq 18 -and $snapshot.Warnings.Count -eq 0) ($mode+' full scans count recovered sections without losing any of eighteen query results')
         $export=$snapshot.Inventory | ConvertTo-Json -Depth 12
         $stem=Join-Path $root $mode;Write-ReportPair $stem 'Synthetic report' $export
         $import=Read-SavedReport ($stem+'.json')
-        Assert ($import.'Report info'.CompatibleReadSections -eq 14 -and $import.'Scan timing'[0].Recoveries[0].Class -eq 'Win32_ComputerSystemProduct' -and $import.'Scan timing'[0].Recoveries[0].PrimaryFailure -match 'Localized') ($mode+' recovery metadata survives snapshot export and import')
+        Assert ($import.'Report info'.CompatibleReadSections -eq 15 -and $import.'Scan timing'[0].Recoveries[0].Class -eq 'Win32_ComputerSystemProduct' -and $import.'Scan timing'[0].Recoveries[0].PrimaryFailure -match 'Localized') ($mode+' recovery metadata survives snapshot export and import')
     }finally{if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose();$script:scanQueryWorker=$null}}
 }
 $script:calls=0

@@ -7,7 +7,7 @@ foreach($definition in $ast.FindAll({param($n) $n -is [Management.Automation.Lan
 $groups=$ast.FindAll({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$sectionGroups'},$false) | Select-Object -First 1
 . ([scriptblock]::Create($groups.Extent.Text))
 $identifierPattern='^(SerialNumber|IdentifyingNumber|UUID|ProcessorId|MachineGuid|VolumeSerialNumber|UniqueId|Guid|MacAddress|PermanentAddress|InterfaceGuid|PNPDeviceID|SMBIOSAssetTag)$'
-$ownedConsole=$false;$redirected=$true;$scanTotal=17;$display=[pscustomobject]@{Mode='Synthetic extended refresh test'}
+$ownedConsole=$false;$redirected=$true;$scanTotal=18;$display=[pscustomobject]@{Mode='Synthetic extended refresh test'}
 $palette=@{Heading='Cyan';Text='White';Muted='Gray';Border='DarkGray';Good='Green';Warn='Yellow';Error='Red'}
 $script:checks=0
 function Assert($Condition,$Description){if(-not $Condition){throw ('FAILED: '+$Description)};$script:checks++;[Console]::WriteLine('PASS: '+$Description)}
@@ -99,7 +99,7 @@ try{
             try{Start-ExtendedDeviceScan}finally{if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose();$script:scanQueryWorker=$null}}
             Assert ($report['Report info'].ExtendedStatus -eq 'Unavailable' -and [object]::ReferenceEquals($oldDevices,$report['Extended device inventory']) -and [object]::ReferenceEquals($oldInfo,$report['Extended scan info'])) ($mode+' manual '+$case[0]+' rejection preserves the previous catalog and capture')
             $full=Invoke-HardwareScan 4 -UseWorker ($mode -eq 'Worker') -IncludeExtended $true
-            Assert ($full.Completed -and @($full.Inventory['Scan timing'] | Where-Object Status -ne 'UNAVAILABLE').Count -eq 17 -and -not $full.Inventory.Contains('Extended device inventory') -and $full.Inventory['Report info'].ExtendedStatus -eq 'Unavailable' -and $full.Warnings.Count -eq 1) ($mode+' full rescan '+$case[0]+' rejection keeps all usable normal results without stale extended rows')
+            Assert ($full.Completed -and @($full.Inventory['Scan timing'] | Where-Object Status -ne 'UNAVAILABLE').Count -eq 18 -and -not $full.Inventory.Contains('Extended device inventory') -and $full.Inventory['Report info'].ExtendedStatus -eq 'Unavailable' -and $full.Warnings.Count -eq 1) ($mode+' full rescan '+$case[0]+' rejection keeps all usable normal results without stale extended rows')
         }
         $latest=$report['Report info'].ExtendedFailureDetails
         $failure=@(Get-ReviewReadFailures $report @() | Where-Object Section -eq 'Extended device inventory')

@@ -7,7 +7,7 @@ foreach($definition in $ast.FindAll({param($n) $n -is [Management.Automation.Lan
 $groups=$ast.FindAll({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$sectionGroups'},$false) | Select-Object -First 1
 . ([scriptblock]::Create($groups.Extent.Text))
 $identifierPattern='^(SerialNumber|IdentifyingNumber|UUID|ProcessorId|MachineGuid|VolumeSerialNumber|UniqueId|Guid|MacAddress|PermanentAddress|InterfaceGuid|PNPDeviceID|SMBIOSAssetTag)$'
-$ownedConsole=$false;$redirected=$true;$scanTotal=17;$display=[pscustomobject]@{Mode='Synthetic device coverage test'}
+$ownedConsole=$false;$redirected=$true;$scanTotal=18;$display=[pscustomobject]@{Mode='Synthetic device coverage test'}
 $palette=@{Heading='Cyan';Text='White';Muted='Gray';Border='DarkGray';Good='Green';Warn='Yellow';Error='Red'}
 $script:checks=0
 function Assert($Condition,$Description){if(-not $Condition){throw ('FAILED: '+$Description)};$script:checks++;[Console]::WriteLine('PASS: '+$Description)}
@@ -86,8 +86,8 @@ foreach($mode in @('Direct','Worker')){
 $script:progress=New-Object 'System.Collections.Generic.List[object]'
 function Update-ScanProgress([int]$Completed=$script:scanStep){$script:progress.Add([pscustomobject]@{Completed=$Completed;Total=$script:scanProgressTotal})}
 $full=Invoke-HardwareScan 1 -UseWorker $false -IncludeExtended $true
-Assert ($full.Completed -and $full.Inventory['Scan timing'].Count -eq 17 -and $full.Inventory['Extended device inventory'].Count -eq 40 -and $full.Inventory['Report info'].ExtendedStatus -eq 'Refreshed') 'Full scan collects normal hardware and all known-device records in one completed snapshot'
-Assert ($progress[-1].Completed -eq 18 -and $progress[-1].Total -eq 18 -and @($progress | Where-Object {$_.Completed -eq 17 -and $_.Total -eq 18}).Count -gt 0) 'Progress reserves its final stage for the all-known device catalog'
+Assert ($full.Completed -and $full.Inventory['Scan timing'].Count -eq 18 -and $full.Inventory['Extended device inventory'].Count -eq 40 -and $full.Inventory['Report info'].ExtendedStatus -eq 'Refreshed') 'Full scan collects normal hardware and all known-device records in one completed snapshot'
+Assert ($progress[-1].Completed -eq 19 -and $progress[-1].Total -eq 19 -and @($progress | Where-Object {$_.Completed -eq 18 -and $_.Total -eq 19}).Count -gt 0) 'Progress reserves its final stage for the all-known device catalog'
 Assert ((Get-ScanProgressText 17 18 5) -match '94%' -and (Get-ScanProgressText 18 18 5) -match '100%') 'Normal queries finishing cannot display 100 percent while device enrichment is still running'
 Assert ($null -eq $script:scanProgressTotal -and $null -eq $script:scanQueryWorker) 'Full scan releases its progress and worker state'
 $report=$full.Inventory;$warnings=$full.Warnings;$identifiers=$full.Identifiers
@@ -104,9 +104,9 @@ Set-Item Function:Invoke-HardwareScan -Value $scanFunction
 $originalExtended=(Get-Item Function:Get-ExtendedDeviceInventory).ScriptBlock
 function Get-ExtendedDeviceInventory {throw [TimeoutException]::new('Synthetic all-known read timeout')}
 $partial=Invoke-HardwareScan 3 -UseWorker $false -IncludeExtended $true
-Assert ($partial.Completed -and $partial.Inventory['Report info'].ExtendedStatus -eq 'Unavailable' -and -not $partial.Inventory.Contains('Extended device inventory') -and $partial.Inventory['Scan timing'].Count -eq 17 -and $partial.Warnings.Count -eq 1) 'An unavailable catalog preserves normal results and explicit failure instead of attaching stale device rows'
-Assert ($progress[-1].Completed -eq 18 -and $null -eq $script:scanProgressTotal) 'A failed final stage finishes progress and clears scan state'
+Assert ($partial.Completed -and $partial.Inventory['Report info'].ExtendedStatus -eq 'Unavailable' -and -not $partial.Inventory.Contains('Extended device inventory') -and $partial.Inventory['Scan timing'].Count -eq 18 -and $partial.Warnings.Count -eq 1) 'An unavailable catalog preserves normal results and explicit failure instead of attaching stale device rows'
+Assert ($progress[-1].Completed -eq 19 -and $null -eq $script:scanProgressTotal) 'A failed final stage finishes progress and clears scan state'
 Set-Item Function:Get-ExtendedDeviceInventory -Value $originalExtended
 $basic=Invoke-HardwareScan 4 -UseWorker $false -IncludeExtended $false
-Assert ($basic.Completed -and -not $basic.Inventory.Contains('Extended scan info') -and $progress[-1].Total -eq 17 -and $progress[-1].Completed -eq 17) 'Internal present-only scans retain their seventeen-stage behavior'
+Assert ($basic.Completed -and -not $basic.Inventory.Contains('Extended scan info') -and $progress[-1].Total -eq 18 -and $progress[-1].Completed -eq 18) 'Internal present-only scans retain their eighteen-stage behavior'
 [Console]::WriteLine("All $script:checks device-coverage checks passed under PowerShell $($PSVersionTable.PSVersion).")

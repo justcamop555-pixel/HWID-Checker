@@ -13,7 +13,7 @@ try {
     if($errors.Count){throw ($errors.Message -join '; ')}
     foreach($definition in $ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){. ([scriptblock]::Create($definition.Extent.Text))}
     $null=Initialize-ReadableConsole $true $false
-    $ownedConsole=$true;$redirected=$false;$scanTotal=17
+    $ownedConsole=$true;$redirected=$false;$scanTotal=18
     $palette=@{Heading='Cyan';Text='White';Muted='Gray';Border='DarkGray';Good='Green';Warn='Yellow';Error='Red'}
     Reset-UiPage
     [Console]::SetWindowSize(60,12);[Console]::SetBufferSize(60,12)
@@ -125,7 +125,7 @@ public static class HwidScanTestInput {
     function Get-ClassHiddenState {param($ClassGuid) return $false}
     function Get-NativeNodeStatus {param($InstanceId) return $null}
     $snapshot=Invoke-HardwareScan 1 -UseWorker $true -IncludeExtended $true
-    Assert ($snapshot.Completed -and $snapshot.Warnings.Count -eq 0 -and $snapshot.Inventory['Scan timing'].Count -eq 17) 'The narrow native scan lost results or encountered a display failure.'
+    Assert ($snapshot.Completed -and $snapshot.Warnings.Count -eq 0 -and $snapshot.Inventory['Scan timing'].Count -eq 18) 'The narrow native scan lost results or encountered a display failure.'
     Assert ($snapshot.Inventory['Extended device inventory'].Count -eq 1 -and $snapshot.Inventory['Report info'].ExtendedStatus -eq 'Refreshed') 'The narrow native scan lost the all-known device catalog.'
     Assert ([Console]::BufferHeight -eq [Console]::CursorTop+3 -and [Console]::BufferHeight -lt 512) 'The full scan retained an oversized or truncated scrollbar buffer.'
     $screen=[HwidConsoleDisplay]::CaptureRegion(0,0,20,[Console]::BufferHeight)

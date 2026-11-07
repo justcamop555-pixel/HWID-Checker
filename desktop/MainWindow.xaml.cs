@@ -30,8 +30,32 @@ public partial class MainWindow : Window
     [
         "System identity", "System hardware", "Motherboard", "BIOS", "Chassis", "CPU", "Memory modules",
         "Physical disks", "Storage identifiers", "Volumes", "Disk partitions", "Graphics adapters",
-        "Monitors", "Network adapters", "Windows", "Windows Machine GUID", "PnP hardware IDs", "All-known device catalog"
+        "Monitors", "Network adapters", "Battery", "Windows", "Windows Machine GUID", "PnP hardware IDs", "All-known device catalog"
     ];
+    private static readonly Dictionary<string, string> MidnightColors = new(StringComparer.Ordinal)
+    {
+        ["CanvasBrush"] = "#0D1521", ["SidebarBrush"] = "#101B29", ["PanelBrush"] = "#152131",
+        ["BorderBrush"] = "#304258", ["TextBrush"] = "#EEF5FA", ["MutedBrush"] = "#A7B9CC",
+        ["AccentBrush"] = "#66E1CE", ["WarningBrush"] = "#F3C785", ["NavActiveBrush"] = "#214642",
+        ["StatusBrush"] = "#173235", ["StatusBorderBrush"] = "#36535D", ["ControlBrush"] = "#1C2B3F",
+        ["ControlBorderBrush"] = "#405673", ["ControlHoverBrush"] = "#2B4055", ["DisabledControlBrush"] = "#202B38",
+        ["DisabledTextBrush"] = "#9AA9BA", ["FocusBrush"] = "#BAF6E9", ["PrimaryForegroundBrush"] = "#082A2A",
+        ["ScrollThumbBrush"] = "#3D526C", ["ScrollThumbHoverBrush"] = "#64809E", ["ScrollTrackBrush"] = "#101A2A",
+        ["RowAlternateBrush"] = "#142032", ["ColumnHeaderBrush"] = "#18263A", ["SelectionBrush"] = "#214C49",
+        ["SelectionTextBrush"] = "#F1FFFC", ["ListSelectedBrush"] = "#21423F", ["ListHoverBrush"] = "#213349"
+    };
+    private static readonly Dictionary<string, string> DaylightColors = new(StringComparer.Ordinal)
+    {
+        ["CanvasBrush"] = "#EEF2F7", ["SidebarBrush"] = "#F8FAFC", ["PanelBrush"] = "#FFFFFF",
+        ["BorderBrush"] = "#C6D2DE", ["TextBrush"] = "#17222E", ["MutedBrush"] = "#5B6B7C",
+        ["AccentBrush"] = "#0F766E", ["WarningBrush"] = "#8A5A00", ["NavActiveBrush"] = "#D7EEE9",
+        ["StatusBrush"] = "#E1F1ED", ["StatusBorderBrush"] = "#A7CFC6", ["ControlBrush"] = "#FFFFFF",
+        ["ControlBorderBrush"] = "#B9C7D4", ["ControlHoverBrush"] = "#E9F0F6", ["DisabledControlBrush"] = "#E7ECF1",
+        ["DisabledTextBrush"] = "#97A4B1", ["FocusBrush"] = "#0F766E", ["PrimaryForegroundBrush"] = "#FFFFFF",
+        ["ScrollThumbBrush"] = "#AEBFCF", ["ScrollThumbHoverBrush"] = "#7E93A8", ["ScrollTrackBrush"] = "#E3EAF1",
+        ["RowAlternateBrush"] = "#F4F7FA", ["ColumnHeaderBrush"] = "#E8EEF4", ["SelectionBrush"] = "#CDEBE5",
+        ["SelectionTextBrush"] = "#0B3B34", ["ListSelectedBrush"] = "#CDEBE5", ["ListHoverBrush"] = "#E9F0F6"
+    };
     private DesktopSnapshot? _snapshot;
     private CancellationTokenSource? _operationCancellation;
     private bool _busy, _initialized, _closing, _closeRequested, _refreshAgain;
@@ -39,6 +63,9 @@ public partial class MainWindow : Window
     private TaskCompletionSource<bool>? _operationFinished;
     private string _page = "Overview", _operation = "", _lastSaveFolder = "";
     private string? _rememberedBat;
+    private bool _darkTheme = true;
+    private IReadOnlyList<ChangeRow>? _lastComparisonRows;
+    private string _lastComparisonSummary = "", _lastComparisonNotes = "", _lastComparisonBaseline = "", _lastComparisonCurrent = "";
     private bool IsVerification => _args.Any(argument => argument.Split('=', 2)[0].ToLowerInvariant() is
         "--fixture" or "--render" or "--scan-test" or "--workflow-test");
     private int _ticks, _responsiveTicks;
@@ -68,11 +95,12 @@ public partial class MainWindow : Window
         Dashboard.SizeChanged += (_, _) => FitLayout();
         DataContext = this;
         _initialized = true;
+        ApplyTheme(_darkTheme);
         FitLayout();
         _timer.Tick += async (_, _) =>
         {
             _responsiveTicks++;
-            if (_busy && _operation == "Scan") ScanElapsedText.Text = $"{Math.Min(18, (int)Math.Round(ScanProgress.Value * 18 / 100))} of 18 finished  ·  {_scanClock.Elapsed:mm\\:ss}";
+            if (_busy && _operation == "Scan") ScanElapsedText.Text = $"{Math.Min(19, (int)Math.Round(ScanProgress.Value * 19 / 100))} of 19 finished  ·  {_scanClock.Elapsed:mm\\:ss}";
             if (++_ticks % 15 == 0 && _page == "Snapshots" && !_busy && !IsVerification) await RefreshSnapshotsAsync();
         };
         _timer.Start();
@@ -218,6 +246,7 @@ public partial class MainWindow : Window
             using var document = JsonDocument.Parse(File.ReadAllText(path));
             var preferences = document.RootElement;
             _rememberedBat = preferences.Text("batPath");
+            if (preferences.Get("darkTheme").ValueKind is JsonValueKind.True or JsonValueKind.False) _darkTheme = preferences.Get("darkTheme").ValueKind == JsonValueKind.True;
             var lastFolder = preferences.Text("lastSaveFolder");
             if (Path.IsPathFullyQualified(lastFolder)) _lastSaveFolder = Path.GetFullPath(lastFolder);
             foreach (var folder in preferences.Get("snapshotFolders").Rows().Select(x => x.Text()))
@@ -233,7 +262,7 @@ public partial class MainWindow : Window
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var preferences = JsonSerializer.Serialize(new { batPath = _engine?.BatPath, lastSaveFolder = _lastSaveFolder, snapshotFolders = _additionalFolders.ToArray() });
+            var preferences = JsonSerializer.Serialize(new { batPath = _engine?.BatPath, lastSaveFolder = _lastSaveFolder, snapshotFolders = _additionalFolders.ToArray(), darkTheme = _darkTheme });
             await File.WriteAllTextAsync(temporary, preferences);
             File.Move(temporary, path, true);
             return true;
@@ -262,10 +291,31 @@ public partial class MainWindow : Window
             FooterText.Text = "Connected to " + Path.GetFileName(path) + "  ·  Windows-reported inventory";
             FooterText.ToolTip = _engine.BatPath;
             UpdateButtons();
-            ShowStatus("Ready to scan", "Scan this PC to collect 17 hardware sections and the Windows-known device catalog.");
+            ShowStatus("Ready to scan", "Scan this PC to collect 18 hardware sections and the Windows-known device catalog.");
         }
         catch (Exception ex) { _engine = null; UpdateButtons(); ShowError("Could not connect the BAT", ex); }
     }
+    private void ApplyTheme(bool dark)
+    {
+        var palette = dark ? MidnightColors : DaylightColors;
+        var resources = Application.Current.Resources;
+        foreach (var pair in palette)
+        {
+            var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(pair.Value));
+            brush.Freeze();
+            resources[pair.Key] = brush;
+        }
+        ThemeButton.Content = dark ? "Theme: Midnight" : "Theme: Daylight";
+    }
+
+    private async void OnToggleTheme(object sender, RoutedEventArgs e)
+    {
+        if (IsVerification) return;
+        _darkTheme = !_darkTheme;
+        ApplyTheme(_darkTheme);
+        if (!await RememberPreferencesAsync()) ShowStatus("Theme changed", "The theme could not be saved for future sessions.", true);
+    }
+
     private async void OnChooseBat(object sender, RoutedEventArgs e)
     {
         if (_busy) return;
@@ -341,6 +391,9 @@ public partial class MainWindow : Window
         ScanButton.IsEnabled = !_busy && _engine != null;
         ConnectButton.IsEnabled = !_busy;
         SaveButton.IsEnabled = !_busy && _snapshot != null && _engine != null;
+        ExportButton.IsEnabled = !_busy && _snapshot != null;
+        CompareFilesButton.IsEnabled = !_busy && _engine != null;
+        CompareExportButton.IsEnabled = !_busy && _lastComparisonRows is { Count: > 0 };
         CompareSelectedButton.IsEnabled = !_busy && _snapshot != null && SnapshotsGrid.SelectedItem is SnapshotEntry;
         SnapshotFolderSettingsButton.IsEnabled = !_busy && (!IsVerification || VerificationSharedSettingsPath != null);
         UpdatesButton.IsEnabled = !IsVerification;
@@ -382,10 +435,10 @@ public partial class MainWindow : Window
             var candidate = new DesktopSnapshot(result);
             ApplySnapshot(candidate);
             ScanProgress.Value = 100;
-            var complete = candidate.SectionsRead == 17 && candidate.Info.Text("ExtendedStatus") == "Refreshed";
+            var complete = candidate.SectionsRead == 18 && candidate.Info.Text("ExtendedStatus") == "Refreshed";
             ShowStatus(complete ? "Scan complete" : "Scan finished with read gaps",
-                $"{candidate.SectionsRead}/17 sections read · {candidate.ReportedIds} identifier fields · {candidate.Findings.Count} findings to review. " +
-                (candidate.Info.Text("ExtendedStatus") == "Refreshed" ? "Device catalog refreshed." : "The device catalog was not read; review the full inventory."), candidate.SectionsRead != 17 || candidate.Info.Text("ExtendedStatus") != "Refreshed");
+                $"{candidate.SectionsRead}/18 sections read · {candidate.ReportedIds} identifier fields · {candidate.Findings.Count} findings to review. " +
+                (candidate.Info.Text("ExtendedStatus") == "Refreshed" ? "Device catalog refreshed." : "The device catalog was not read; review the full inventory."), candidate.SectionsRead != 18 || candidate.Info.Text("ExtendedStatus") != "Refreshed");
             return true;
         }
         catch (OperationCanceledException) { RestoreScanActivity(); ShowStatus("Scan cancelled", _snapshot == null ? "Start a new scan when you are ready." : "Your last completed snapshot is still active.", true); return false; }
@@ -403,7 +456,7 @@ public partial class MainWindow : Window
     private void ApplySnapshot(DesktopSnapshot snapshot)
     {
         _snapshot = snapshot;
-        IdsCount.Text = snapshot.ReportedIds.ToString("N0"); SectionsCount.Text = snapshot.SectionsRead + " / 17";
+        IdsCount.Text = snapshot.ReportedIds.ToString("N0"); SectionsCount.Text = snapshot.SectionsRead + " / 18";
         ReviewCount.Text = snapshot.Findings.Count.ToString("N0"); DevicesCount.Text = snapshot.DeviceCount.ToString("N0");
         SetSummary(ComputerText, string.IsNullOrWhiteSpace(snapshot.Info.Text("Computer")) ? "Not supplied" : snapshot.Info.Text("Computer"));
         SetSummary(CapturedText, "Captured · " + J.Date(snapshot.Info.Text("Generated")));
@@ -419,12 +472,15 @@ public partial class MainWindow : Window
         IdentifiersGrid.SelectedIndex = -1;
         ReviewGrid.SelectedIndex = -1;
         FilterIds();
-        ReviewGrid.ItemsSource = snapshot.Findings;
+        ReviewGrid.ItemsSource = _snapshot == null ? null : _snapshot.Findings;
+        FilterReview();
         IdDetail.Clear(); ReviewDetail.Clear(); HardwareDetail.Clear();
         CompareGrid.ItemsSource = Array.Empty<ChangeRow>();
         CompareSummaryText.Text = "Choose a saved JSON to compare with this scan.";
         SetSummary(CompareBaselineText, "Baseline not selected");
         SetSummary(CompareSkippedText, "");
+        _lastComparisonRows = null;
+        CompareExportButton.IsEnabled = false;
         CompareDetail.Clear();
         HardwareSections.SelectedIndex = -1;
         HardwareSections.ItemsSource = snapshot.Inventory.EnumerateObject().Select(x => new HardwareSection(x.Name, x.Value.Rows().Length)).ToArray();
@@ -459,6 +515,14 @@ public partial class MainWindow : Window
         ShowStatus("Cancelling scan…", "Waiting for the scanner process to stop.");
     }
     private void OnIdFilterChanged(object sender, RoutedEventArgs e) { if (_initialized) FilterIds(); }
+    private void OnReviewFilterChanged(object sender, RoutedEventArgs e) { if (_initialized) FilterReview(); }
+    private void FilterReview()
+    {
+        if (!_initialized) return;
+        var needle = ReviewSearch.Text.Trim();
+        ReviewGrid.ItemsSource = _snapshot == null ? null : _snapshot.Findings.Where(x =>
+            needle.Length == 0 || string.Join(" ", x.Kind, x.Section, x.Message, x.Detail).Contains(needle, StringComparison.OrdinalIgnoreCase)).ToArray();
+    }
     private void FilterIds()
     {
         if (!_initialized) return;
@@ -481,13 +545,26 @@ public partial class MainWindow : Window
             return;
         }
         HardwareSectionTitle.Text = section.Name;
-        HardwareRecord.ItemsSource = _snapshot.Inventory.Get(section.Name).Rows().Select((value, index) =>
-        {
-            var title = new[] { "FriendlyName", "Name", "Model", "DeviceLocator", "DeviceID", "Section" }.Select(name => value.Text(name)).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
-            return new HardwareRecord($"{index + 1}. " + (title ?? "Record"), value, index);
-        }).ToArray();
-        HardwareRecord.SelectedIndex = 0;
-        if (HardwareRecord.Items.Count == 0) { HardwareFields.ItemsSource = Array.Empty<FieldRow>(); HardwareDetail.Text = "No records captured for this section."; }
+        PopulateHardwareRecords(section);
+    }
+    private void PopulateHardwareRecords(HardwareSection section)
+    {
+        if (_snapshot == null) return;
+        var needle = HardwareSearch.Text.Trim();
+        HardwareRecord.ItemsSource = _snapshot.Inventory.Get(section.Name).Rows()
+            .Select((value, index) => (value, index, title: new[] { "FriendlyName", "Name", "Model", "DeviceLocator", "DeviceID", "Section" }.Select(name => value.Text(name)).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))))
+            .Where(entry => needle.Length == 0 || entry.title?.Contains(needle, StringComparison.OrdinalIgnoreCase) == true ||
+                entry.value.EnumerateObject().Any(field =>
+                    (field.Value.ValueKind == JsonValueKind.String && field.Value.GetString()!.Contains(needle, StringComparison.OrdinalIgnoreCase)) ||
+                    (field.Value.ValueKind is not (JsonValueKind.String or JsonValueKind.Object or JsonValueKind.Array) && field.Value.Text().Contains(needle, StringComparison.OrdinalIgnoreCase))))
+            .Select((entry, position) => new HardwareRecord($"{position + 1}. " + (entry.title ?? "Record"), entry.value, entry.index))
+            .ToArray();
+        HardwareRecord.SelectedIndex = HardwareRecord.Items.Count > 0 ? 0 : -1;
+        if (HardwareRecord.Items.Count == 0) { HardwareFields.ItemsSource = Array.Empty<FieldRow>(); HardwareDetail.Text = needle.Length == 0 ? "No records captured for this section." : "No records in this section match the search."; }
+    }
+    private void OnHardwareFilterChanged(object sender, RoutedEventArgs e)
+    {
+        if (_initialized && _snapshot != null && HardwareSections.SelectedItem is HardwareSection section) PopulateHardwareRecords(section);
     }
     private void OnHardwareRecordSelected(object sender, SelectionChangedEventArgs e)
     {
@@ -646,33 +723,200 @@ public partial class MainWindow : Window
         try
         {
             var result = await _engine.CompareAsync(previousPath, _snapshot.Inventory, _operationCancellation.Token);
-            var rows = result.Get("changes").Rows().Select(row => new ChangeRow(row.Text("kind"), row.Text("section") + " / " + _snapshot.Label(row.Text("section"), row.Text("field")),
-                row.Get("previous").Display(), row.Get("current").Display(),
-                "Device: " + row.Text("device") + "\nOLD: " + row.Get("previous").Display() + "\nNEW: " + row.Get("current").Display() + "\n\n" + row.Text("difference"))).ToArray();
-            CompareGrid.SelectedIndex = -1;
-            CompareGrid.ItemsSource = rows;
-            var changed = rows.Count(x => x.Kind == "Changed"); var added = rows.Count(x => x.Kind == "Current only"); var removed = rows.Count(x => x.Kind == "Previous only");
-            var comparable = result.Number("previousCount") + result.Number("currentCount");
-            CompareSummaryText.Text = comparable == 0 ? "No comparable identifier fields were available." : rows.Length == 0 ? "No changes in comparable identifier fields." : $"{changed} changed · {added} current only · {removed} previous only";
-            var previousComputer = result.Text("previousComputer"); var previousCaptured = result.Text("previousCaptured");
-            var baseline = "Previous: " + Path.GetFileName(previousPath) +
-                (previousComputer.Length > 0 ? " · " + previousComputer + " · " + J.Date(previousCaptured) : "");
-            var current = "Current: " + _snapshot.Info.Text("Computer") + " · " + J.Date(_snapshot.Info.Text("Generated"));
-            SetSummary(CompareBaselineText, baseline + "   |   " + current, baseline + "\n" + previousPath + "\n" + current);
-            var notes = new List<string> { $"Comparable fields: {result.Number("previousCount")} previous / {result.Number("currentCount")} current. Not compared: {result.Number("skippedFields")} fields." };
-            var skipped = result.Get("skippedSections").Rows().Select(x => x.Text()).ToArray();
-            if (skipped.Length > 0) notes.Add("Unread sections: " + string.Join(", ", skipped) + ".");
-            foreach (var scope in result.Get("scopeWarnings").Rows()) notes.Add("Reader coverage differs: " + scope.Text("PreviousReader") + " → " + scope.Text("CurrentReader") + "; " + scope.Number("SkippedDevices") + " unmatched device records not compared.");
-            SetSummary(CompareSkippedText, string.Join(" ", notes), string.Join(Environment.NewLine, notes));
-            CompareDetail.Text = "Select a change to inspect the full old/new values and exact character difference.";
-            Navigate("Compare"); ShowStatus("Comparison complete", CompareSummaryText.Text + " Differences describe saved Windows records.", rows.Length > 0 || result.Number("skippedFields") > 0 || comparable == 0);
+            RenderComparison(result, previousPath, liveCurrent: true);
+            Navigate("Compare"); ShowStatus("Comparison complete", CompareSummaryText.Text + " Differences describe saved Windows records.", _lastComparisonRows!.Count > 0 || result.Number("skippedFields") > 0);
         }
         catch (OperationCanceledException) { ShowStatus("Comparison cancelled", "The current scan remains available.", true); }
         catch (Exception ex) { ShowError("Could not compare this snapshot", ex); }
         finally { SetBusy(false); _operationCancellation?.Dispose(); _operationCancellation = null; }
     }
+
+    private async void OnChooseTwoFileComparison(object sender, RoutedEventArgs e)
+    {
+        if (_engine == null) { ShowStatus("Connect the BAT first", "Comparisons run through the linked BAT engine.", true); return; }
+        if (_busy) return;
+        var candidates = SaveFolderCandidates(ReadSharedLibrary()).Where(Directory.Exists).ToList();
+        if (_lastSaveFolder.Length > 0 && Directory.Exists(_lastSaveFolder)) candidates.Insert(0, _lastSaveFolder);
+        var starting = candidates.FirstOrDefault();
+        var previousPicker = new OpenFileDialog { Title = "Choose the OLDER saved snapshot (baseline)", Filter = "JSON snapshot (*.json)|*.json", CheckFileExists = true };
+        if (starting != null) previousPicker.InitialDirectory = starting;
+        if (previousPicker.ShowDialog(this) != true) return;
+        var currentPicker = new OpenFileDialog { Title = "Choose the NEWER saved snapshot to compare against", Filter = "JSON snapshot (*.json)|*.json", CheckFileExists = true };
+        var previousDirectory = Path.GetDirectoryName(previousPicker.FileName);
+        if (previousDirectory != null && Directory.Exists(previousDirectory)) currentPicker.InitialDirectory = previousDirectory;
+        if (currentPicker.ShowDialog(this) != true) return;
+        await CompareFilesAsync(previousPicker.FileName, currentPicker.FileName);
+    }
+
+    private async Task CompareFilesAsync(string previousPath, string currentPath)
+    {
+        if (_engine == null || _busy) return;
+        SetBusy(true, "Compare"); _operationCancellation = new CancellationTokenSource();
+        ShowStatus("Comparing saved snapshots", "Reading both captures and matching comparable identifier fields.");
+        try
+        {
+            var result = await _engine.CompareFilesAsync(previousPath, currentPath, _operationCancellation.Token);
+            RenderComparison(result, previousPath, liveCurrent: false, savedCurrentPath: currentPath);
+            Navigate("Compare"); ShowStatus("Comparison complete", CompareSummaryText.Text + " Differences describe saved Windows records.", _lastComparisonRows!.Count > 0 || result.Number("skippedFields") > 0);
+        }
+        catch (OperationCanceledException) { ShowStatus("Comparison cancelled", "Both saved snapshots remain available.", true); }
+        catch (Exception ex) { ShowError("Could not compare these snapshots", ex); }
+        finally { SetBusy(false); _operationCancellation?.Dispose(); _operationCancellation = null; }
+    }
+
+    private string CompareLabel(JsonElement result, string section, string field)
+    {
+        var label = result.Get("fieldLabels").Get(section).Text(field);
+        if (label.Length > 0) return label;
+        return _snapshot?.Label(section, field) ?? J.Humanize(field);
+    }
+
+    private void RenderComparison(JsonElement result, string previousPath, bool liveCurrent, string? savedCurrentPath = null)
+    {
+        var rows = result.Get("changes").Rows().Select(row => new ChangeRow(row.Text("kind"), row.Text("section") + " / " + CompareLabel(result, row.Text("section"), row.Text("field")),
+            row.Get("previous").Display(), row.Get("current").Display(),
+            "Device: " + row.Text("device") + "\nOLD: " + row.Get("previous").Display() + "\nNEW: " + row.Get("current").Display() + "\n\n" + row.Text("difference"))).ToArray();
+        _lastComparisonRows = rows;
+        _lastComparisonBaseline = "Previous: " + Path.GetFileName(previousPath) +
+            (result.Text("previousComputer").Length > 0 ? " · " + result.Text("previousComputer") + " · " + J.Date(result.Text("previousCaptured")) : "");
+        _lastComparisonCurrent = liveCurrent && _snapshot != null
+            ? "Current: " + _snapshot.Info.Text("Computer") + " · " + J.Date(_snapshot.Info.Text("Generated"))
+            : "Current: " + Path.GetFileName(savedCurrentPath ?? "") +
+                (result.Text("currentComputer").Length > 0 ? " · " + result.Text("currentComputer") + " · " + J.Date(result.Text("currentCaptured")) : "");
+        var changed = rows.Count(x => x.Kind == "Changed"); var added = rows.Count(x => x.Kind == "Current only"); var removed = rows.Count(x => x.Kind == "Previous only");
+        var comparable = result.Number("previousCount") + result.Number("currentCount");
+        _lastComparisonSummary = comparable == 0 ? "No comparable identifier fields were available." : rows.Length == 0 ? "No changes in comparable identifier fields." : $"{changed} changed · {added} current only · {removed} previous only";
+        CompareGrid.SelectedIndex = -1;
+        CompareGrid.ItemsSource = rows;
+        CompareSummaryText.Text = _lastComparisonSummary;
+        SetSummary(CompareBaselineText, _lastComparisonBaseline + "   |   " + _lastComparisonCurrent, _lastComparisonBaseline + "\n" + previousPath + (liveCurrent ? "" : "\n" + savedCurrentPath) + "\n" + _lastComparisonCurrent);
+        var notes = new List<string> { $"Comparable fields: {result.Number("previousCount")} previous / {result.Number("currentCount")} current. Not compared: {result.Number("skippedFields")} fields." };
+        var skipped = result.Get("skippedSections").Rows().Select(x => x.Text()).ToArray();
+        if (skipped.Length > 0) notes.Add("Unread sections: " + string.Join(", ", skipped) + ".");
+        foreach (var scope in result.Get("scopeWarnings").Rows()) notes.Add("Reader coverage differs: " + scope.Text("PreviousReader") + " → " + scope.Text("CurrentReader") + "; " + scope.Number("SkippedDevices") + " unmatched device records not compared.");
+        _lastComparisonNotes = string.Join(Environment.NewLine, notes);
+        SetSummary(CompareSkippedText, string.Join(" ", notes), _lastComparisonNotes);
+        CompareDetail.Text = "Select a change to inspect the full old/new values and exact character difference.";
+        CompareExportButton.IsEnabled = rows.Length > 0;
+    }
+
+    private async void OnExportComparison(object sender, RoutedEventArgs e)
+    {
+        if (_lastComparisonRows is not { Count: > 0 }) { ShowStatus("Nothing to export", "Run a comparison first; exports contain identifier values.", true); return; }
+        var dialog = new SaveFileDialog { Title = "Export comparison results", Filter = "Text report (*.txt)|*.txt", AddExtension = true, DefaultExt = ".txt" };
+        dialog.FileName = "HWID-Comparison-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".txt";
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            var lines = new List<string>
+            {
+                "HWID CHECKER - COMPARISON REPORT",
+                _lastComparisonBaseline,
+                _lastComparisonCurrent,
+                "Summary: " + _lastComparisonSummary,
+                "Notes: " + _lastComparisonNotes,
+                "",
+                "========== Changes =========="
+            };
+            var number = 0;
+            foreach (var row in _lastComparisonRows)
+            {
+                number++;
+                lines.Add($"#{number} / {row.Kind}: {row.Label}");
+                if (row.Previous.Length > 0) lines.Add("  OLD: " + row.Previous);
+                if (row.Current.Length > 0) lines.Add("  NEW: " + row.Current);
+                if (row.Detail.Length > 0) lines.Add("  Detail: " + row.Detail.ReplaceLineEndings(" "));
+            }
+            lines.Add("");
+            lines.Add("This export contains device identifiers; share carefully.");
+            await File.WriteAllTextAsync(dialog.FileName, string.Join(Environment.NewLine, lines) + Environment.NewLine, new UTF8Encoding(false));
+            ShowStatus("Comparison exported", dialog.FileName + " · The text file contains device IDs.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ShowError("Could not export the comparison", ex); }
+    }
     private void OnComparisonSelected(object sender, SelectionChangedEventArgs e) { CompareDetail.Text = CompareGrid.SelectedItem is ChangeRow row ? row.Label + "\n" + row.Detail : ""; }
     private async void OnSave(object sender, RoutedEventArgs e) => await SaveSnapshotAsync();
+
+    private async void OnExportSnapshot(object sender, RoutedEventArgs e)
+    {
+        if (_snapshot == null || _busy) return;
+        var settings = ReadSharedLibrary();
+        string starting;
+        try { starting = EnsureSaveFolder(settings); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ShowError("Could not open an export folder", ex); return; }
+        var picker = new OpenFolderDialog { Title = "Choose where to export the CSV and HTML report", InitialDirectory = starting };
+        if (picker.ShowDialog(this) != true) return;
+        var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        var csvPath = Path.Combine(picker.FolderName, "HWID-Export-" + stamp + ".csv");
+        var htmlPath = Path.Combine(picker.FolderName, "HWID-Export-" + stamp + ".html");
+        try
+        {
+            await Task.Run(() =>
+            {
+                WriteSnapshotCsv(csvPath, _snapshot!);
+                WriteSnapshotHtmlCore(htmlPath, _snapshot!);
+            });
+            ShowStatus("Snapshot exported", Path.GetFileName(csvPath) + " + " + Path.GetFileName(htmlPath) + " in " + picker.FolderName + " · Exports contain device IDs; share carefully.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ShowError("Could not export the snapshot", ex); }
+    }
+
+    private static string CsvField(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";
+
+    private static void WriteSnapshotCsv(string path, DesktopSnapshot snapshot)
+    {
+        var lines = new List<string> { "Section,Device,Field,Value,Status" };
+        foreach (var row in snapshot.Identifiers)
+            lines.Add(string.Join(",", CsvField(row.Section), CsvField(row.Device), CsvField(row.Field), CsvField(row.Value), CsvField(row.Status)));
+        File.WriteAllLines(path, lines, new UTF8Encoding(false));
+    }
+
+    private void WriteSnapshotHtmlCore(string path, DesktopSnapshot snapshot)
+    {
+        string Encode(string value) => System.Net.WebUtility.HtmlEncode(value)
+            .Replace("\r", "").Replace("\n", "<br>");
+        var html = new StringBuilder();
+        html.Append("<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"><title>HWID Checker report</title><style>");
+        html.Append("body{font-family:'Segoe UI',Arial,sans-serif;background:#eef2f7;color:#17222e;margin:24px}");
+        html.Append("h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:26px 0 8px;border-bottom:2px solid #c6d2de;padding-bottom:5px}");
+        html.Append("table{border-collapse:collapse;width:100%;font-size:13px;margin-bottom:8px}");
+        html.Append("th,td{border:1px solid #c6d2de;padding:6px 9px;text-align:left;vertical-align:top}");
+        html.Append("th{background:#e8eef4;font-weight:600}tr:nth-child(even) td{background:#f4f7fa}");
+        html.Append(".muted{color:#5b6b7c;font-size:12px}");
+        html.Append("</style></head><body>");
+        html.Append("<h1>HWID Checker \u2014 hardware report</h1>");
+        html.Append("<p class='muted'>").Append(Encode(snapshot.Info.Text("Computer"))).Append(" \u00b7 captured ").Append(Encode(J.Date(snapshot.Info.Text("Generated")))).Append(" \u00b7 engine ").Append(Encode(snapshot.Version)).Append(" \u00b7 desktop ").Append(DesktopUpdater.CurrentVersion).Append("</p>");
+        foreach (var section in snapshot.Inventory.EnumerateObject())
+        {
+            var records = section.Value.Rows();
+            html.Append("<h2>").Append(Encode(section.Name)).Append(" \u2014 ").Append(records.Length).Append(" record(s)</h2>");
+            if (records.Length == 0) { html.Append("<p class='muted'>No records captured.</p>"); continue; }
+            html.Append("<table><tr><th style='width:40px'>#</th><th style='width:230px'>Field</th><th>Windows-reported value</th></tr>");
+            for (var recordIndex = 0; recordIndex < records.Length; recordIndex++)
+            {
+                var record = records[recordIndex];
+                if (record.ValueKind == JsonValueKind.Object)
+                {
+                    var first = true;
+                    foreach (var field in record.EnumerateObject())
+                    {
+                        html.Append("<tr><td>").Append(first ? (recordIndex + 1).ToString() : "").Append("</td><td>")
+                            .Append(Encode(snapshot.Label(section.Name, field.Name))).Append("</td><td>")
+                            .Append(Encode(snapshot.FieldValue(section.Name, recordIndex, field.Name, field.Value))).Append("</td></tr>");
+                        first = false;
+                    }
+                }
+                else
+                {
+                    html.Append("<tr><td>").Append(recordIndex + 1).Append("</td><td>Value</td><td>").Append(Encode(record.Display())).Append("</td></tr>");
+                }
+            }
+            html.Append("</table>");
+        }
+        html.Append("<p class='muted'>Windows-reported inventory. Values are not guaranteed authentic or unique. This export contains device identifiers; share carefully.</p>");
+        html.Append("</body></html>");
+        File.WriteAllText(path, html.ToString(), new UTF8Encoding(false));
+    }
     private async Task SaveSnapshotAsync()
     {
         if (_snapshot == null || _engine == null || _busy) return;
@@ -993,12 +1237,12 @@ public partial class MainWindow : Window
             Check(!_busy && _operationCancellation == null && _operationFinished?.Task.IsCompleted == true, "operation state and completion signal are released");
             var completed = _snapshot;
             var attempt = RunScanAsync();
-            var preparedDisplay = ScanRows.Count == 18 && ScanRows.All(row => row.Status == "WAITING" && row.Records == "—") &&
+            var preparedDisplay = ScanRows.Count == 19 && ScanRows.All(row => row.Status == "WAITING" && row.Records == "—") &&
                 MetricsGrid.Visibility == Visibility.Collapsed && OverviewComputerCard.Visibility == Visibility.Collapsed;
             await Task.Delay(1500); _operationCancellation?.Cancel(); await attempt;
             Check(preparedDisplay && ReferenceEquals(_snapshot, completed) && StatusTitle.Text == "Scan cancelled",
                 "scan starts with waiting rows and cancellation retains the last completed snapshot");
-            Check(ScanRows.Count == 18 && ScanRows.Last().Name == "All-known device catalog", "cancelled rescan restores all previous activity rows");
+            Check(ScanRows.Count == 19 && ScanRows.Last().Name == "All-known device catalog", "cancelled rescan restores all previous activity rows");
             await CompareAsync(previousPath); CompareGrid.SelectedIndex = 0;
             await File.WriteAllTextAsync(resultPath, JsonSerializer.Serialize(new { success = true, checks, hardwareIdentifiersSaved = false, syntheticOnly = true }, new JsonSerializerOptions { WriteIndented = true }));
         }

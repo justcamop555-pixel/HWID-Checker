@@ -107,7 +107,7 @@ The summary can show all normal queries read while an optional extended refresh 
 
 ## Understand unreadable results
 
-The scan's **NOT READ** label means the query did not supply usable records. **CHECK** means records were read but some fields or device records need review. The finish line counts read and not-read sections separately. When an extended catalog was requested, the same line also says **extended READ** or **extended NOT READ**. A failed extended read keeps the finish line amber even if all 17 normal queries succeeded.
+The scan's **NOT READ** label means the query did not supply usable records. **CHECK** means records were read but some fields or device records need review. The finish line counts read and not-read sections separately. When an extended catalog was requested, the same line also says **extended READ** or **extended NOT READ**. A failed extended read keeps the finish line amber even if all 18 normal queries succeeded.
 
 | Code | Reason | Suggested action |
 | --- | --- | --- |
@@ -192,7 +192,7 @@ The BAT saves to your shared save folder if configured, or to the normal `HWID-R
 
 ### Share snapshot folders on this PC
 
-Use **Snapshots → Folder settings…** in Desktop 1.2.0 or **[8]** in BAT 3.84.
+Use **Snapshots → Folder settings…** in Desktop 1.3.0 or **[8]** in BAT 3.85.
 
 | BAT storage option | Purpose |
 | --- | --- |

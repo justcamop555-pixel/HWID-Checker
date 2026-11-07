@@ -17,7 +17,7 @@ The package targets **Windows x64** and includes its .NET desktop runtime. The s
 
 | Task | Behavior |
 | --- | --- |
-| Scan or rescan | Refresh the same 17 hardware/system sections and all-known device catalog used by the BAT. Progress and per-section results remain visible while the scan runs. |
+| Scan or rescan | Refresh the same 18 hardware/system sections and all-known device catalog used by the BAT. Progress and per-section results remain visible while the scan runs. |
 | Inspect hardware | Browse the collected system, firmware, CPU, memory, storage, graphics, network and device records. |
 | Inspect identifiers | Read the captured identifier values and their supplied/missing/default status. |
 | Review findings | Inspect unread sections, missing/default values and conflicts reported by the scanning engine. |

@@ -67,7 +67,7 @@ foreach($page in $pages){
     if($LayoutStress -and ($result.layoutStress -isnot [bool] -or -not $result.layoutStress)){
         throw ('Desktop verification did not apply the layout stress state for '+$page+'.')
     }
-    if($Mode -eq 'LiveScan' -and ($result.sectionsRead -ne 17 -or $result.knownDeviceRecords -lt 1 -or $result.responsiveTicks -lt 1)){throw 'Live desktop scan did not retain full section coverage and UI responsiveness.'}
+    if($Mode -eq 'LiveScan' -and ($result.sectionsRead -ne 18 -or $result.knownDeviceRecords -lt 1 -or $result.responsiveTicks -lt 1)){throw 'Live desktop scan did not retain full section coverage and UI responsiveness.'}
     if($Mode -eq 'Workflow'){
         $workflow=Get-Content -LiteralPath (Join-Path $OutputDirectory 'workflow-result.json') -Raw | ConvertFrom-Json
         $expectedChecks=if($TestSharedLibrary){24}else{22}

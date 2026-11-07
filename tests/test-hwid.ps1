@@ -97,14 +97,14 @@ Assert ($warnings.Count -eq 1) 'Failed query is isolated to its section'
 Assert ($report.Contains('PnP hardware IDs') -and (Test-SectionReadable $report['PnP hardware IDs'])) 'All present PnP IDs are scanned automatically at startup'
 Assert ($report.Contains('Disk partitions') -and $report['Disk partitions'][0].PartitionGuid -eq 'PARTITION-TEST') 'Partition GUIDs are included in the startup inventory'
 Assert ($report.Contains('Monitors')) 'Monitor identification is included in the startup inventory'
-Assert ($report['Scan timing'].Count -eq 17 -and @($report['Scan timing'] | Where-Object {$_.Seconds -lt 0}).Count -eq 0) 'Startup retains per-section timing for all seventeen queries'
+Assert ($report['Scan timing'].Count -eq 18 -and @($report['Scan timing'] | Where-Object {$_.Seconds -lt 0}).Count -eq 0) 'Startup retains per-section timing for all eighteen queries'
 Assert ($report['Report info'].ScanSeconds -ge 0 -and $report['Report info'].ScanCompleted) 'Report metadata records scan completion and total elapsed time'
 
 
-Assert (@($script:rendered | Where-Object Text -match '\[17/17\]').Count -eq 1) 'Progress displays all seventeen scan sections'
+Assert (@($script:rendered | Where-Object Text -match '\[18/18\]').Count -eq 1) 'Progress displays all eighteen scan sections'
 Assert (@($script:rendered | Where-Object Text -match 'SCAN OVERVIEW').Count -ge 2) 'Overview displays after scan and from the menu'
 Assert (@($script:rendered | Where-Object Text -match 'HELP & COLOR KEY').Count -eq 1) 'Help and color key are accessible'
-Assert (@($sectionGroups.Values | ForEach-Object { $_ }).Count -eq 16) 'Category organization covers sixteen categorized hardware sections'
+Assert (@($sectionGroups.Values | ForEach-Object { $_ }).Count -eq 17) 'Category organization covers seventeen categorized hardware sections'
 Assert ($null -eq (GiB $null)) 'Unreadable capacity stays missing instead of becoming zero'
 Assert ((GiB 0) -eq 0) 'A real zero capacity stays zero'
 Assert ((Get-FieldQuality 'Guid' '00000000-0000-0000-0000-000000000000' ([pscustomobject]@{PartitionStyle='MBR'})) -eq 'Not applicable') 'MBR disk does not need a GPT disk ID'
@@ -454,7 +454,7 @@ $coverageFixture=[ordered]@{}
 foreach($sectionName in @($sectionGroups.Values | ForEach-Object {$_})) {$coverageFixture[$sectionName]=@([pscustomobject]@{Name='Fixture'})}
 $coverageFixture['PnP hardware IDs']=@($usbKeyboard,$unknownDevice)
 $coverageRows=@(Get-ScanCoverage $coverageFixture)
-Assert ($coverageRows.Count -eq 6 -and ($coverageRows | Measure-Object Total -Sum).Sum -eq 17) 'Coverage table accounts for all seventeen queries including PnP'
+Assert ($coverageRows.Count -eq 7 -and ($coverageRows | Measure-Object Total -Sum).Sum -eq 18) 'Coverage table accounts for all eighteen queries including PnP'
 Assert (@($coverageRows | Where-Object Status -ne 'OK').Count -eq 0) 'Fully readable coverage reports OK for every area'
 $coverageFixture.Remove('CPU');$coverageFixture['PnP hardware IDs']=@{Unavailable='Blocked'}
 $coverageRows=@(Get-ScanCoverage $coverageFixture)
@@ -473,7 +473,7 @@ foreach($sectionName in @($sectionGroups.Values | ForEach-Object {$_})) {$overvi
 $overviewFixture['PnP hardware IDs']=@($null,$usbKeyboard,$unknownDevice)
 $overviewIds=@([pscustomobject]@{Quality='Reported'},[pscustomobject]@{Quality='Missing'},[pscustomobject]@{Quality='Placeholder'})
 $overviewSummary=Get-OverviewSummary $overviewFixture $overviewIds @('Query warning',$null)
-Assert ($overviewSummary.Complete -and $overviewSummary.Read -eq 17 -and $overviewSummary.Total -eq 17) 'Overview completion measures query coverage independently of identifier quality'
+Assert ($overviewSummary.Complete -and $overviewSummary.Read -eq 18 -and $overviewSummary.Total -eq 18) 'Overview completion measures query coverage independently of identifier quality'
 Assert ($overviewSummary.Found -eq 1 -and $overviewSummary.Missing -eq 1 -and $overviewSummary.Default -eq 1 -and $overviewSummary.QueryWarnings -eq 1) 'Overview separates identifier fields from nonnull query warnings'
 Assert ($overviewSummary.Nodes -eq 2 -and $overviewSummary.Classes -eq 1 -and $overviewSummary.Models -eq 1) 'Overview excludes null device rows from coverage counts'
 Assert ($overviewSummary.ExtendedState -eq 'NOT SCANNED' -and $null -eq $overviewSummary.Known) 'An unrequested extended scan is distinct from a zero-device scan'
@@ -490,11 +490,11 @@ Assert ($overviewSummary.VisibilityUnread -eq 1 -and $overviewSummary.Remembered
 Assert ($overviewSummary.ExtendedCaptured -eq 'EXTENDED-TIME' -and $overviewFixture['Report info'].Generated -eq 'NORMAL-TIME') 'Normal and extended captures keep their own timestamps'
 $overviewFixture['Extended scan info']['Error']='Provider unavailable'
 $overviewSummary=Get-OverviewSummary $overviewFixture $overviewIds @()
-Assert (-not $overviewSummary.Complete -and $overviewSummary.Read -eq 17 -and $overviewSummary.ExtendedState -eq 'NOT READ' -and $null -eq $overviewSummary.Known) 'A failed extended attempt prevents a false complete result and hides stale counts'
+Assert (-not $overviewSummary.Complete -and $overviewSummary.Read -eq 18 -and $overviewSummary.ExtendedState -eq 'NOT READ' -and $null -eq $overviewSummary.Known) 'A failed extended attempt prevents a false complete result and hides stale counts'
 $overviewFixture['PnP hardware IDs']=@{Unavailable='Access denied'}
 $overviewSummary=Get-OverviewSummary $overviewFixture $overviewIds @()
 Assert (-not $overviewSummary.DeviceReadable -and $null -eq $overviewSummary.Nodes -and $null -eq $overviewSummary.Classes -and $null -eq $overviewSummary.Models) 'Unread present-device counts stay unknown rather than becoming zero'
-Assert ($overviewSummary.Read -eq 16 -and -not $overviewSummary.Complete) 'Unread PnP coverage contributes to a partial scan result'
+Assert ($overviewSummary.Read -eq 17 -and -not $overviewSummary.Complete) 'Unread PnP coverage contributes to a partial scan result'
 Assert ((Normalize-IdentifierText (" `0Ab C`0 ")) -ceq 'Ab C') 'Identifier evaluation removes edge null padding and preserves internal spaces/case'
 Assert ((Get-Quality ("`0`0 ")) -eq 'Missing') 'Null-only provider values do not count as identifiers'
 Assert ((Get-Quality 'Not Provided') -eq 'Missing') 'Explicit unavailable firmware text is not counted as a found identifier'
@@ -776,7 +776,7 @@ $script:rendered.Clear()
 $report['Scan timing']=@([pscustomobject]@{Section='CPU';Seconds=0.12;Status='READ';Results=1;Summary='IDs: 1 found'})
 Show-FullReport
 $fullDisplay=$script:rendered.Text -join ' '
-Assert ($fullDisplay -match 'FULL INVENTORY REPORT' -and $fullDisplay -match 'Press 1-8 to jump') 'Full report includes a contents list and section controls'
+Assert ($fullDisplay -match 'FULL INVENTORY REPORT' -and $fullDisplay -match 'Press 1-9 to jump') 'Full report includes a contents list and section controls'
 Assert ($fullDisplay -match 'STARTUP SCAN TIMING' -and $fullDisplay -match 'Query time \(seconds\)') 'Full report includes startup timing data with units'
 Assert ($fullDisplay -match 'ALL PRESENT DEVICE IDs' -and $fullDisplay -match 'ITEMS TO REVIEW') 'Full report retains deep device data and review details'
 Reset-UiPage
@@ -813,13 +813,13 @@ try {
     $beforeScan=$report
     $first=Invoke-HardwareScan 1
     Assert ([object]::ReferenceEquals($beforeScan,$report)) 'Building a scan snapshot never mutates the active inventory'
-    Assert ($first.Completed -and $first.Warnings.Count -eq 1 -and $first.Inventory['Scan timing'].Count -eq 17) 'A query failure completes a partial snapshot with exactly seventeen timing records'
+    Assert ($first.Completed -and $first.Warnings.Count -eq 1 -and $first.Inventory['Scan timing'].Count -eq 18) 'A query failure completes a partial snapshot with exactly eighteen timing records'
     $report=$first.Inventory;$warnings=$first.Warnings;$identifiers=$first.Identifiers
     $script:rescanFixture=2;$script:rendered.Clear()
     Start-HardwareRescan
     Assert ($report['Report info'].ScanNumber -eq 2 -and $report['CPU'][0].ProcessorId -eq 'ID0002') 'Rescan publishes fresh metadata and hardware values'
     Assert ($warnings.Count -eq 0 -and $report['Warnings'].Count -eq 0 -and -not $report['Storage identifiers'][0].Unavailable) 'Recovered queries clear earlier warnings and unavailable records'
-    Assert ($scanStep -eq 17 -and $report['Scan timing'].Count -eq 17) 'Repeated scans reset step counters and timing instead of accumulating them'
+    Assert ($scanStep -eq 18 -and $report['Scan timing'].Count -eq 18) 'Repeated scans reset step counters and timing instead of accumulating them'
     Assert ($lastScanPrevious['CPU'][0].ProcessorId -eq 'ID0001') 'The previous snapshot remains intact for change review'
     $rescanDisplay=$script:rendered.Text -join ' '
     Assert ($rescanDisplay -match 'OLD ID.*ID0001' -and $rescanDisplay -match 'NEW ID.*ID0002' -and $rescanDisplay -match 'position 6') 'Rescan results show exact old and new IDs and changed character positions'
@@ -935,12 +935,12 @@ try {
         [pscustomobject]@{DeviceID='MOCK';UUID='MOCK';SerialNumber='MOCK';TotalPhysicalMemory=8GB;DiskNumber=0;PartitionNumber=1;Name='MOCK';Caption='MOCK';InstanceName='MONITOR-MOCK'}
     }
     $workerSnapshot=Invoke-HardwareScan 4 -UseWorker $true
-    Assert ($workerSnapshot.Completed -and $workerSnapshot.Inventory['Report info'].QueryMode -eq 'Live progress' -and $workerSnapshot.Inventory['Scan timing'].Count -eq 17) 'The worker path completes the full seventeen-section inventory with collection helpers loaded'
+    Assert ($workerSnapshot.Completed -and $workerSnapshot.Inventory['Report info'].QueryMode -eq 'Live progress' -and $workerSnapshot.Inventory['Scan timing'].Count -eq 18) 'The worker path completes the full eighteen-section inventory with collection helpers loaded'
     Assert ($workerSnapshot.Inventory['CPU'][0].DeviceID -eq 'MOCK' -and $workerSnapshot.Inventory['System identity'][0].UUID -eq 'MOCK' -and $workerSnapshot.Warnings.Count -eq 1) 'Worker scans use the supplied synthetic providers and isolate the expected storage failure'
     Assert ($null -eq $script:scanQueryWorker -and $null -eq $script:scanProgressClock) 'Completed scans dispose the query worker and clear timer state'
     function New-ScanQueryWorker {throw 'Simulated worker startup failure'}
     $directSnapshot=Invoke-HardwareScan 5 -UseWorker $true
-    Assert ($directSnapshot.Completed -and $directSnapshot.Inventory['Report info'].QueryMode -eq 'Direct queries' -and $directSnapshot.Inventory['Scan timing'].Count -eq 17) 'Worker startup failure safely falls back to direct queries'
+    Assert ($directSnapshot.Completed -and $directSnapshot.Inventory['Report info'].QueryMode -eq 'Direct queries' -and $directSnapshot.Inventory['Scan timing'].Count -eq 18) 'Worker startup failure safely falls back to direct queries'
 } finally {
     if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose();$script:scanQueryWorker=$null}
     $report=$workerPreserved.Report;$warnings=$workerPreserved.Warnings;$script:scanStep=$workerPreserved.Step;$script:scanTimings=$workerPreserved.Timings
@@ -1085,7 +1085,7 @@ try {
     $script:rendered.Clear()
     $fullWithExtended=Invoke-HardwareScan 7 -IncludeExtended $true
     Assert ($fullWithExtended.Inventory['Extended device inventory'][0].DeviceInstanceId -eq 'USB\FRESH' -and $fullWithExtended.Inventory['Report info'].ExtendedStatus -eq 'Refreshed') 'Full rescans refresh the optional extended catalog instead of silently dropping it'
-    Assert ($fullWithExtended.Inventory['Scan timing'].Count -eq 17 -and $scanStep -eq 17) 'Refreshing an extended catalog does not corrupt normal seventeen-query timing and progress'
+    Assert ($fullWithExtended.Inventory['Scan timing'].Count -eq 18 -and $scanStep -eq 18) 'Refreshing an extended catalog does not corrupt normal eighteen-query timing and progress'
     Assert (@($script:rendered | Where-Object {$_.Text -match '^\s+Finished:.*extended READ'}).Count -eq 1) 'The scan finish line explicitly confirms a requested extended read'
     function Get-ExtendedDeviceInventory {throw 'Simulated extended refresh failure'}
     $completionCim=(Get-Item Function:Get-CimInstance).ScriptBlock
@@ -1095,7 +1095,7 @@ try {
     Assert ($fullPartial.Completed -and -not $fullPartial.Inventory.Contains('Extended device inventory') -and $fullPartial.Inventory['Report info'].ExtendedStatus -eq 'Unavailable') 'A failed extended refresh keeps new normal data and cannot attach stale extended records'
     Assert ($fullPartial.Inventory['Extended scan info'].Error -and @($fullPartial.Warnings | Where-Object {$_ -match '^Extended device inventory:'}).Count -eq 1) 'Failed extended refresh diagnostics are captured once with the new snapshot'
     Assert (@($script:rendered | Where-Object {$_.Text -match '^\s+Finished:.*extended NOT READ' -and $_.Color -eq $palette.Warn}).Count -eq 1) 'A failed optional scan ends with an amber extended NOT READ completion line'
-    Assert (@($fullPartial.Inventory['Scan timing'] | Where-Object Status -ne 'UNAVAILABLE').Count -eq 17 -and $fullPartial.Warnings.Count -eq 1) 'Extended failure stays visible even when every normal section was read successfully'
+    Assert (@($fullPartial.Inventory['Scan timing'] | Where-Object Status -ne 'UNAVAILABLE').Count -eq 18 -and $fullPartial.Warnings.Count -eq 1) 'Extended failure stays visible even when every normal section was read successfully'
     $report=$fullPartial.Inventory;$warnings=$fullPartial.Warnings
     $script:rendered.Clear()
     Show-ControlDeck
@@ -1394,12 +1394,12 @@ Assert ($script:answers.Count -eq 0 -and $script:pageWaits -eq 2 -and $report['R
 $script:pageWaits=0
 @('9','1','9','3','0') | ForEach-Object {$script:answers.Enqueue($_)}
 & ([scriptblock]::Create($cancelTestCode))
-Assert ($script:answers.Count -eq 0 -and $report['Report info'].ScanNumber -eq 2 -and $report['Scan timing'].Count -eq 17) 'Launching through a child script scope publishes rescan state to the actual menu'
+Assert ($script:answers.Count -eq 0 -and $report['Report info'].ScanNumber -eq 2 -and $report['Scan timing'].Count -eq 18) 'Launching through a child script scope publishes rescan state to the actual menu'
 Assert ($lastScanPrevious['Report info'].ScanNumber -eq 1 -and $warnings.Count -eq $report['Warnings'].Count) 'Nested launcher scopes keep the previous baseline and current warnings in sync'
 $saveFolder=Join-Path (Split-Path -Parent $env:HWID_SCRIPT) 'HWID-Reports'
 $beforeRescanSave=@(Get-ChildItem -LiteralPath $saveFolder -Filter '*.json' | ForEach-Object FullName)
 Save-Reports
 $rescanSaved=@(Get-ChildItem -LiteralPath $saveFolder -Filter '*.json' | Where-Object {$_.FullName -notin $beforeRescanSave})
 Assert ($rescanSaved.Count -eq 1 -and (Read-SavedReport $rescanSaved[0].FullName).'Report info'.ScanNumber -eq 2) 'Saving after a rescan exports the newly active snapshot'
-Assert (@((Read-SavedReport $rescanSaved[0].FullName).'Scan timing').Count -eq 17) 'Saved rescans retain only the latest seventeen query timings'
+Assert (@((Read-SavedReport $rescanSaved[0].FullName).'Scan timing').Count -eq 18) 'Saved rescans retain only the latest eighteen query timings'
 [Console]::WriteLine("All $script:checks checks passed under PowerShell $($PSVersionTable.PSVersion). Synthetic reports: $testFolder")

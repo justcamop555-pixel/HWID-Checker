@@ -7,7 +7,7 @@ foreach($definition in $ast.FindAll({param($n) $n -is [Management.Automation.Lan
 $groups=$ast.FindAll({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$sectionGroups'},$false) | Select-Object -First 1
 . ([scriptblock]::Create($groups.Extent.Text))
 $identifierPattern='^(SerialNumber|IdentifyingNumber|UUID|ProcessorId|MachineGuid|VolumeSerialNumber|UniqueId|Guid|MacAddress|PermanentAddress|InterfaceGuid|PNPDeviceID|SMBIOSAssetTag)$'
-$ownedConsole=$false;$redirected=$true;$scanTotal=17;$display=[pscustomobject]@{Mode='Synthetic metadata test'}
+$ownedConsole=$false;$redirected=$true;$scanTotal=18;$display=[pscustomobject]@{Mode='Synthetic metadata test'}
 $palette=@{Heading='Cyan';Text='White';Muted='Gray';Border='DarkGray';Good='Green';Warn='Yellow';Error='Red'}
 $script:checks=0;$script:rendered=New-Object 'System.Collections.Generic.List[string]'
 function Assert($Condition,$Description){if(-not $Condition){throw ('FAILED: '+$Description)};$script:checks++;[Console]::WriteLine('PASS: '+$Description)}
@@ -66,7 +66,7 @@ foreach($mode in @('Direct','Worker')) {
         Assert ($script:scanTimings[-1].Status -eq 'CHECK' -and $warnings.Count -eq 0) ($mode+' missing decoded serials are review findings rather than failed whole queries')
     }finally{if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose();$script:scanQueryWorker=$null}}
     $snapshot=Invoke-HardwareScan 1 -UseWorker ($mode -eq 'Worker')
-    Assert ($snapshot.Completed -and $snapshot.Inventory.'Scan timing'.Count -eq 17 -and $snapshot.Warnings.Count -eq 0) ($mode+' the full scan captures all sections despite unread optional metadata')
+    Assert ($snapshot.Completed -and $snapshot.Inventory.'Scan timing'.Count -eq 18 -and $snapshot.Warnings.Count -eq 0) ($mode+' the full scan captures all sections despite unread optional metadata')
     Assert ($null -eq $snapshot.Inventory.'System hardware'[0].TotalRAM_GiB -and $snapshot.Inventory.'System hardware'[0].TotalPhysicalMemory -ceq 'bad memory' -and $snapshot.Inventory.'Memory modules'[0].Capacity -eq $false -and $null -eq $snapshot.Inventory.'Memory modules'[0].Capacity_GiB) ($mode+' unread memory sizes are preserved raw instead of becoming zero')
     Assert ($snapshot.Inventory.'Physical disks'[0].Size -eq -1024 -and $null -eq $snapshot.Inventory.'Physical disks'[0].Size_GiB -and $snapshot.Inventory.Volumes[0].Free_GiB -eq 0) ($mode+' negative disk sizes stay unknown while real zero free space stays zero')
     $path=Join-Path $root ($mode+'.json');[IO.File]::WriteAllText($path,($snapshot.Inventory | ConvertTo-Json -Depth 12),(New-Object Text.UTF8Encoding($false)))
