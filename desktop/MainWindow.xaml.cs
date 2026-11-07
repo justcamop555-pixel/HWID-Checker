@@ -355,7 +355,17 @@ public partial class MainWindow : Window
         foreach (var button in new[] { OverviewNav, IdentifiersNav, HardwareNav, ReviewNav, SnapshotsNav, CompareNav })
         {
             var active = (string)button.Tag == page;
-            if (active) button.SetResourceReference(BackgroundProperty, "NavActiveBrush"); else button.Background = Brushes.Transparent;
+            if (active)
+            {
+                button.SetResourceReference(BackgroundProperty, "NavActiveBrush");
+                button.SetResourceReference(BorderBrushProperty, "AccentBrush");
+                button.BorderThickness = new Thickness(3, 0, 0, 0);
+            }
+            else
+            {
+                button.Background = Brushes.Transparent;
+                button.BorderThickness = new Thickness(0);
+            }
             button.SetResourceReference(ForegroundProperty, active ? "AccentBrush" : "MutedBrush");
             System.Windows.Automation.AutomationProperties.SetItemStatus(button, active ? "Current page" : "");
         }
