@@ -107,6 +107,16 @@ try{
     Assert ($null -eq (Select-UpdateRelease @((New-FixtureRelease '1.3.0')) ([version]'1.3.0'))) 'An identical release is not an update'
     $candidate=Select-UpdateRelease @((New-FixtureRelease '1.9.0'),(New-FixtureRelease '1.10.0')) ([version]'1.3.0')
     Assert ($candidate.Version -ceq '1.10.0') 'The newest numeric compatible release wins'
+    # Windows PowerShell 5.1 nests a top-level JSON array from ConvertFrom-Json,
+    # which previously made every release unreadable. Selection must recover.
+    $nested=@(@((New-FixtureRelease '1.9.0'),(New-FixtureRelease '1.10.0')))
+    $recovered=Select-UpdateRelease $nested ([version]'1.3.0')
+    Assert ($recovered.Version -ceq '1.10.0') 'A nested release array still selects the newest compatible release'
+    $parseJson='['+((New-FixtureRelease '1.9.0') | ConvertTo-Json -Depth 8 -Compress)+','+((New-FixtureRelease '1.10.0') | ConvertTo-Json -Depth 8 -Compress)+']'
+    $parsed=@(ConvertFrom-Json -InputObject $parseJson)
+    if($parsed.Count -eq 1 -and $parsed[0] -is [System.Collections.IEnumerable] -and $parsed[0] -isnot [string]){$parsed=@($parsed[0])}
+    $fromJson=Select-UpdateRelease @($parsed) ([version]'1.3.0')
+    Assert ($fromJson.Version -ceq '1.10.0') 'ConvertFrom-Json release lists select correctly on this runtime'
     foreach($kind in @('draft','prerelease','tag','digest','url','platform','duplicate','size','state')){
         $bad=New-FixtureRelease '9.0.0'
         switch($kind){

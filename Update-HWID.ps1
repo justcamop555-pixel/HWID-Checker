@@ -167,8 +167,9 @@ function Receive-UpdateBytes([string]$Url,[long]$Maximum,[string]$Destination=''
 function Select-UpdateRelease($Releases,[version]$Current) {
     $choices=New-Object 'System.Collections.Generic.List[object]'
     foreach($release in $Releases){
-        if($release.draft -ne $false -or $release.prerelease -ne $false -or [string]$release.tag_name -cnotmatch '\Adesktop-v(.+)\z'){continue}
-        try{$version=ConvertTo-UpdateVersion $Matches[1]}catch{continue}
+        $tagMatch=[regex]::Match([string]$release.tag_name,'\Adesktop-v(.+)\z')
+        if($release.draft -ne $false -or $release.prerelease -ne $false -or -not $tagMatch.Success){continue}
+        try{$version=ConvertTo-UpdateVersion $tagMatch.Groups[1].Value}catch{continue}
         if($version -le $Current){continue}
         $name='HWID-Checker-Desktop-'+$version.ToString(3)+'-win-x64.zip'
         $assets=@($release.assets | Where-Object { $_.name -ceq $name })
@@ -194,6 +195,12 @@ function Find-UpdateRelease([version]$Current) {
         $json=$script:updateUtf8.GetString($bytes)
         if($json -notmatch '^\s*\['){throw [IO.InvalidDataException]::new('GitHub did not return a release list.')}
         $releases=@(ConvertFrom-Json -InputObject $json)
+        # Windows PowerShell 5.1 emits a top-level JSON array as one nested array
+        # object, which made foreach treat every release as a single concatenated
+        # record and reject the version. Unwrap exactly one level when present.
+        if($releases.Count -eq 1 -and $releases[0] -is [System.Collections.IEnumerable] -and $releases[0] -isnot [string]){
+            $releases=@($releases[0])
+        }
         foreach($release in $releases){$all.Add($release)}
         if($releases.Count -lt 100){return Select-UpdateRelease $all.ToArray() $Current}
     }
