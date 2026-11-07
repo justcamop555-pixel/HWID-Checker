@@ -65,6 +65,7 @@ public partial class MainWindow : Window
     private string? _rememberedBat;
     private bool _darkTheme = true;
     private bool _restarting;
+    private string _pendingPage = "";
     private IReadOnlyList<ChangeRow>? _lastComparisonRows;
     private string _lastComparisonSummary = "", _lastComparisonNotes = "", _lastComparisonBaseline = "", _lastComparisonCurrent = "";
     private bool IsVerification => _args.Any(argument => argument.Split('=', 2)[0].ToLowerInvariant() is
@@ -108,12 +109,14 @@ public partial class MainWindow : Window
         _timer.Start();
         InputBindings.Add(new KeyBinding(new UiCommand(async () => await RunScanAsync(), () => !_busy && _engine != null), Key.R, ModifierKeys.Control));
         InputBindings.Add(new KeyBinding(new UiCommand(async () => await SaveSnapshotAsync(), () => !_busy && _snapshot != null), Key.S, ModifierKeys.Control));
+        InputBindings.Add(new KeyBinding(new UiCommand(FocusSearch, () => true), Key.F, ModifierKeys.Control));
         Loaded += OnLoaded;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         Navigate("Overview");
+        if (!IsVerification && _pendingPage.Length > 0) Navigate(_pendingPage);
         ConnectEngine(FindEngine());
         if (Argument("--render") == null || Argument("--workflow-test") != null)
             await RefreshSnapshotsAsync();
@@ -259,6 +262,8 @@ public partial class MainWindow : Window
             var preferences = document.RootElement;
             _rememberedBat = preferences.Text("batPath");
             if (preferences.Get("darkTheme").ValueKind is JsonValueKind.True or JsonValueKind.False) _darkTheme = preferences.Get("darkTheme").ValueKind == JsonValueKind.True;
+            var savedPage = preferences.Text("lastPage");
+            if (savedPage.Length > 0) _pendingPage = savedPage;
             var lastFolder = preferences.Text("lastSaveFolder");
             if (Path.IsPathFullyQualified(lastFolder)) _lastSaveFolder = Path.GetFullPath(lastFolder);
             foreach (var folder in preferences.Get("snapshotFolders").Rows().Select(x => x.Text()))
@@ -274,7 +279,7 @@ public partial class MainWindow : Window
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var preferences = JsonSerializer.Serialize(new { batPath = _engine?.BatPath, lastSaveFolder = _lastSaveFolder, snapshotFolders = _additionalFolders.ToArray(), darkTheme = _darkTheme });
+            var preferences = JsonSerializer.Serialize(new { batPath = _engine?.BatPath, lastSaveFolder = _lastSaveFolder, snapshotFolders = _additionalFolders.ToArray(), darkTheme = _darkTheme, lastPage = _page });
             await File.WriteAllTextAsync(temporary, preferences);
             File.Move(temporary, path, true);
             return true;
@@ -400,6 +405,20 @@ public partial class MainWindow : Window
         }
         completed();
     }
+    private Task FocusSearch()
+    {
+        TextBox? target = _page switch
+        {
+            "Identifiers" => IdSearch,
+            "Review" => ReviewSearch,
+            "Hardware" => HardwareSearch,
+            _ => null
+        };
+        if (target == null) { ShowStatus("Search", "This page has no search box. Search is available on IDs, Review and Hardware."); }
+        else { target.Focus(); target.SelectAll(); }
+        return Task.CompletedTask;
+    }
+
     private void ShowStatus(string title, string detail, bool warning = false)
     {
         if (_closing) return;
@@ -469,7 +488,7 @@ public partial class MainWindow : Window
                     finished ? value.Records.ToString() : "—", value.Message,
                     value.Seconds is { } seconds ? seconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " s" : "");
                 var existing = ScanRows.Select((x, i) => (x, i)).FirstOrDefault(x => x.x.Name == name);
-                if (existing.x != null) ScanRows[existing.i] = row; else ScanRows.Add(row);
+                if (existing.x != null) { ScanRows[existing.i] = row; ScanGrid.ScrollIntoView(ScanRows[existing.i]); } else ScanRows.Add(row);
                 StatusTitle.Text = "Scanning this PC";
                 SetSummary(StatusDetail, name + " · " + value.Message);
             });
@@ -576,7 +595,16 @@ public partial class MainWindow : Window
     }
     private void OnIdSelected(object sender, SelectionChangedEventArgs e) { IdDetail.Text = IdentifiersGrid.SelectedItem is IdentifierRow row ? row.Device + "\n" + row.Field + ": " + (row.Value.Length > 0 ? row.Value : "(not supplied)") : ""; }
     private void OnCopyId(object sender, RoutedEventArgs e) { if (IdentifiersGrid.SelectedItem is IdentifierRow row) Copy(row.Value); }
-    private void Copy(string text) { if (text.Length == 0) { ShowStatus("No value to copy", "Windows did not supply this identifier.", true); return; } try { Clipboard.SetText(text); } catch (Exception ex) { ShowError("Could not copy this value", ex); } }
+    private void Copy(string text)
+    {
+        if (text.Length == 0) { ShowStatus("No value to copy", "Windows did not supply this identifier.", true); return; }
+        try
+        {
+            Clipboard.SetText(text);
+            ShowStatus("Copied to clipboard", text.Length > 90 ? text[..90] + "\u2026" : text);
+        }
+        catch (Exception ex) { ShowError("Could not copy this value", ex); }
+    }
     private void OnHardwareSectionSelected(object sender, SelectionChangedEventArgs e)
     {
         if (_snapshot == null || HardwareSections.SelectedItem is not HardwareSection section)

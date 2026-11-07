@@ -1521,7 +1521,14 @@ function Show-Categories {
     Write-Heading 'BROWSE HARDWARE'
     $names = @($sectionGroups.Keys)
     $pickMaximum = $names.Count + 1
-    for ($index = 0; $index -lt $names.Count; $index++) { Show-MenuItem ($index + 1) $names[$index] '' }
+    for ($index = 0; $index -lt $names.Count; $index++) {
+        $records = 0
+        foreach ($section in $sectionGroups[$names[$index]]) {
+            if ($report.Contains($section)) { $records += @($report[$section] | Where-Object {$null -ne $_}).Count }
+        }
+        $hint = '{0} record(s) captured' -f $records
+        Show-MenuItem ($index + 1) $names[$index] $hint
+    }
     Show-MenuItem ([string]$pickMaximum) 'All device IDs (PnP / drivers)' ''
     Show-MenuItem '0' 'Back to main menu' ''
     Write-Host '  [0] Back. Empty Enter is ignored.' -ForegroundColor $palette.Muted
