@@ -145,9 +145,21 @@ $checksumsPath=Join-Path $packageRoot 'SHA256SUMS.txt'
 [IO.File]::WriteAllText($checksumsPath,($checksumLines -join "`n")+"`n",[Text.UTF8Encoding]::new($false))
 $archivePath=$null
 if(-not $NoZip){
+    Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archivePath=Join-Path $buildRoot ('HWID-Checker-Desktop-'+$versionToken+'-win-x64.zip')
-    [IO.Compression.ZipFile]::CreateFromDirectory($packageRoot,$archivePath,[IO.Compression.CompressionLevel]::Optimal,$true)
+    # Windows PowerShell 5.1 uses the .NET Framework ZipFile, which writes
+    # subdirectory entry names with backslashes that the update verifier
+    # rejects. Create every entry explicitly with forward slashes instead.
+    $separator=[string][char]92
+    $archiveStream=[IO.Compression.ZipFile]::Open($archivePath,[IO.Compression.ZipArchiveMode]::Create)
+    try{
+        $baseName=Split-Path -Leaf $packageRoot
+        foreach($item in (Get-ChildItem -LiteralPath $packageRoot -File -Recurse)){
+            $relative=$baseName+'/'+$item.FullName.Substring($packageRoot.Length).TrimStart([char[]]@([char]92,[char]47)).Replace($separator,'/')
+            [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archiveStream,$item.FullName,$relative,[IO.Compression.CompressionLevel]::Optimal)
+        }
+    }finally{$archiveStream.Dispose()}
     $archiveLine=(Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()+'  '+[IO.Path]::GetFileName($archivePath)
     [IO.File]::WriteAllText((Join-Path $buildRoot 'SHA256SUMS.txt'),$archiveLine+"`n",[Text.UTF8Encoding]::new($false))
 }

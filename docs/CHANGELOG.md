@@ -10,6 +10,7 @@
 - The desktop app added searching on the Review and Hardware pages, exports of the current snapshot as CSV and standalone HTML, a text export of comparison results, and comparing two saved snapshots directly without an active scan.
 - The desktop app gained a Midnight/Daylight theme toggle (persisted with the other desktop settings).
 - Fixed the automatic update selector: Windows PowerShell 5.1 returns a top-level JSON release array from ConvertFrom-Json as one nested array object, which made every release unreadable whenever more than one release was published. The selector now unwraps the nested array and matches tags without relying on automatic regex state.
+- Fixed the release package itself: Windows PowerShell 5.1's .NET Framework ZipFile wrote archive entry names with backslashes, which the update verifier rejects. The build script now creates every entry explicitly with forward slashes under the expected package root.
 - Test suite: section/group/progress counts moved to 18 sections and eight scan groups; `test-readable-startup` again matches the actual exit menu item (its injection anchor still targeted the pre-3.85 exit case and hung the child checker); scan-scroll, scan-completion and console-update fixtures track the 1.4.0 package version.
 
 ## Desktop 1.3.0 and BAT 3.85
