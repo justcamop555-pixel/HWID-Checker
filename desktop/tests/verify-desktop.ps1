@@ -5,11 +5,13 @@ param(
     [ValidateSet('Render','Workflow','LiveScan')][string]$Mode='Render',
     [string]$OutputDirectory=(Join-Path $PSScriptRoot ('test-output-ui-'+[guid]::NewGuid().ToString('N'))),
     [ValidatePattern('^[1-9][0-9]{2,3}[xX][1-9][0-9]{2,3}$')][string]$Size,
-    [switch]$LayoutStress
+    [switch]$LayoutStress,
+    [switch]$TestSharedLibrary
 )
 $ErrorActionPreference='Stop'
 if($Size -and $Mode -eq 'LiveScan'){throw 'Choose Render or Workflow mode to request a window size.'}
 if($LayoutStress -and $Mode -ne 'Render'){throw 'Choose Render mode to exercise the layout stress states.'}
+if($TestSharedLibrary -and $Mode -ne 'Workflow'){throw 'Choose Workflow mode to exercise the shared snapshot library.'}
 if($Size){
     $Size=$Size.ToLowerInvariant()
     $sizeParts=$Size.Split('x')
@@ -34,6 +36,7 @@ foreach($page in $pages){
         if($LayoutStress){$arguments+='--layout-stress'}
         $arguments+=@('--fixture',(Join-Path $PSScriptRoot 'fixtures\desktop-scan.json'),'--page',$page,'--render',(Join-Path $OutputDirectory ($page.ToLowerInvariant()+'.png')),'--verify',$resultPath)
         if($Mode -eq 'Workflow'){$arguments+=@('--workflow-test',(Join-Path $OutputDirectory 'workflow-result.json'))}
+        if($TestSharedLibrary){$arguments+=@('--shared-settings',(Join-Path $OutputDirectory ('shared-'+[guid]::NewGuid().ToString('N')+'\snapshot-library.json')))}
     }
     foreach($argument in $arguments){$start.ArgumentList.Add($argument)}
     $process=[Diagnostics.Process]::Start($start);$clock=[Diagnostics.Stopwatch]::StartNew()
@@ -67,7 +70,8 @@ foreach($page in $pages){
     if($Mode -eq 'LiveScan' -and ($result.sectionsRead -ne 17 -or $result.knownDeviceRecords -lt 1 -or $result.responsiveTicks -lt 1)){throw 'Live desktop scan did not retain full section coverage and UI responsiveness.'}
     if($Mode -eq 'Workflow'){
         $workflow=Get-Content -LiteralPath (Join-Path $OutputDirectory 'workflow-result.json') -Raw | ConvertFrom-Json
-        if(-not $workflow.success -or $workflow.checks -ne 22 -or -not $workflow.syntheticOnly){throw 'Synthetic desktop workflow failed.'}
+        $expectedChecks=if($TestSharedLibrary){24}else{22}
+        if(-not $workflow.success -or $workflow.checks -ne $expectedChecks -or -not $workflow.syntheticOnly){throw 'Synthetic desktop workflow failed.'}
         $checks=$workflow.checks
     }else{$checks++}
     [Console]::WriteLine('PASS: '+$Mode+' / '+$page)
@@ -76,4 +80,5 @@ if((Get-FileHash -LiteralPath $BatPath).Hash -ne $before){throw 'The desktop tes
 $summary=[ordered]@{Mode=$Mode;Checks=$checks;OutputDirectory=$OutputDirectory;BatUnchanged=$true;HardwareIdentifiersSaved=$false}
 if($Size){$summary.RequestedSize=$Size}
 if($LayoutStress){$summary.LayoutStress=$true}
+if($TestSharedLibrary){$summary.SharedLibrary=$true}
 [pscustomobject]$summary | ConvertTo-Json

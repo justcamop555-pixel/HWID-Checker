@@ -16,6 +16,10 @@ Tests are optional for users. Run them from the repository root in a Windows Pow
 | `test-hwid.ps1` | 603 synthetic regression checks: menu, scan continuation, fallback recovery, rescan state, overview, IDs, export/import and comparisons | No |
 | `test-snapshot-catalog.ps1` | 26 checks: older-file detection, renamed/damaged reports, capture ordering, pagination, TXT companion lookup and save fallback/rollback | No |
 | `test-snapshot-storage.ps1` | 38 checks: strict import encodings, locked-file recovery, size limits, relative paths, storage counts, severity colors and inaccessible-folder handling | No |
+| `test-snapshot-sync.ps1` | Shared folder settings, legacy discovery, invalid paths, compare refresh and BAT storage menu | No |
+| `test-updates.ps1` | Package version selection, archive and checksum validation, process waiting, installation and rollback | No |
+| `test-console-updates.ps1` | BAT background update scheduling, shared preferences and normal-exit controls | No |
+| `test-scan-display-fallback.ps1` | Resized progress fallback and standalone catalog result-line completion | No |
 | `test-id-view.ps1` | 28 checks: malformed scalar IDs, valid strings/lists/zero values, serial/MAC labels, null rows, adapter metadata and safe display | No |
 | `test-review.ps1` | 24 checks: warning deduplication/recovery, stored failures, extended failures, duplicate statuses, resource shortages/conflicts and consistent review totals | No |
 | `test-scan-metadata.ps1` | 41 checks: optional storage/partition/memory/monitor conversions, raw-value retention, direct/worker scan agreement and report round trips | No |

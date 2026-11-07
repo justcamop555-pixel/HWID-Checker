@@ -17,8 +17,8 @@ function Send-DesktopMessage($Message) {
     [Console]::Out.WriteLine($json)
     [Console]::Out.Flush()
 }
-function Send-DesktopProgress([string]$Name,[int]$Completed,[int]$Total,[string]$Status,[int]$Records,[string]$Message) {
-    Send-DesktopMessage ([ordered]@{type='progress';section=$Name;name=$Name;completed=$Completed;total=$Total;status=$Status;records=$Records;message=$Message})
+function Send-DesktopProgress([string]$Name,[int]$Completed,[int]$Total,[string]$Status,[int]$Records,[string]$Message,[double]$Seconds=-1) {
+    Send-DesktopMessage ([ordered]@{type='progress';section=$Name;name=$Name;completed=$Completed;total=$Total;status=$Status;records=$Records;message=$Message;seconds=$(if($Seconds -ge 0){$Seconds}else{$null})})
 }
 function Get-DesktopAbsolutePath($Value,[string]$Description) {
     if($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value) -or -not [IO.Path]::IsPathRooted($Value)){throw [IO.InvalidDataException]::new(($Description+' must be an absolute path.'))}
@@ -106,7 +106,7 @@ try {
     function Show-ScanReadResult {
         param($State,$Name,$Status,[int]$Count,$Summary,[double]$Seconds,$Color)
         $script:bridgeProgressStatus=$Status
-        Send-DesktopProgress $Name $script:scanStep ($scanTotal+1) $Status $Count ([string]$Summary)
+        Send-DesktopProgress $Name $script:scanStep ($scanTotal+1) $Status $Count ([string]$Summary) $Seconds
         return $null
     }
     function Complete-ScanLine {

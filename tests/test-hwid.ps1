@@ -89,7 +89,7 @@ function Get-NetAdapter { param([switch]$IncludeHidden) [pscustomobject]@{Name='
 function Get-ItemProperty { param($LiteralPath,$Name) [pscustomobject]@{MachineGuid='MOCK'} }
 function Start-Process { param($FilePath,$ArgumentList) throw 'Simulated Explorer failure' }
 $script:answers = New-Object 'System.Collections.Generic.Queue[string]'
-@(' 1 ', '2', '', '3', '1', '3', '2', '3', '3', '3', '4', '3', '5', '3', '0', '3', 'invalid', '0', '4', '5', '6', '7', $badPath, '7', '', '8', '9', '2', '0') | ForEach-Object { $script:answers.Enqueue($_) }
+@(' 1 ', '2', '', '3', '1', '3', '2', '3', '3', '3', '4', '3', '5', '3', '0', '3', 'invalid', '0', '4', '5', '6', '7', $badPath, '7', '', '8', '2', '0', '9', '2', '0') | ForEach-Object { $script:answers.Enqueue($_) }
 function Read-Host { param($Prompt) if (-not $script:answers.Count) { throw 'Unexpected prompt / possible menu loop' }; $script:answers.Dequeue() }
 . ([scriptblock]::Create($interactiveTestCode))
 Assert ($script:answers.Count -eq 0) 'Menu survives invalid report, cancel, unavailable query, and Explorer failure'

@@ -2,7 +2,7 @@
 
 A Windows desktop interface for the existing HWID Checker scanner. The application launches the PowerShell scanner embedded in the adjacent `hwid.bat`, then presents its results in a graphical dashboard.
 
-Desktop **1.1.0** uses the **3.83** scanner. The BAT also runs independently.
+Desktop **1.3.0** pairs with BAT **3.85** for a shared local snapshot library and application updates.
 
 ## Start the application
 
@@ -22,10 +22,12 @@ The package targets **Windows x64** and includes its .NET desktop runtime. The s
 | Inspect identifiers | Read the captured identifier values and their supplied/missing/default status. |
 | Review findings | Inspect unread sections, missing/default values and conflicts reported by the scanning engine. |
 | Save a snapshot | Export a verified TXT and JSON report pair using the BAT engine's existing report writer. |
+| Share folders with the BAT | Open **Snapshots → Folder settings…** to choose a shared save folder and manage the folders both apps watch. |
 | Compare snapshots | Select an older JSON snapshot and compare it with the current scan using the engine's validation and identifier-comparison rules. |
 | Open BAT console | Open the connected scanner in its console. The standard package includes `Start-HWID.ps1` for the standard BAT filename. |
+| Updates | Check newer packages, download a verified update, and install it after closing or with **Install and restart**. |
 
-In a narrow window, the scan buttons move below the page title, overview cards reflow, and **Hardware** uses a section dropdown. Scroll the overview to see all scan activity. Hover over truncated text for the full value, or select a table row to read and copy its details.
+The square layout keeps table headers aligned with their card borders. In a narrow window, the scan buttons move below the page title, PC details stack vertically, and **Hardware** uses a section dropdown. While scanning, the activity table uses the overview space. Hover over truncated text for the full value, or select a table row to read and copy its details.
 
 You can cancel a running scan. The last completed scan remains available until a replacement finishes successfully. A scan can finish with unread sections; those results remain explicitly marked and should be reviewed before interpreting a comparison.
 
@@ -39,7 +41,15 @@ The application reads the companion `hwid.bat` at runtime. It does not convert o
 
 Use **Connect BAT…** to select an existing checker when it is stored elsewhere. The EXE uses your saved connection if that file is available, then checks for an adjacent BAT. The scanning bridge loads collection/report functions from that file and runs them in a separate, hidden PowerShell process. The desktop window presents progress and results.
 
+Use **Connect BAT…** to select the `hwid.bat` supplied with this desktop package when upgrading an older scanner. This package includes BAT **3.85**. Earlier BAT versions can still compare a JSON report by path.
+
 **Open BAT console** uses `Start-HWID.ps1` when it is beside the standard `hwid.bat` and Windows PowerShell is available. For a renamed BAT or a missing loader, the app opens the connected BAT directly.
+
+## Application updates
+
+Automatic updates start enabled. Desktop checks published releases in the background and prepares a newer compatible Windows x64 package. A ready update installs after normal window closure. Open **Updates** to change this preference, check manually, or install and restart.
+
+The updater downloads release metadata and application files from this project's GitHub releases. Scans and report content stay outside update requests. Desktop updates its installation and adjacent BAT. A separately connected BAT uses that BAT's update controls. [Update behavior and recovery](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/UPDATES.md)
 
 ## Reports and local data
 
@@ -47,9 +57,11 @@ Scans and exports contain identifiers such as serial numbers, UUIDs, MAC address
 
 Saving is explicit. The desktop interface uses the engine's snapshot validation and export functions, so older supported JSON captures can be selected for comparison. Existing report pairs receive new filenames rather than being overwritten.
 
-The saved-capture library searches the BAT's report folder, its per-user fallback, adjacent installations and folders you add. Saving elsewhere keeps earlier report folders in the search. A completed save refreshes the library immediately; the saved-captures page also refreshes periodically. Custom locations are remembered across app launches. The engine validates selected JSON again before comparison.
+The saved-capture library searches the shared save folder, watched folders, the BAT's report folder, its per-user fallback and adjacent installations. Both apps use the same per-user folder preferences. On Desktop, opening **Snapshots** or using **Refresh list** reloads the folders and files. The BAT has a refresh action in its comparison picker. The engine validates the selected JSON again before comparison.
 
-Temporary bridge/request files are created under the current user's local application data directory. Compare/export operations temporarily stage the current inventory there and attempt to remove those files when the action ends, fails or is cancelled. Desktop settings remember the BAT connection path and snapshot folder paths, without storing the scanned inventory. Report locations may be synchronized by OneDrive or another folder service configured on the PC.
+Choose a shared save folder to set the starting location of the Desktop save picker and the BAT save destination. After saving to another local folder, Desktop adds it to the shared library when settings can be updated. If that update fails, the saved pair stays available and Desktop shows its location. Removing a watched folder removes it from library search. The files stay where they were saved.
+
+Temporary bridge/request files are created under the current user's local application data directory. Compare/export operations temporarily stage the current inventory there and attempt to remove those files when the action ends, fails or is cancelled. Shared settings store folder paths in `%LOCALAPPDATA%\HWID Checker\snapshot-library.json`. Desktop settings remember the BAT connection and last save location. Report locations may be synchronized by OneDrive or another folder service configured on the PC.
 
 Keyboard shortcuts: **Ctrl+R** scans/rescans; **Ctrl+S** saves the current snapshot. Select an ID or hardware field to read its full value and use the copy button. A new completed scan clears comparison results that referred to the previous current scan.
 
@@ -67,7 +79,7 @@ Install the **.NET 10 SDK** on Windows. From the repository root:
 .\desktop\build-desktop.ps1 -EngineDirectory .
 ```
 
-The script publishes a self-contained `win-x64` executable and creates a new build directory under `desktop/artifacts`. Each package includes the desktop executable, an unchanged copy of the selected BAT, the alternative launcher when available, this README and SHA-256 checksums. SDK publish files are preserved. Original license/notice files from the exact restored .NET Core and Windows Desktop runtime packages are copied under `notices/runtime-packs`; `notices/runtime-package-sources.txt` identifies their package versions and original filenames.
+The script publishes a self-contained `win-x64` executable and creates a new build directory under `desktop/artifacts`. Each package includes the desktop executable, the selected BAT, Update-HWID.ps1, the alternative launcher when available, this README and SHA-256 checksums. SDK publish files are preserved. Original license/notice files from the exact restored .NET Core and Windows Desktop runtime packages are copied under `notices/runtime-packs`; `notices/runtime-package-sources.txt` identifies their package versions and original filenames.
 
 To choose another output location:
 

@@ -1,5 +1,49 @@
 # Desktop verification
 
+## Desktop 1.3.0 and BAT 3.85
+
+Verified the packaged Windows x64 application on Windows build 26300.
+
+| Check | Result |
+| --- | --- |
+| Desktop layout | All six pages passed at 1260 × 850 and 640 × 480 DIPs, with long synthetic content at the compact size |
+| Snapshot workflows | 24 shared-library and 22 legacy workflow checks passed, including Waiting rows and cancellation restoration |
+| Live scan | All 17 sections read, 173 known device records and 19 responsive timer ticks |
+| Updater | 99 synthetic checks passed on Windows PowerShell 5.1 and PowerShell 7, including complete preparation/application, rollback, split-component upgrades and journal recovery |
+| Desktop update client | 15 synthetic checks passed, including preferences, literal helper arguments, cancellation and interrupted-update scheduling |
+| BAT | 909 focused regression checks passed per runtime for scan behavior, update controls and local snapshot compatibility |
+| Process and bridge | 34 process-host checks and 33 bridge checks per PowerShell runtime passed |
+| Native console | Real scrolling, repeated scans, history, input modes and navigation passed |
+
+Layout renders used synthetic data at 96 DPI. Update installation and recovery used isolated synthetic packages. The public release check rejected older published versions as update candidates. Live scan diagnostics recorded counts and status.
+
+Release EXE SHA-256
+
+```text
+EA3E29D0D7F79789E8A87E00D6987A8D48BB5EBBE1CD8003569292353DC4CE39
+```
+
+## Desktop 1.2.0 and BAT 3.84
+
+Verified the packaged Windows x64 EXE on Windows build 26300.
+
+| Check | Result |
+| --- | --- |
+| Shared library | 14 cross-app checks passed, including each app discovering the other app's saved pair, concurrent folder changes and corrupt settings fallback |
+| BAT regressions | 748 checks per PowerShell runtime across the console, snapshot, launcher and desktop bridge suites, including 18 shared folder checks |
+| Native console | Passed the real console check for repeated scans, scrolling, content-sized history and navigation |
+| Desktop workflow | 24 checks with an isolated shared library and 22 with the legacy folder behavior |
+| Desktop layout | All six pages passed at 1260 × 850 and 640 × 480 DIPs |
+| Live scan | All 17 sections read and the desktop stayed responsive |
+
+The sync checks used synthetic reports and isolated folder settings. The live check recorded counts and status.
+
+Release EXE SHA-256
+
+```text
+4BCB89C17CD8D90F087B07AE16DD5D2F21DC7E091A99407B68957BD49D615214
+```
+
 ## Desktop 1.1.0
 
 Verified the packaged Windows x64 EXE on Windows build 26300.

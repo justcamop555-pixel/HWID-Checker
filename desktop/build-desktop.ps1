@@ -76,6 +76,9 @@ $bridgePath=Join-Path $PSScriptRoot 'engine\DesktopBridge.ps1'
 if(-not (Test-Path -LiteralPath $bridgePath -PathType Leaf)){throw 'The desktop engine bridge is missing. Restore engine\DesktopBridge.ps1 before building.'}
 $readmePath=Join-Path $PSScriptRoot 'README.md'
 if(-not (Test-Path -LiteralPath $readmePath -PathType Leaf)){throw 'The desktop README.md is missing.'}
+$updaterPath=Join-Path $engineRoot 'Update-HWID.ps1'
+if(-not (Test-Path -LiteralPath $updaterPath -PathType Leaf)){throw 'Keep Update-HWID.ps1 beside hwid.bat when building the portable package.'}
+$updaterHash=(Get-FileHash -LiteralPath $updaterPath -Algorithm SHA256).Hash
 $batchHash=(Get-FileHash -LiteralPath $batchPath -Algorithm SHA256).Hash
 $launcherHash=if(Test-Path -LiteralPath $launcherPath -PathType Leaf){(Get-FileHash -LiteralPath $launcherPath -Algorithm SHA256).Hash}else{$null}
 $engineVersionMatch=[regex]::Match($batchText,"Version\s*=\s*'(?<Version>[0-9]+(?:\.[0-9]+)+)'")
@@ -84,6 +87,10 @@ $engineVersion=if($engineVersionMatch.Success){$engineVersionMatch.Groups['Versi
 $versions=@($projectXml.Project.PropertyGroup | ForEach-Object {$_.Version} | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_)})
 $desktopVersion=if($versions.Count){[string]$versions[0]}else{'development'}
 $versionToken=$desktopVersion -replace '[^A-Za-z0-9._-]','-'
+$updaterVersion=[regex]::Match([IO.File]::ReadAllText($updaterPath),"(?m)^# HWID_PACKAGE_VERSION = '(?<Version>[0-9.]+)'\r?$")
+if(-not $updaterVersion.Success -or $updaterVersion.Groups['Version'].Value -ne $desktopVersion){throw 'The updater stamp must match the desktop package version.'}
+$batPackageVersion=[regex]::Match($batchText,"function Get-CheckerPackageVersion\s*\{\s*return\s+'(?<Version>[0-9.]+)'\s*\}")
+if(-not $batPackageVersion.Success -or $batPackageVersion.Groups['Version'].Value -ne $desktopVersion){throw 'The BAT package version must match the desktop package version.'}
 $dotnet=Get-Command dotnet -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 if($null -eq $dotnet){throw 'Install the .NET 10 SDK to build the desktop application, then run this script again.'}
 $sdkOutput=@(& $dotnet.Source --version)
@@ -122,6 +129,8 @@ foreach($item in Get-ChildItem -LiteralPath $publishRoot -Force){Copy-Item -Lite
 Copy-Item -LiteralPath $batchPath -Destination (Join-Path $packageRoot 'hwid.bat') -Force
 if($launcherHash){Copy-Item -LiteralPath $launcherPath -Destination (Join-Path $packageRoot 'Start-HWID.ps1') -Force}
 Copy-Item -LiteralPath $readmePath -Destination (Join-Path $packageRoot 'README.md') -Force
+Copy-Item -LiteralPath $updaterPath -Destination (Join-Path $packageRoot 'Update-HWID.ps1') -Force
+if((Get-FileHash -LiteralPath (Join-Path $packageRoot 'Update-HWID.ps1')).Hash -ne $updaterHash){throw 'Packaged updater verification failed.'}
 $runtimeNoticeFiles=@(Copy-RuntimePackageNotices (Join-Path $PSScriptRoot 'obj\project.assets.json') $packageRoot (Split-Path -Parent $dotnet.Source))
 if((Get-FileHash -LiteralPath (Join-Path $packageRoot 'hwid.bat') -Algorithm SHA256).Hash -ne $batchHash){throw 'Packaged BAT verification failed.'}
 if($launcherHash -and (Get-FileHash -LiteralPath (Join-Path $packageRoot 'Start-HWID.ps1') -Algorithm SHA256).Hash -ne $launcherHash){throw 'Packaged alternative launcher verification failed.'}
@@ -143,6 +152,7 @@ if(-not $NoZip){
     [IO.File]::WriteAllText((Join-Path $buildRoot 'SHA256SUMS.txt'),$archiveLine+"`n",[Text.UTF8Encoding]::new($false))
 }
 if((Get-FileHash -LiteralPath $batchPath -Algorithm SHA256).Hash -ne $batchHash){throw 'The original scanner changed before packaging completed.'}
+if((Get-FileHash -LiteralPath $updaterPath -Algorithm SHA256).Hash -ne $updaterHash){throw 'The updater changed before packaging completed.'}
 [pscustomobject]@{
     DesktopVersion=$desktopVersion
     EngineVersion=$engineVersion
@@ -154,6 +164,7 @@ if((Get-FileHash -LiteralPath $batchPath -Algorithm SHA256).Hash -ne $batchHash)
     Checksums=$checksumsPath
     EngineSha256=$batchHash
     ApplicationSha256=$exeHash
+    UpdaterSha256=$updaterHash
     OriginalEngineUnchanged=$true
     RuntimeNoticeFiles=$runtimeNoticeFiles
 } | ConvertTo-Json

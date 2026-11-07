@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -129,33 +130,125 @@ internal sealed class DesktopSnapshot
 
 internal static class SnapshotStore
 {
+    private const int MaximumReportBytes = 64 * 1024 * 1024;
+    private static readonly JsonDocumentOptions ReportJsonOptions = new() { MaxDepth = 128 };
+    private static readonly Regex SupportedVersion = new(@"^[23]\.\d+(?:\.\d+)?$", RegexOptions.CultureInvariant);
+    private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: true, throwOnInvalidBytes: true);
+    private static readonly Encoding[] WideEncodings =
+    [
+        new UTF32Encoding(bigEndian: false, byteOrderMark: true, throwOnInvalidCharacters: true),
+        new UTF32Encoding(bigEndian: true, byteOrderMark: true, throwOnInvalidCharacters: true),
+        new UnicodeEncoding(bigEndian: false, byteOrderMark: true, throwOnInvalidBytes: true),
+        new UnicodeEncoding(bigEndian: true, byteOrderMark: true, throwOnInvalidBytes: true)
+    ];
+    private static readonly HashSet<string> HardwareSections = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "System identity", "System hardware", "Motherboard", "BIOS", "Chassis", "CPU", "Memory modules",
+        "Physical disks", "Storage identifiers", "Volumes", "Disk partitions", "Graphics adapters",
+        "Network adapters", "Monitors", "Windows", "Windows Machine GUID", "PnP hardware IDs", "Extended device inventory"
+    };
+
     public static Task<SnapshotCatalog> ReadAsync(IEnumerable<string> directories) => Task.Run(() =>
     {
-        var entries = new List<SnapshotEntry>(); var skipped = 0;
-        var folders = directories.Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var folder in folders)
+        var entries = new List<SnapshotEntry>();
+        var folders = new List<string>();
+        var skipped = 0;
+        var seenFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var directory in directories)
         {
-            if (!Directory.Exists(folder)) continue;
-            string[] files;
-            try { files = Directory.GetFiles(folder, "*.json", SearchOption.TopDirectoryOnly); }
-            catch (IOException) { skipped++; continue; } catch (UnauthorizedAccessException) { skipped++; continue; }
-            foreach (var file in files)
+            if (string.IsNullOrWhiteSpace(directory)) continue;
+            try
             {
-                if (!seen.Add(file)) continue;
-                try
-                {
-                    var info = new FileInfo(file);
-                    if (info.Length > 25 * 1024 * 1024) { skipped++; continue; }
-                    using var doc = JsonDocument.Parse(File.ReadAllText(file), new JsonDocumentOptions { MaxDepth = 64 });
-                    var report = doc.RootElement.Get("Report info");
-                    if (report.ValueKind != JsonValueKind.Object || string.IsNullOrWhiteSpace(report.Text("Computer")) || !DateTimeOffset.TryParse(report.Text("Generated"), CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var time)) { skipped++; continue; }
-                    entries.Add(new(file, info.Name, report.Text("Computer"), J.Date(report.Text("Generated")), report.Text("Version"),
-                        info.Length < 1024 * 1024 ? $"{info.Length / 1024d:0.#} KB" : $"{info.Length / (1024d * 1024):0.#} MB", time));
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { skipped++; }
+                var folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+                if (seenFolders.Add(folder)) folders.Add(folder);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or IOException)
+            {
+                skipped++;
             }
         }
-        return new SnapshotCatalog(entries.OrderByDescending(x => x.SortTime).ToArray(), skipped, folders);
+
+        var seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var folder in folders)
+        {
+            string[] files;
+            try { files = Directory.GetFiles(folder, "*.json", SearchOption.TopDirectoryOnly); }
+            catch (DirectoryNotFoundException) { continue; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                skipped++;
+                continue;
+            }
+
+            foreach (var file in files)
+            {
+                if (!seenFiles.Add(file)) continue;
+                try
+                {
+                    var entry = ReadEntry(file);
+                    if (entry is null) skipped++;
+                    else entries.Add(entry);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException
+                    or DecoderFallbackException or InvalidOperationException)
+                {
+                    skipped++;
+                }
+            }
+        }
+
+        var ordered = entries.OrderByDescending(x => x.SortTime)
+            .ThenBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return new SnapshotCatalog(ordered, skipped, folders.ToArray());
     });
+
+    private static SnapshotEntry? ReadEntry(string file)
+    {
+        // Match the BAT's shared-read lock and enforce the size limit on this handle.
+        using var stream = File.Open(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var length = stream.Length;
+        if (length <= 0 || length > MaximumReportBytes) return null;
+        var bytes = GC.AllocateUninitializedArray<byte>((int)length);
+        stream.ReadExactly(bytes);
+
+        using var document = ParseReport(bytes);
+        var root = document.RootElement;
+        var info = root.Get("Report info");
+        var version = info.Get("Version");
+        if (info.ValueKind != JsonValueKind.Object || version.ValueKind != JsonValueKind.String
+            || !SupportedVersion.IsMatch(version.Text())) return null;
+
+        foreach (var field in new[] { "Computer", "Generated", "SavedAt" })
+            if (info.Get(field).ValueKind is not (JsonValueKind.String or JsonValueKind.Null or JsonValueKind.Undefined))
+                return null;
+
+        // This is a catalog preview. The BAT checks all records and keys before comparison.
+        if (!root.EnumerateObject().Any(section => HardwareSections.Contains(section.Name)
+            && (section.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array))) return null;
+
+        var computer = info.Text("Computer");
+        var hasCaptureTime = DateTimeOffset.TryParse(info.Text("Generated"), CultureInfo.InvariantCulture,
+            DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal, out var captured);
+        var sortTime = hasCaptureTime ? captured.ToUniversalTime() : new DateTimeOffset(File.GetLastWriteTimeUtc(stream.SafeFileHandle));
+        var size = length < 1024 * 1024 ? $"{length / 1024d:0.#} KB" : $"{length / (1024d * 1024):0.#} MB";
+        return new SnapshotEntry(file, Path.GetFileName(file), string.IsNullOrWhiteSpace(computer) ? "Unknown PC" : computer,
+            hasCaptureTime ? captured.ToLocalTime().ToString("MMM d, yyyy  HH:mm") : "Unknown capture time", version.Text(), size, sortTime);
+    }
+
+    private static JsonDocument ParseReport(ReadOnlyMemory<byte> bytes)
+    {
+        // The UTF-32 LE BOM also starts with the UTF-16 LE BOM, so test UTF-32 first.
+        foreach (var encoding in WideEncodings)
+        {
+            var preamble = encoding.Preamble;
+            if (bytes.Span.StartsWith(preamble))
+                return JsonDocument.Parse(encoding.GetString(bytes.Span[preamble.Length..]), ReportJsonOptions);
+        }
+
+        if (bytes.Span.StartsWith(Utf8.Preamble)) bytes = bytes[Utf8.Preamble.Length..];
+        // Validate all UTF-8 bytes without creating a second, UTF-16 copy of a large report.
+        _ = Utf8.GetCharCount(bytes.Span);
+        return JsonDocument.Parse(bytes, ReportJsonOptions);
+    }
 }

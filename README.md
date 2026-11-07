@@ -4,8 +4,8 @@
 
 **Inspect Windows hardware identifiers, save snapshots, and see what changed.**
 
-[![Version: 3.83](https://img.shields.io/badge/version-3.83-2563eb?style=flat-square)](docs/CHANGELOG.md)
-[![Desktop: 1.1.0](https://img.shields.io/badge/desktop-1.1.0-238579?style=flat-square)](desktop/README.md)
+[![Version: 3.85](https://img.shields.io/badge/version-3.85-2563eb?style=flat-square)](docs/CHANGELOG.md)
+[![Desktop: 1.3.0](https://img.shields.io/badge/desktop-1.3.0-238579?style=flat-square)](desktop/README.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square)](#compatibility)
 [![Language: PowerShell + Batch](https://img.shields.io/badge/language-PowerShell%20%2B%20Batch-5391fe?style=flat-square)](hwid.bat)
 [![Desktop: C# + WPF](https://img.shields.io/badge/desktop-C%23%20%2B%20WPF-5965b0?style=flat-square)](desktop/HwidDesktop.csproj)
@@ -34,7 +34,7 @@
 
 HWID Checker is a local, read-only Windows hardware inventory tool with a desktop interface and a PowerShell/Batch console. Both interfaces use the scanning and report functions in `hwid.bat`. They bring hardware information and identifiers from Windows providers into one inventory, then let you save it and compare selected ID fields with an earlier capture.
 
-**Desktop 1.1.0** uses a slate and teal theme for the native Windows `.exe` dashboard connected to the **3.83 BAT scanner**. The dashboard includes scan progress, searchable IDs, hardware browsing, review findings, saved captures and old/current comparisons. [Desktop guide and source build](desktop/README.md)
+**Desktop 1.3.0** and **BAT 3.85** share a local snapshot library and a package updater. The desktop overview presents the PC name, model and capture time, and uses square controls with a responsive layout. [Desktop guide and source build](desktop/README.md)
 
 It is intended for PC owners, support technicians, and developers troubleshooting missing identifiers, documenting a system, or checking changes after hardware or Windows updates. It reports what Windows exposes; it does not certify hardware health, authenticity, or identifier uniqueness.
 
@@ -71,7 +71,8 @@ Each full scan reads **17 hardware/system sections**, followed by an **all-known
 - **ID-source checks:** preserve exact hardware/compatible-ID observations, flag disagreement between native and property readers, and report distinct-node property coverage. Property reads use bounded batches with one concurrent operation to avoid duplicate-node results observed with parallel Windows queries.
 - **TXT and JSON exports:** save a new report pair with scan/save timestamps and final-content verification. Existing snapshots are not overwritten.
 - **Consistent field reading:** hardware views and TXT use section-specific labels. RAM `Speed` stays a raw Windows value; a configured memory clock of zero is shown as unknown. JSON retains the original values.
-- **Saved snapshot library:** detect older captures, browse paged results, inspect storage/import problems, and use a fallback save folder when needed.
+- **Shared snapshot library:** open saved captures in the BAT or desktop app. Both use the same preferred folder and can watch other locations. Existing reports stay in their original folders.
+- **Application updates:** detect newer published Windows x64 packages, download and verify them, and install them after a normal application exit. Automatic updates start enabled and can be turned off. [Update controls](docs/UPDATES.md)
 - **Snapshot comparison:** show previous/current identifier values, character differences, added/removed ID records, and fields that could not be compared reliably. Different or unknown network readers leave unmatched interfaces not compared; shared interfaces still compare usable IDs. Rescans also review present-device arrivals/removals.
 - **Readable console:** numbered menus, status colors with text labels, scrollable reports and live scan navigation. Scroll back without timer redraws pulling the view away; End resumes following new results. Next/Back/Exit animations are optional.
 
@@ -81,7 +82,7 @@ Each full scan reads **17 hardware/system sections**, followed by an **all-known
 
 ### Desktop dashboard
 
-Desktop 1.1.0 displaying a synthetic test inventory. The counts describe the test fixture.
+Desktop 1.3.0 displaying a synthetic test inventory. The counts describe the test fixture.
 
 ![HWID Checker desktop dashboard with scan coverage, identifiers, review findings and section progress](docs/images/desktop-overview.png)
 
@@ -115,7 +116,7 @@ Comparison results show OLD/NEW values and character differences. A difference r
 
 ### Desktop EXE
 
-Download and extract the [Desktop 1.1.0 ZIP for Windows x64](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.1.0). Keep **HWID Checker.exe** beside **hwid.bat**, open the EXE, and choose **Scan this PC**. Use **Connect BAT…** to select the scanner when it is stored elsewhere. **Open BAT console** opens the connected scanner.
+Download and extract a [desktop ZIP for Windows x64](https://github.com/justcamop555-pixel/HWID-Checker/releases). Keep **HWID Checker.exe** beside **hwid.bat**, open the EXE, and choose **Scan this PC**. Use **Connect BAT…** to select the scanner when it is stored elsewhere. **Open BAT console** opens the connected scanner.
 
 The current package is a self-contained **Windows x64** build; its .NET runtime is included. PowerShell and the hardware providers listed below are still required. The source repository contains the desktop project and [build/packaging instructions](desktop/README.md#build-from-source).
 
@@ -183,7 +184,7 @@ Type a menu number and press **Enter**. Empty Enter is ignored on the main menu.
 | **5** | Full inventory, source values, scan timing, and diagnostics |
 | **6** | Save the active snapshot as TXT and JSON |
 | **7** | Compare a saved JSON snapshot with the current scan |
-| **8** | Saved reports, storage status, and report folder |
+| **8** | Snapshot library, storage status, and shared folder settings |
 | **9** | Rescan, extended devices, and help |
 | **0** | Exit |
 
@@ -195,7 +196,9 @@ Type a menu number and press **Enter**. Empty Enter is ignored on the main menu.
 2. Choose **[6]** to save a new TXT/JSON pair.
 3. Check the displayed destination, or choose **[8]** for saved reports and storage details.
 
-TXT is for reading; JSON is the comparison baseline. The normal destination is `HWID-Reports/` beside `hwid.bat`. If that folder cannot be written, the checker tries `%LOCALAPPDATA%\HWID Checker\HWID-Reports` and shows the location used.
+TXT is for reading and JSON is the comparison baseline. The BAT saves to the chosen shared folder, or to `HWID-Reports/` beside `hwid.bat` by default. If it cannot write there, it tries `%LOCALAPPDATA%\HWID Checker\HWID-Reports` and shows the actual location.
+
+To configure local sync, open **Snapshots → Folder settings…** in Desktop or **[8]** in the BAT. Both pick up the same folder preferences on refresh. Existing reports can be found by adding their folders to the library. [Shared snapshot instructions](docs/USAGE.md#share-snapshot-folders-on-this-pc)
 
 Saving preserves the active capture; it does not scan again. Rescanning does not save automatically.
 
@@ -217,10 +220,10 @@ In the dedicated readable console, scroll reports with the mouse wheel, arrows, 
 | Topic | Current behavior |
 | --- | --- |
 | Collected data | Hardware serials and identifiers, device/driver metadata, system and computer information, Windows installation identifiers, capture times, and scan diagnostics |
-| Network activity | The current application contains no upload, telemetry, or remote scan service; collection and comparison use local files and Windows APIs |
+| Network activity | Collection and comparison use local Windows APIs and files. The updater requests release metadata and package files from this project's GitHub releases. Hardware identifiers and reports are not part of update requests. |
 | Stored reports | Exports are ordinary TXT/JSON files, without application-level encryption or automatic retention cleanup |
 | Permissions | Administrator access is optional; some providers or fields may require it. The checker does not automatically elevate |
-| Hardware changes | The checker does not spoof or modify hardware identifiers, flash firmware, or change device settings. Exporting writes report files; the UI adjusts its console display/input behavior |
+| Hardware changes | Scanning reads Windows hardware information. Exporting writes report files, and the updater replaces its managed application files. The console UI adjusts its own display and input behavior. |
 | Script policy | The Batch launcher uses `ExecutionPolicy Bypass` for its child PowerShell process. It does not change persistent policy; enforced restrictions can still prevent execution |
 
 Treat reports as identifying information. Review and redact them before posting issues or sharing screenshots. `HWID-Reports/`, loose backups, and generated test output are excluded by `.gitignore`; this does not prevent a manual upload. If you run the checker from OneDrive or another synced folder, that service may sync reports independently of the checker.
@@ -305,6 +308,7 @@ See [developer checks](tests/README.md) for focused suites and diagnostics. Synt
 | [Identifier reference](docs/IDENTIFIERS.md) | Identifier meanings, scope, and limitations |
 | [Graphics and network field audit](docs/GRAPHICS-NETWORK.md) | Corrected labels, Windows sources, reader coverage, and validation limits |
 | [Changelog](docs/CHANGELOG.md) | Version history and validation notes |
+| [Application updates](docs/UPDATES.md) | Automatic and manual updates, installation and package publishing |
 | [Developer checks](tests/README.md) | Test coverage, commands, and diagnostic requirements |
 | [Desktop app](desktop/README.md) | EXE usage, BAT connection, portable packaging and source builds |
 | [Desktop verification](desktop/tests/README.md) | Bridge, process-host and desktop workflow checks |

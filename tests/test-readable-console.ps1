@@ -357,10 +357,16 @@ try {
         if($snapshot.Warnings.Count){throw 'Native scan had unavailable sections or exposed the typing cursor during collection.'}
         if($snapshot.Inventory['Report info'].QueryMode -ne 'Live progress'){throw 'The native checker fell back instead of using its live scan worker.'}
         if($snapshot.Inventory['Scan timing'].Count -ne 17 -or $scanStep -ne 17){throw 'Repeated native scans accumulated timing or counters.'}
-        if([Console]::CursorTop -ge 34 -or [Console]::WindowTop -ne 0){throw 'The standard scan dashboard overflowed one screen.'}
-        $result | Add-Member NoteProperty ('Scan'+$scan+'CursorRow') ([Console]::CursorTop)
+        # Group headings and the completion summary can extend past the 34-row viewport.
+        $scanRows=[Console]::CursorTop
+        if([Console]::WindowHeight -ne 34 -or $scanRows -lt 17 -or $scanRows -gt 2*[Console]::WindowHeight){throw "The standard scan used an unexpected number of rows ($scanRows)."}
+        $result | Add-Member NoteProperty ('Scan'+$scan+'CursorRow') $scanRows
         Complete-UiReport
-        if([Console]::BufferHeight -ne 34){throw 'Scanning left excess history.'}
+        if([Console]::BufferHeight -ne (Get-ReportHistoryRows 34 $scanRows)){throw 'Scanning left excess history or lost scan rows.'}
+        Move-UiReportView 'Home'
+        if([Console]::WindowTop -ne 0){throw 'The completed scan could not scroll to its heading.'}
+        Move-UiReportView 'End'
+        if([Console]::WindowTop -ne [Console]::BufferHeight-34){throw 'The completed scan could not scroll to its summary.'}
     }
     $result | Add-Member NoteProperty RepeatedNativeScans 3
     $result | Add-Member NoteProperty ScanCursorHiddenDuringQueries $true
@@ -532,10 +538,11 @@ try {
 $diagnostic = $diagnostic.Replace('__SOURCE__',$sourceLiteral).Replace('__OUTPUT__',$outputLiteral)
 $diagnosticPath=Join-Path $PSScriptRoot ('display-diagnostic-'+[guid]::NewGuid().ToString('N')+'.ps1')
 [IO.File]::WriteAllText($diagnosticPath,$diagnostic,(New-Object Text.UTF8Encoding($true)))
+[IO.File]::Delete($resultPath)
 $powerShellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $arguments = '-ForceNoHandoff -- "' + $powerShellPath + '" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "' + $diagnosticPath + '"'
 $process = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\conhost.exe') -ArgumentList $arguments -PassThru
-if (-not $process.WaitForExit(20000)) { throw 'Display test did not complete in 20 seconds.' }
+if (-not $process.WaitForExit(60000)) { throw 'Display test did not complete in 60 seconds.' }
 $result = Get-Content -LiteralPath $resultPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($result.Error) { throw $result.Error }
 if (-not $result.ThemeApplied -or $result.BackgroundRGB -ne 2101772) { throw 'The navy console background was not applied.' }

@@ -2,6 +2,8 @@
 
 [Back to the main README](../README.md)
 
+Application updates are available from Desktop **Updates** or BAT **[9] → [5]**. Automatic updates start enabled and prepare compatible newer packages in the background. [Update behavior and recovery](UPDATES.md)
+
 ## Read a scan
 
 Use **[1]** for the overview. It separates normal query coverage, identifier fields, present devices and the all-known extended catalog. Startup and full rescans collect the 17 normal sections plus this catalog automatically. The overall progress bar has 18 stages and reaches 100% after the catalog attempt finishes; READ/NOT READ shows whether collection succeeded.
@@ -176,7 +178,7 @@ Duplicate review ignores instance-ID case and leading/trailing whitespace or NUL
 
 1. Finish the scan you want to keep.
 2. Choose **[6]** to create a TXT and JSON pair.
-3. Choose **[8]** to open the report folder and review saved-snapshot storage status.
+3. Choose **[8]**, then **[1]** to review storage or **[2]** to open the report folder.
 
 TXT is for reading. JSON is for comparison. Saves use new filenames rather than overwriting previous reports. Rescanning does not save automatically.
 
@@ -184,9 +186,22 @@ After saving, the checker immediately reports how many older usable snapshots it
 
 The save screen distinguishes **Computer / scan** from **Saved at** and shows normal-section read coverage. `SavedAt` is added only to the exported copy; the active scan's original capture time and number stay unchanged. Saving a partial capture remains available for diagnosis. Both final files are checked against the requested contents before **SAVED** appears; a handled verification failure rolls back the new pair where possible and reports any cleanup needed.
 
-If the normal `HWID-Reports` folder cannot be written, the checker tries `%LOCALAPPDATA%\HWID Checker\HWID-Reports`. The save screen shows the actual location and explains fallback use. Both files are verified/published as a pair; malformed report data does not trigger a storage retry. **[8]** opens the last successful save's folder in the current session.
+The BAT saves to your shared save folder if configured, or to the normal `HWID-Reports` folder. If it cannot write there, it tries `%LOCALAPPDATA%\HWID Checker\HWID-Reports`. The save screen shows the actual location and explains fallback use. Both files are verified as a pair. **[8] → [2]** opens the last successful save's folder when it is available.
 
-**[8] Saved reports / storage** shows readable JSON snapshots, older usable baselines, TXT + JSON pairs, JSON-only snapshots, and files that could not be read. Its section shortcuts are **1** Summary, **2** Folders, **3** Files not read, and **4** TXT only. JSON alone can be compared. TXT alone stays readable, but needs its matching JSON for comparison. Files are preserved; this screen does not repair or delete them.
+**[8] → [1]** shows readable JSON snapshots, older usable baselines, TXT + JSON pairs, JSON-only snapshots, and files that could not be read. Its section shortcuts are **1** Summary, **2** Folders, **3** Files not read, and **4** TXT only. JSON alone can be compared. TXT alone stays readable and needs its matching JSON for comparison.
+
+### Share snapshot folders on this PC
+
+Use **Snapshots → Folder settings…** in Desktop 1.2.0 or **[8]** in BAT 3.84.
+
+| BAT storage option | Purpose |
+| --- | --- |
+| **[3]** | Choose the shared save folder. The BAT saves there and Desktop starts its save picker there. |
+| **[4]** | Add another folder to both snapshot libraries. |
+| **[5]** | Stop watching an added folder. Existing reports stay in the folder. |
+| **[6]** | Use the normal save folder again. The old shared folder remains in the library. |
+
+Both apps use folder preferences from `%LOCALAPPDATA%\HWID Checker\snapshot-library.json` for the current Windows user. The preference file holds folder paths. Saving is explicit and both libraries point to the original files. Older versions can still open a saved JSON directly.
 
 Storage messages distinguish access blocked (**STORE-01**), unavailable/in-use files (**STORE-02**), invalid encoding (**STORE-03**), damaged data (**STORE-04**), the 64 MB import limit (**STORE-05**) and unsupported versions (**STORE-06**). Each lists its path and next step. A folder-opening failure (**STORE-08**) leaves the storage results available. Close any writer or wait for sync, then reopen Main **[8]** or refresh the comparison picker to detect recovered files.
 
@@ -201,7 +216,7 @@ The library remains local TXT/JSON files, without a separate database. Imports r
 
 Pasted paths can use matching single or double quotes. Brackets, apostrophes and ampersands are treated as literal filename characters. The checker does not execute pasted text or expand shell commands.
 
-The picker searches the launcher's report folder, the per-user fallback folder, and the adjacent installation's report folder when a parent `hwid.bat` exists. Renamed JSON snapshots are included. Files that cannot be read or validated are omitted with a count; Main **[8]** explains each failure. A manual path also exposes an individual file's error.
+The picker searches the shared library, the launcher's report folder, the per-user fallback folder, and the adjacent installation's report folder when a parent `hwid.bat` exists. **[8]** in the picker reloads both folders and files. Renamed JSON snapshots are included. **Main [8] → [1]** explains which files could not be read. A manual path also exposes an individual file's error.
 
 Five snapshots appear per page: **1–5** select a file, **6** opens the next page, **7** returns to the previous page, **8** refreshes detection, **9** accepts a path, and **0** or blank goes back. Older captures from the same computer appear first. Capture timestamps determine age, so copying a file does not make an old capture current. A **SAME CAPTURE TIME** label is a timestamp match, not proof that all IDs match. Newer, other-PC, unknown-time and no-usable-ID snapshots are labeled separately.
 

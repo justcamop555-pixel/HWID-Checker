@@ -91,6 +91,12 @@ public static class HwidScanTestInput {
     Send-Nav 'Home'
     $before=[Console]::CursorTop;Update-ScanProgress 11;Update-ScanWaiting $line 8
     Assert ([Console]::CursorTop -eq $before -and [Console]::WindowTop -eq 0) 'Resizing made a stale timer position move the view/cursor.'
+    Assert ($script:scanProgressFallbackUsed -and $script:scanProgressState.BoundaryFallback) 'Resized progress did not switch to safe boundary summaries.'
+    Update-ScanProgress 11 -Boundary
+    Assert ([Console]::CursorTop -gt $before -and [Console]::WindowTop -eq 0) 'A section boundary did not refresh resized progress while preserving the chosen viewport.'
+    $before=[Console]::CursorTop
+    Update-ScanProgress 11 -Boundary
+    Assert ([Console]::CursorTop -eq $before) 'A repeated boundary appended duplicate progress rows.'
     Write-PnpLine ('Wrapped '+('x'*160)) $palette.Text
     Assert ([Console]::BufferHeight -eq [Console]::CursorTop+3 -and [Console]::WindowTop -eq 0) 'Wrapped narrow output lost its bounded history or viewport.'
     $first=[HwidConsoleDisplay]::CaptureRegion(0,0,20,[Console]::BufferHeight)

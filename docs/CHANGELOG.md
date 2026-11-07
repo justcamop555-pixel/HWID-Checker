@@ -2,6 +2,19 @@
 
 [Back to the main README](../README.md)
 
+## Desktop 1.3.0 and BAT 3.85
+
+- Use square desktop cards, controls and table borders. Move PC identity to the start of Overview and stack it at narrow widths.
+- Prepopulate scan stages with Waiting status, distinguish live records from unfinished queries, and show section timings. Rescans label the previous completed snapshot while the new scan runs.
+- Recover console progress after width changes and complete the standalone extended-scan result line before its report or failure details.
+- Add background detection and preparation of newer compatible GitHub release packages, checksum verification, deferred installation, backups and rollback.
+
+## BAT 3.84 and Desktop 1.2.0
+
+- Share a preferred save folder and watched snapshot folders between the BAT and desktop app for the current Windows user.
+- Reload shared settings when browsing or saving, preserve earlier report locations, and show where snapshots were saved.
+- Improve Desktop discovery of older report encodings and align the library's file size limit with the BAT importer.
+
 ## Desktop 1.1.0
 
 - Applied a slate and teal theme with shorter headers and action buttons that wrap in narrow windows. Tables and detail panes adjust to the available space, with shorter rows in compact windows.

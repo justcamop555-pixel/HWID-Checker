@@ -24,6 +24,14 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly Stopwatch _scanClock = new();
     private EngineClient? _engine;
+    private DesktopUpdater? _updater;
+    private bool _restartForUpdate;
+    private static readonly string[] ScanSectionNames =
+    [
+        "System identity", "System hardware", "Motherboard", "BIOS", "Chassis", "CPU", "Memory modules",
+        "Physical disks", "Storage identifiers", "Volumes", "Disk partitions", "Graphics adapters",
+        "Monitors", "Network adapters", "Windows", "Windows Machine GUID", "PnP hardware IDs", "All-known device catalog"
+    ];
     private DesktopSnapshot? _snapshot;
     private CancellationTokenSource? _operationCancellation;
     private bool _busy, _initialized, _closing, _closeRequested, _refreshAgain;
@@ -31,10 +39,14 @@ public partial class MainWindow : Window
     private TaskCompletionSource<bool>? _operationFinished;
     private string _page = "Overview", _operation = "", _lastSaveFolder = "";
     private string? _rememberedBat;
-    private bool IsVerification => _args.Any(x => x is "--fixture" or "--render" or "--scan-test" or "--workflow-test");
+    private bool IsVerification => _args.Any(argument => argument.Split('=', 2)[0].ToLowerInvariant() is
+        "--fixture" or "--render" or "--scan-test" or "--workflow-test");
     private int _ticks, _responsiveTicks;
     private string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HWID Checker", "Desktop", "settings.json");
-    private string DefaultReportsFolder => _lastSaveFolder.Length > 0 ? _lastSaveFolder : Path.Combine(Path.GetDirectoryName(_engine?.BatPath) ?? AppContext.BaseDirectory, "HWID-Reports");
+    private string DefaultReportsFolder => Path.Combine(Path.GetDirectoryName(_engine?.BatPath) ?? AppContext.BaseDirectory, "HWID-Reports");
+    private string LocalReportsFolder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HWID Checker", "HWID-Reports");
+    private string? VerificationSharedSettingsPath =>
+        IsVerification && Argument("--shared-settings") is { } path && !string.IsNullOrWhiteSpace(path) ? path : null;
 
     public MainWindow(string[] args)
     {
@@ -76,7 +88,10 @@ public partial class MainWindow : Window
         if (Argument("--render") == null || Argument("--workflow-test") != null)
             await RefreshSnapshotsAsync();
         else
+        {
             SnapshotCountText.Text = "No saved snapshots in this preview.";
+            ShowSnapshotFolders(ReadSharedLibrary());
+        }
         var fixture = Argument("--fixture");
         if (fixture != null)
         {
@@ -114,6 +129,14 @@ public partial class MainWindow : Window
             var verify = Argument("--verify");
             if (verify != null) await WriteTestResultAsync(verify, true);
             Close();
+            return;
+        }
+        if (!IsVerification)
+        {
+            _updater = new DesktopUpdater(AppContext.BaseDirectory);
+            _updater.Changed += (_, _) => UpdateUpdateButton();
+            UpdateUpdateButton();
+            await _updater.PrepareAutomaticallyAsync();
         }
     }
 
@@ -154,6 +177,16 @@ public partial class MainWindow : Window
         Grid.SetColumnSpan(HeaderActions, stackedHeader ? 2 : 1);
         HeaderActions.Margin = stackedHeader ? new Thickness(0, 8, 0, 0) : new Thickness(0);
         MetricsGrid.Columns = workspace < 625 ? 2 : 4;
+        var stackedComputer = workspace < 625;
+        OverviewComputerColumn.Width = new GridLength(1, GridUnitType.Star);
+        OverviewCpuColumn.Width = new GridLength(stackedComputer ? 0 : 1, GridUnitType.Star);
+        OverviewWindowsColumn.Width = new GridLength(stackedComputer ? 0 : 1, GridUnitType.Star);
+        Grid.SetRow(CpuSummary, stackedComputer ? 1 : 0);
+        Grid.SetRow(WindowsSummary, stackedComputer ? 2 : 0);
+        Grid.SetColumn(CpuSummary, stackedComputer ? 0 : 1);
+        Grid.SetColumn(WindowsSummary, stackedComputer ? 0 : 2);
+        ComputerSummary.Margin = stackedComputer ? new Thickness(0, 0, 0, 10) : new Thickness(0, 0, 14, 0);
+        CpuSummary.Margin = stackedComputer ? new Thickness(0, 0, 0, 10) : new Thickness(0, 0, 14, 0);
         HardwareSectionsColumn.Width = new GridLength(compactHardware ? 0 : 174);
         HardwareSectionsPanel.Visibility = compactHardware ? Visibility.Collapsed : Visibility.Visible;
         HardwareSectionPicker.Visibility = compactHardware ? Visibility.Visible : Visibility.Collapsed;
@@ -245,7 +278,12 @@ public partial class MainWindow : Window
             await RefreshSnapshotsAsync();
         }
     }
-    private void OnNavigate(object sender, RoutedEventArgs e) { if (sender is Button { Tag: string page }) Navigate(page); }
+    private async void OnNavigate(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string page }) return;
+        Navigate(page);
+        if (page == "Snapshots") await RefreshSnapshotsAsync();
+    }
     private void Navigate(string page)
     {
         if (!_initialized) return;
@@ -289,6 +327,9 @@ public partial class MainWindow : Window
     {
         if (busy) _operationFinished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _busy = busy; _operation = operation;
+        var scanning = busy && operation == "Scan";
+        MetricsGrid.Visibility = scanning ? Visibility.Collapsed : Visibility.Visible;
+        OverviewComputerCard.Visibility = scanning ? Visibility.Collapsed : Visibility.Visible;
         CancelButton.Visibility = busy && operation == "Scan" ? Visibility.Visible : Visibility.Collapsed;
         CancelButton.IsEnabled = true;
         UpdateButtons();
@@ -301,6 +342,8 @@ public partial class MainWindow : Window
         ConnectButton.IsEnabled = !_busy;
         SaveButton.IsEnabled = !_busy && _snapshot != null && _engine != null;
         CompareSelectedButton.IsEnabled = !_busy && _snapshot != null && SnapshotsGrid.SelectedItem is SnapshotEntry;
+        SnapshotFolderSettingsButton.IsEnabled = !_busy && (!IsVerification || VerificationSharedSettingsPath != null);
+        UpdatesButton.IsEnabled = !IsVerification;
         CommandManager.InvalidateRequerySuggested();
     }
     private async void OnScan(object sender, RoutedEventArgs e) => await RunScanAsync();
@@ -309,7 +352,12 @@ public partial class MainWindow : Window
         if (_busy || _engine == null) return false;
         Navigate("Overview"); SetBusy(true, "Scan");
         _operationCancellation = new CancellationTokenSource();
-        _scanClock.Restart(); ScanRows.Clear(); ScanProgress.Value = 0;
+        _scanClock.Restart();
+        ScanRows.Clear();
+        foreach (var section in ScanSectionNames) ScanRows.Add(new(section, "WAITING", "—", "Waiting for this section.", ""));
+        ScanProgress.Value = 0;
+        SnapshotContextText.Text = _snapshot == null ? "Preparing the first snapshot" :
+            "Last completed snapshot · " + _snapshot.Info.Text("Computer") + " · " + J.Date(_snapshot.Info.Text("Generated"));
         ShowStatus("Scanning this PC", _snapshot == null ? "Reading Windows hardware providers. You can cancel at any time." : "Refreshing hardware. The last completed snapshot remains available while this scan runs.");
         try
         {
@@ -319,9 +367,15 @@ public partial class MainWindow : Window
                 ScanProgress.Value = value.Total > 0 ? Math.Clamp(100d * value.Completed / value.Total, 0, 100) : 0;
                 var name = string.IsNullOrWhiteSpace(value.Name) ? value.Section : value.Name;
                 if (string.IsNullOrWhiteSpace(name)) return;
-                var row = new ScanRow(name, value.Status == "UNAVAILABLE" ? "NOT READ" : value.Status, value.Records.ToString(), value.Message, "");
+                if (name == "Preparing") { ShowStatus("Preparing scanner", value.Message); return; }
+                if (name == "Extended device inventory") name = "All-known device catalog";
+                var finished = value.Status is not ("READING" or "WAITING" or "");
+                var row = new ScanRow(name, value.Status == "UNAVAILABLE" ? "NOT READ" : value.Status,
+                    finished ? value.Records.ToString() : "—", value.Message,
+                    value.Seconds is { } seconds ? seconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " s" : "");
                 var existing = ScanRows.Select((x, i) => (x, i)).FirstOrDefault(x => x.x.Name == name);
                 if (existing.x != null) ScanRows[existing.i] = row; else ScanRows.Add(row);
+                StatusTitle.Text = "Scanning this PC";
                 SetSummary(StatusDetail, name + " · " + value.Message);
             });
             var result = await _engine.ScanAsync(progress, _operationCancellation.Token);
@@ -336,15 +390,28 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException) { RestoreScanActivity(); ShowStatus("Scan cancelled", _snapshot == null ? "Start a new scan when you are ready." : "Your last completed snapshot is still active.", true); return false; }
         catch (Exception ex) { RestoreScanActivity(); ShowError("Scan could not finish", ex); return false; }
-        finally { _scanClock.Stop(); ScanElapsedText.Text = $"{_scanClock.Elapsed:mm\\:ss} elapsed"; SetBusy(false); _operationCancellation?.Dispose(); _operationCancellation = null; }
+        finally
+        {
+            _scanClock.Stop();
+            ScanElapsedText.Text = $"{_scanClock.Elapsed:mm\\:ss} elapsed";
+            SnapshotContextText.Text = _snapshot == null ? "No completed snapshot" : "Current completed snapshot";
+            SetBusy(false);
+            _operationCancellation?.Dispose();
+            _operationCancellation = null;
+        }
     }
     private void ApplySnapshot(DesktopSnapshot snapshot)
     {
         _snapshot = snapshot;
         IdsCount.Text = snapshot.ReportedIds.ToString("N0"); SectionsCount.Text = snapshot.SectionsRead + " / 17";
         ReviewCount.Text = snapshot.Findings.Count.ToString("N0"); DevicesCount.Text = snapshot.DeviceCount.ToString("N0");
-        ComputerText.Text = snapshot.Info.Text("Computer"); CapturedText.Text = J.Date(snapshot.Info.Text("Generated"));
-        CpuText.Text = snapshot.First("CPU", "Name");
+        SetSummary(ComputerText, string.IsNullOrWhiteSpace(snapshot.Info.Text("Computer")) ? "Not supplied" : snapshot.Info.Text("Computer"));
+        SetSummary(CapturedText, "Captured · " + J.Date(snapshot.Info.Text("Generated")));
+        var model = string.Join(" · ", new[] { snapshot.First("System hardware", "Manufacturer"), snapshot.First("System hardware", "Model") }
+            .Where(value => !string.IsNullOrWhiteSpace(value)));
+        SetSummary(PcModelText, model.Length == 0 ? "Model · not supplied" : model);
+        SetSummary(CpuText, snapshot.First("CPU", "Name"));
+        SnapshotContextText.Text = "Current completed snapshot";
         var ram = snapshot.First("System hardware", "TotalRAM_GiB"); MemoryText.Text = ram.Length > 0 ? "Memory · " + ram + " GiB" : "Memory · not supplied";
         WindowsText.Text = snapshot.First("Windows", "Caption"); CatalogText.Text = "Catalog · " + snapshot.Info.Text("ExtendedStatus");
         EngineVersionText.Text = "Scanner v" + snapshot.Version;
@@ -442,20 +509,70 @@ public partial class MainWindow : Window
     private void OnCopyField(object sender, RoutedEventArgs e) { if (HardwareFields.SelectedItem is FieldRow field) Copy(field.Value); }
     private void OnReviewSelected(object sender, SelectionChangedEventArgs e) { ReviewDetail.Text = ReviewGrid.SelectedItem is ReviewRow row ? row.Message + "\n\n" + row.Detail : ""; }
 
-    private IEnumerable<string> ReportFolders()
+    private SnapshotLibrarySettings ReadSharedLibrary() =>
+        IsVerification && VerificationSharedSettingsPath == null
+            ? new SnapshotLibrarySettings(null, [])
+            : SharedSnapshotLibrary.Read(VerificationSharedSettingsPath);
+
+    private IEnumerable<string> SaveFolderCandidates(SnapshotLibrarySettings settings)
+    {
+        if (settings.Primary is { } primary) yield return primary;
+        yield return DefaultReportsFolder;
+        if (!IsVerification) yield return LocalReportsFolder;
+    }
+
+    private static bool SameFolder(string left, string right) =>
+        Path.TrimEndingDirectorySeparator(left).Equals(Path.TrimEndingDirectorySeparator(right), StringComparison.OrdinalIgnoreCase);
+
+    private string EnsureSaveFolder(SnapshotLibrarySettings settings)
+    {
+        Exception? failure = null;
+        foreach (var folder in SaveFolderCandidates(settings).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try { return Directory.CreateDirectory(folder).FullName; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { failure = ex; }
+        }
+        throw new IOException("Could not prepare a report folder. " + failure?.Message, failure);
+    }
+
+    private IEnumerable<string> BuiltInReportFolders()
     {
         yield return DefaultReportsFolder;
-        yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HWID Checker", "HWID-Reports");
+        if (!IsVerification) yield return LocalReportsFolder;
         if (_engine != null)
         {
             var directory = Path.GetDirectoryName(_engine.BatPath)!; var parent = Directory.GetParent(directory)?.FullName;
-            yield return Path.Combine(directory, "HWID-Reports");
             if (parent != null && File.Exists(Path.Combine(parent, "hwid.bat"))) yield return Path.Combine(parent, "HWID-Reports");
             string[] children;
-            try { children = Directory.GetDirectories(directory); } catch { children = []; }
+            try { children = Directory.GetDirectories(directory); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { children = []; }
             foreach (var child in children.Where(x => File.Exists(Path.Combine(x, "hwid.bat")))) yield return Path.Combine(child, "HWID-Reports");
         }
-        foreach (var directory in _additionalFolders) yield return directory;
+    }
+
+    private IEnumerable<string> ReportFolders(SnapshotLibrarySettings? settings = null)
+    {
+        settings ??= ReadSharedLibrary();
+        if (settings.Primary is { } primary) yield return primary;
+        foreach (var folder in settings.Folders) yield return folder;
+        foreach (var folder in BuiltInReportFolders()) yield return folder;
+        if (!settings.IsConfigured)
+        {
+            if (_lastSaveFolder.Length > 0) yield return _lastSaveFolder;
+            foreach (var folder in _additionalFolders) yield return folder;
+        }
+    }
+
+    private void ShowSnapshotFolders(SnapshotLibrarySettings settings, IReadOnlyList<string>? searchedFolders = null)
+    {
+        var folder = settings.Primary ?? DefaultReportsFolder;
+        var label = (settings.Primary == null ? "Default save folder: " : "Shared save folder: ") + folder;
+        var text = settings.Error == null ? label : "Shared settings unavailable · " + label;
+        var details = settings.Error == null ? label : label + Environment.NewLine + settings.Error;
+        if (searchedFolders is { Count: > 0 })
+            details += Environment.NewLine + Environment.NewLine + "Searched locations:" + Environment.NewLine + string.Join(Environment.NewLine, searchedFolders);
+        SnapshotFoldersText.Foreground = (Brush)FindResource(settings.Error == null ? "MutedBrush" : "WarningBrush");
+        SetSummary(SnapshotFoldersText, text, details);
     }
     private Task RefreshSnapshotsAsync()
     {
@@ -471,8 +588,9 @@ public partial class MainWindow : Window
           do
           {
             _refreshAgain = false;
-            var folders = ReportFolders().ToArray();
-            var catalog = await SnapshotStore.ReadAsync(folders);
+            var settings = ReadSharedLibrary();
+            ShowSnapshotFolders(settings);
+            var catalog = await SnapshotStore.ReadAsync(ReportFolders(settings).ToArray());
             if (_closing || _closeRequested) return;
             if (SnapshotsGrid.ItemsSource is not IEnumerable<SnapshotEntry> displayed || !displayed.SequenceEqual(catalog.Entries))
             {
@@ -482,17 +600,19 @@ public partial class MainWindow : Window
             }
             SetSummary(SnapshotCountText, $"{catalog.Entries.Count} saved captures found" +
                 (catalog.Skipped > 0 ? $" · {catalog.Skipped} unreadable or unrecognized files/folders skipped" : " · JSON is validated again before comparison"));
-            SetSummary(SnapshotFoldersText, "Folders: " + string.Join("  •  ", catalog.Folders), string.Join(Environment.NewLine, catalog.Folders));
+            ShowSnapshotFolders(settings, catalog.Folders);
             UpdateButtons();
           } while (_refreshAgain && !_closing);
         }
         catch (Exception ex) { SetSummary(SnapshotCountText, "Could not refresh snapshots: " + ex.Message); }
     }
     private async void OnRefreshSnapshots(object sender, RoutedEventArgs e) => await RefreshSnapshotsAsync();
-    private async void OnAddSnapshotFolder(object sender, RoutedEventArgs e)
+    private async void OnSnapshotFolderSettings(object sender, RoutedEventArgs e)
     {
-        var picker = new OpenFolderDialog { Title = "Add a saved snapshot folder" };
-        if (picker.ShowDialog(this) == true) { _additionalFolders.Add(picker.FolderName); await RememberPreferencesAsync(); await RefreshSnapshotsAsync(); }
+        if (_busy || (IsVerification && VerificationSharedSettingsPath == null)) return;
+        var dialog = new SnapshotFolderDialog(ReadSharedLibrary(), DefaultReportsFolder, VerificationSharedSettingsPath) { Owner = this };
+        dialog.ShowDialog();
+        await RefreshSnapshotsAsync();
     }
     private void OnSnapshotSelected(object sender, SelectionChangedEventArgs e)
     {
@@ -514,7 +634,8 @@ public partial class MainWindow : Window
         if (_snapshot == null) { ShowStatus("Scan this PC first", "Comparison needs a completed current snapshot.", true); return; }
         if (_busy) return;
         var picker = new OpenFileDialog { Title = "Choose a previous HWID JSON snapshot", Filter = "JSON snapshot (*.json)|*.json", CheckFileExists = true };
-        if (Directory.Exists(DefaultReportsFolder)) picker.InitialDirectory = DefaultReportsFolder;
+        var starting = new[] { _lastSaveFolder }.Concat(SaveFolderCandidates(ReadSharedLibrary())).FirstOrDefault(Directory.Exists);
+        if (starting != null) picker.InitialDirectory = starting;
         if (picker.ShowDialog(this) == true) await CompareAsync(picker.FileName);
     }
     private async Task CompareAsync(string previousPath)
@@ -555,9 +676,19 @@ public partial class MainWindow : Window
     private async Task SaveSnapshotAsync()
     {
         if (_snapshot == null || _engine == null || _busy) return;
-        var picker = new OpenFolderDialog { Title = "Choose where to save the TXT + JSON snapshot" };
-        var starting = Directory.Exists(DefaultReportsFolder) ? DefaultReportsFolder : Path.GetDirectoryName(_engine.BatPath)!;
-        picker.InitialDirectory = starting;
+        var settings = ReadSharedLibrary();
+        string starting;
+        try { starting = EnsureSaveFolder(settings); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ShowError("Could not open a save folder", ex);
+            return;
+        }
+        if (settings.Error is { } error)
+            ShowStatus("Using the default save folder", starting + " · " + error, true);
+        else if (settings.Primary is { } preferred && !SameFolder(preferred, starting))
+            ShowStatus("Shared save folder unavailable", "Starting in " + starting, true);
+        var picker = new OpenFolderDialog { Title = "Choose where to save the TXT + JSON snapshot", InitialDirectory = starting };
         if (picker.ShowDialog(this) != true) return;
         await SaveToFolderAsync(picker.FolderName);
     }
@@ -571,18 +702,42 @@ public partial class MainWindow : Window
             var result = await _engine.ExportAsync(_snapshot.Inventory, folder, _operationCancellation.Token);
             _lastSaveFolder = result.Text("folder"); if (_lastSaveFolder.Length == 0) _lastSaveFolder = folder;
             _additionalFolders.Add(_lastSaveFolder);
-            await RememberPreferencesAsync();
-            await RefreshSnapshotsAsync().WaitAsync(_operationCancellation.Token);
-            ShowStatus("Snapshot saved", "TXT + JSON verified in " + _lastSaveFolder);
+            var warning = await RegisterSavedFolderAsync(_lastSaveFolder);
+            if (!await RememberPreferencesAsync() && warning == null)
+                warning = "Desktop could not remember the last save location.";
+            var saved = "TXT + JSON verified in " + _lastSaveFolder;
+            ShowStatus("Snapshot saved", warning == null ? saved : warning + " · " + saved, warning != null);
+            try { await RefreshSnapshotsAsync().WaitAsync(_operationCancellation.Token); }
+            catch (OperationCanceledException) when (_operationCancellation.IsCancellationRequested) { }
         }
         catch (OperationCanceledException) { ShowStatus("Save cancelled", "Check the selected folder before retrying.", true); }
         catch (Exception ex) { ShowError("Snapshot could not be saved", ex); }
         finally { SetBusy(false); _operationCancellation?.Dispose(); _operationCancellation = null; }
     }
+    private async Task<string?> RegisterSavedFolderAsync(string folder)
+    {
+        if (IsVerification && VerificationSharedSettingsPath == null) return null;
+        try
+        {
+            var settings = ReadSharedLibrary();
+            if ((settings.Primary is { } primary && SameFolder(primary, folder)) ||
+                settings.Folders.Concat(BuiltInReportFolders()).Any(path => SameFolder(path, folder))) return null;
+            await SharedSnapshotLibrary.UpdateAsync("add-folder", folder, VerificationSharedSettingsPath);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return "Could not add this folder to the shared library. " + ex.Message;
+        }
+    }
+
     private void OnOpenReports(object sender, RoutedEventArgs e)
     {
-        var folder = SnapshotsGrid.SelectedItem is SnapshotEntry row ? Path.GetDirectoryName(row.Path)! : DefaultReportsFolder;
-        try { Directory.CreateDirectory(folder); Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true }); }
+        try
+        {
+            var folder = SnapshotsGrid.SelectedItem is SnapshotEntry row ? Path.GetDirectoryName(row.Path)! : EnsureSaveFolder(ReadSharedLibrary());
+            Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true });
+        }
         catch (Exception ex) { ShowError("Could not open the report folder", ex); }
     }
     private void OnOpenConsole(object sender, RoutedEventArgs e)
@@ -605,6 +760,52 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) { ShowError("Could not open the original console", ex); }
     }
+    private void UpdateUpdateButton()
+    {
+        if (_closing || _updater == null) return;
+        UpdatesButton.Content = _updater.IsReady ? "Update ready" : _updater.IsBusy ? "Checking updates…" : "Updates";
+        UpdatesButton.ToolTip = _updater.Status.Message;
+    }
+
+    private void OnOpenUpdates(object sender, RoutedEventArgs e)
+    {
+        if (IsVerification || _updater == null) return;
+        _updater.RefreshAutomaticPreference();
+        UpdateWindow? dialog = null;
+        dialog = new UpdateWindow(_updater, EngineVersionText.Text, () => !_busy, () =>
+        {
+            if (_busy || !_updater.IsReady) return;
+            if (_snapshot != null && MessageBox.Show(dialog, "Install the update and restart? Save this scan first if you need to keep it.",
+                "HWID Checker", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            _restartForUpdate = true;
+            dialog?.Close();
+            Dispatcher.BeginInvoke(new Action(Close));
+        }) { Owner = this };
+        dialog.ShowDialog();
+    }
+
+    private bool PrepareDesktopExit()
+    {
+        _updater?.Cancel();
+        _updater?.RefreshAutomaticPreference();
+        if (_updater != null && (_restartForUpdate || _updater.AutomaticEnabled))
+        {
+            try
+            {
+                if (_restartForUpdate && !_updater.ScheduleApply(true)) return false;
+                if (!_restartForUpdate) _updater.ScheduleApply(false);
+            }
+            catch (Exception error)
+            {
+                MessageBox.Show(this, "Could not start the update installer. " + error.Message,
+                    "HWID Checker updates", MessageBoxButton.OK, MessageBoxImage.Warning);
+                if (_restartForUpdate) return false;
+            }
+        }
+        _updater?.Dispose();
+        return true;
+    }
+
     private async void OnWindowClosing(object? sender, CancelEventArgs e)
     {
         if (_closing) return;
@@ -616,8 +817,10 @@ public partial class MainWindow : Window
             _closeRequested = true; IsEnabled = false;
             _operationCancellation?.Cancel();
             if (_operationFinished != null) await _operationFinished.Task;
+            if (!PrepareDesktopExit()) { _closeRequested = false; IsEnabled = true; return; }
             _closing = true; _timer.Stop(); _engine?.Dispose(); Close(); return;
         }
+        if (!PrepareDesktopExit()) { e.Cancel = true; return; }
         _closing = true; _timer.Stop(); _operationCancellation?.Cancel(); _engine?.Dispose();
     }
     private void PrepareLayoutStress()
@@ -697,7 +900,7 @@ public partial class MainWindow : Window
 
     private Task WriteTestResultAsync(string path, bool success) => File.WriteAllTextAsync(path, JsonSerializer.Serialize(new
     {
-        success, desktopVersion = "1.1.0", engineVersion = _snapshot?.Version, engineConnected = _engine != null,
+        success, desktopVersion = DesktopUpdater.CurrentVersion, engineVersion = _snapshot?.Version, engineConnected = _engine != null,
         sectionsRead = _snapshot?.SectionsRead ?? 0, identifierFields = _snapshot?.ReportedIds ?? 0,
         knownDeviceRecords = _snapshot?.DeviceCount ?? 0, findings = _snapshot?.Findings.Count ?? 0,
         responsiveTicks = _responsiveTicks, busy = _busy, page = _page,
@@ -715,6 +918,7 @@ public partial class MainWindow : Window
         void Check(bool value, string description) { if (!value) throw new InvalidOperationException("Desktop workflow: " + description); checks++; }
         var directory = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(resultPath))!, "test-output-workflow-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
+        var sharedSettingsPath = VerificationSharedSettingsPath;
         var original = _snapshot;
         IdSearch.Text = "CPU"; Check(IdentifiersGrid.Items.Count > 0, "ID search finds matching fields");
         IdentifiersGrid.SelectedIndex = 0; Check(IdDetail.Text.Length > 0, "selected ID exposes full value");
@@ -730,7 +934,8 @@ public partial class MainWindow : Window
         using (var data = JsonDocument.Parse(rescanned.ToJsonString()))
         {
             ApplySnapshot(new DesktopSnapshot(data.RootElement));
-            Check(HardwareRecord.SelectedItem is HardwareRecord record && record.Data.Text("Computer") == "SYNTHETIC-RESCAN",
+            Check(HardwareRecord.SelectedItem is HardwareRecord record && record.Data.Text("Computer") == "SYNTHETIC-RESCAN" &&
+                ComputerText.Text == "SYNTHETIC-RESCAN" && CapturedText.Text.StartsWith("Captured", StringComparison.Ordinal),
                 "rescan refreshes hardware records when section names and counts match");
         }
         ApplySnapshot(original);
@@ -750,9 +955,17 @@ public partial class MainWindow : Window
             Check(ReportFolders().Contains(primaryFolder, StringComparer.OrdinalIgnoreCase), "custom save retains primary reports folder");
             Check(SnapshotsGrid.Items.Cast<SnapshotEntry>().Any(x => x.Path == primaryFile), "older primary snapshot stays visible after custom save");
             Check(SnapshotsGrid.Items.Cast<SnapshotEntry>().Any(x => Path.GetDirectoryName(x.Path) == saveFolder), "newly saved snapshot is detected immediately");
+            if (sharedSettingsPath != null)
+                Check(ReadSharedLibrary().Folders.Contains(saveFolder, StringComparer.OrdinalIgnoreCase),
+                    "a successful Desktop save adds its custom folder to the shared library");
             var extra = Path.Combine(directory, "another folder"); Directory.CreateDirectory(extra);
             var extraFile = Path.Combine(extra, "renamed-older-capture.json"); await File.WriteAllTextAsync(extraFile, original.Inventory.GetRawText());
-            var firstRefresh = RefreshSnapshotsAsync(); _additionalFolders.Add(extra); var secondRefresh = RefreshSnapshotsAsync();
+            var firstRefresh = RefreshSnapshotsAsync();
+            if (sharedSettingsPath != null)
+                await SharedSnapshotLibrary.UpdateAsync("add-folder", extra, sharedSettingsPath);
+            else
+                _additionalFolders.Add(extra);
+            var secondRefresh = RefreshSnapshotsAsync();
             await Task.WhenAll(firstRefresh, secondRefresh);
             Check(SnapshotsGrid.Items.Cast<SnapshotEntry>().Any(x => x.Path == extraFile), "folder added during refresh is included before completion");
             var preferencesFile = Path.Combine(directory, "preferences.json");
@@ -760,6 +973,13 @@ public partial class MainWindow : Window
             Check(!File.ReadAllText(preferencesFile).Contains("CPU-000123"), "settings retain paths without scanned identifier values");
             _lastSaveFolder = ""; _additionalFolders.Clear(); LoadPreferences(preferencesFile); await RefreshSnapshotsAsync();
             Check(_lastSaveFolder == saveFolder && SnapshotsGrid.Items.Cast<SnapshotEntry>().Any(x => x.Path == extraFile), "custom snapshot locations are rediscovered after preference reload");
+            if (sharedSettingsPath != null)
+            {
+                await SharedSnapshotLibrary.UpdateAsync("remove-folder", extra, sharedSettingsPath);
+                await RefreshSnapshotsAsync();
+                Check(!SnapshotsGrid.Items.Cast<SnapshotEntry>().Any(x => x.Path == extraFile) && File.Exists(extraFile),
+                    "unwatching a shared folder updates the Desktop list and preserves the snapshot");
+            }
             var previous = System.Text.Json.Nodes.JsonNode.Parse(original.Inventory.GetRawText())!;
             previous["CPU"]![0]!["ProcessorId"] = "CPU-CHANGED-001";
             var previousPath = Path.Combine(directory, "previous IDs.json"); await File.WriteAllTextAsync(previousPath, previous.ToJsonString());
@@ -772,8 +992,12 @@ public partial class MainWindow : Window
             await CompareAsync(previousPath);
             Check(!_busy && _operationCancellation == null && _operationFinished?.Task.IsCompleted == true, "operation state and completion signal are released");
             var completed = _snapshot;
-            var attempt = RunScanAsync(); await Task.Delay(1500); _operationCancellation?.Cancel(); await attempt;
-            Check(ReferenceEquals(_snapshot, completed) && StatusTitle.Text == "Scan cancelled", "cancelled scan retains the last completed snapshot");
+            var attempt = RunScanAsync();
+            var preparedDisplay = ScanRows.Count == 18 && ScanRows.All(row => row.Status == "WAITING" && row.Records == "—") &&
+                MetricsGrid.Visibility == Visibility.Collapsed && OverviewComputerCard.Visibility == Visibility.Collapsed;
+            await Task.Delay(1500); _operationCancellation?.Cancel(); await attempt;
+            Check(preparedDisplay && ReferenceEquals(_snapshot, completed) && StatusTitle.Text == "Scan cancelled",
+                "scan starts with waiting rows and cancellation retains the last completed snapshot");
             Check(ScanRows.Count == 18 && ScanRows.Last().Name == "All-known device catalog", "cancelled rescan restores all previous activity rows");
             await CompareAsync(previousPath); CompareGrid.SelectedIndex = 0;
             await File.WriteAllTextAsync(resultPath, JsonSerializer.Serialize(new { success = true, checks, hardwareIdentifiersSaved = false, syntheticOnly = true }, new JsonSerializerOptions { WriteIndented = true }));

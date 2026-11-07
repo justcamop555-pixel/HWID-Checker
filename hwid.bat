@@ -886,7 +886,7 @@ function Get-MenuDestination($Key) {
 }
 function Get-MenuEntries {
     @('1','Scan summary - start here','6','Save snapshot (TXT + JSON)'), @('2','ID numbers / serials','7','Compare old and current IDs'),
-    @('3','Browse hardware / devices','8','Saved reports / storage'), @('4','Check warnings / conflicts','9','Rescan / extended devices / help'),
+    @('3','Browse hardware / devices','8','Saved snapshots / folder settings'), @('4','Check warnings / conflicts','9','Rescan / updates / help'),
     @('5','Full inventory report','0','Exit')
 }
 function Show-CompactDeck($Width) {
@@ -896,7 +896,7 @@ function Show-CompactDeck($Width) {
     $review=(Get-ReviewSummary $report $identifiers $warnings).Total
     Write-Host (Limit-TableText ("  Found: $found / Review: $review") $size) -ForegroundColor $palette.Text
     Write-Host ''
-    foreach($entry in @(@('1','Summary'),@('2','ID numbers'),@('3','Browse devices'),@('4','Check warnings'),@('5','Full inventory'),@('6','Save reports'),@('7','Compare IDs'),@('8','Saved reports'),@('9','Rescan / help'),@('0','Exit'))) {
+    foreach($entry in @(@('1','Summary'),@('2','ID numbers'),@('3','Browse devices'),@('4','Check warnings'),@('5','Full inventory'),@('6','Save reports'),@('7','Compare IDs'),@('8','Snapshot library'),@('9','Rescan / updates'),@('0','Exit'))) {
         Write-Host (Limit-TableText ('  ['+$entry[0]+'] '+$entry[1]) $size) -ForegroundColor $palette.Heading
     }
     Write-Host (Limit-TableText '  Type 0-9 + Enter.' $size) -ForegroundColor $palette.Muted
@@ -911,7 +911,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.83' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.85' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -2274,15 +2274,16 @@ function Show-ExtendedDeviceReport {
     else{Write-PnpValue 'Result' 'No records need this detail review.' $palette.Muted}
 }
 function Start-ExtendedDeviceScan {
-    $cursor=$null;$queryWorker=$null
+    $cursor=$null;$queryWorker=$null;$clock=$null;$line=$null;$pendingStarted=$false
     $script:lastQueryCleanupFailure=$null
-    foreach($field in @('ExtendedQueryCleanupWarning','ExtendedWorkerCleanupWarning')){$report['Report info'].Remove($field)}
+    foreach($field in @('ExtendedQueryCleanupWarning','ExtendedWorkerCleanupWarning','ExtendedProgressWarning')){$report['Report info'].Remove($field)}
     try {
         if($ownedConsole -and -not $redirected){try{$cursor=[Console]::CursorVisible;[Console]::CursorVisible=$false}catch{}}
         Reset-UiPage;Start-UiReport -Scanning
         Write-Heading 'READING EXTENDED DEVICE INVENTORY'
         Write-PnpValue 'Scope' 'All known PnP nodes, including non-present records, plus Windows hiding flags.' $palette.Muted
         $line=Start-ScanLine '  Devices and visibility flags: '
+        $pendingStarted=$true
         $clock=[Diagnostics.Stopwatch]::StartNew()
         if($ownedConsole -and -not $redirected){try{$script:scanQueryWorker=New-ScanQueryWorker;$queryWorker=$script:scanQueryWorker}catch{}}
         $result=Invoke-ScanQuery {Get-ExtendedDeviceInventory} {Update-ScanWaiting $line $clock.Elapsed.TotalSeconds}
@@ -2293,8 +2294,14 @@ function Start-ExtendedDeviceScan {
         foreach($field in @('ExtendedAttempted','ExtendedFailureCode','ExtendedFailureReason','ExtendedFailureDetails','ExtendedNextStep')){$report['Report info'].Remove($field)}
         for($i=$warnings.Count-1;$i -ge 0;$i--){if($warnings[$i].StartsWith('Extended device inventory: ')){$warnings.RemoveAt($i)}}
         $report['Warnings']=@($warnings.ToArray())
+        try{Complete-ScanLine $line 'Extended catalog' ("[READ] $(@($result.Devices).Count) known nodes") $palette.Good}
+        catch{$report['Report info']['ExtendedProgressWarning']=$_.Exception.Message}
     }catch {
         $failure=Get-ScanFailureInfo $_
+        if($pendingStarted){
+            try{Complete-ScanLine $line 'Extended catalog' ('[NOT READ] '+$failure.Reason+' / '+$failure.Code) $palette.Warn}
+            catch{$report['Report info']['ExtendedProgressWarning']=$_.Exception.Message}
+        }
         $report['Report info']['ExtendedStatus']='Unavailable'
         $report['Report info']['ExtendedAttempted']=(Get-Date).ToString('o')
         $report['Report info']['ExtendedFailureCode']=$failure.Code
@@ -2524,6 +2531,7 @@ function Show-Help {
     Write-PnpValue 'Extended [9] > [4]' 'Reads known nodes, hiding flags, parent links, bus and driver details. Use [7] inside that view for unknown/review reasons.' $palette.Text
     Write-PnpValue 'Long pages' 'Wheel / Up Down / PgUp PgDn / Home End. Enter returns to menu.' $palette.Text
     Write-PnpValue 'Colors' 'Cyan: navigate. Green: found/working. Amber: review. Red: failed action or invalid input.' $palette.Muted
+    Write-PnpValue 'Updates [9] > [5]' 'Standalone-launcher sessions prepare updates after scanning and install after normal Exit. This page controls the setting and manual checks. HWID_NO_UPDATE=1 disables update operations for this session.' $palette.Muted
     Write-PnpValue 'Motion' 'Next sweeps forward, Back reverses, Exit closes inward. Set HWID_NO_ANIMATION=1 before launch to disable.' $palette.Muted
     Write-Heading 'UNDERSTAND YOUR IDs'
     Write-PnpValue 'Quick IDs [2]' 'Short serial-number table. Full values are in [5] or saved reports.' $palette.Text
@@ -2721,13 +2729,27 @@ function Get-ScanProgressText([int]$Completed,[int]$Total,[double]$Seconds,[int]
     $filled=[int][math]::Floor(20*$Completed/$Total)
     return ('[{0}{1}] {2,3:0}% / {3} of {4} finished / {5:0.0}s elapsed' -f ('#'*$filled),('-'*(20-$filled)),(100*$Completed/$Total),$Completed,$Total,[math]::Max(0.0,$Seconds))
 }
-function Update-ScanProgress([int]$Completed=$script:scanStep) {
+function Update-ScanProgress([int]$Completed=$script:scanStep,[switch]$Boundary) {
     if($null -eq $script:scanProgressState -or $null -eq $script:scanProgressClock){return}
-    try {
-        $total=if($null -ne $script:scanProgressTotal){$script:scanProgressTotal}else{$scanTotal}
-        $text='  '+(Get-ScanProgressText $Completed $total $script:scanProgressClock.Elapsed.TotalSeconds ([Console]::WindowWidth-3))
-        $null=Write-ScanStatus $script:scanProgressState $text $palette.Heading
-    }catch{}
+    $state=$script:scanProgressState
+    $width=96
+    try{if([Console]::WindowWidth -gt 3){$width=[Console]::WindowWidth-3}}catch{}
+    $total=if($null -ne $script:scanProgressTotal){$script:scanProgressTotal}else{$scanTotal}
+    $text='  '+(Get-ScanProgressText $Completed $total $script:scanProgressClock.Elapsed.TotalSeconds $width)
+    if(-not $state.BoundaryFallback){
+        $painted=$false
+        try{$painted=Write-ScanStatus $state $text $palette.Heading}catch{}
+        if($painted){return}
+        $state | Add-Member NoteProperty BoundaryFallback $true -Force
+        $script:scanProgressFallbackUsed=$true
+    }
+    # A resize invalidates the old buffer coordinates. Print only between queries.
+    if($Boundary -and ($null -eq $state.LastBoundary -or $state.LastBoundary -ne $Completed)){
+        try {
+            Write-PnpLine $text $palette.Heading
+            $state | Add-Member NoteProperty LastBoundary $Completed -Force
+        }catch{}
+    }
 }
 function Start-ScanLine($Prefix) {
     Read-ScanNavigation
@@ -2963,7 +2985,7 @@ function Section($Name, [scriptblock]$Query) {
     } finally {
         $timer.Stop()
         if($null -ne $script:scanTimings){$script:scanTimings.Add([pscustomobject]@{Section=$Name;Status=$status;Results=$results;Seconds=[math]::Round($timer.Elapsed.TotalSeconds,3);Summary=$summary;FailureCode=$failureCode;NextStep=$nextStep;Recoveries=@($script:lastQueryRecoveries);QueryCleanupWarning=$script:lastQueryCleanupFailure;ProgressWarning=(@($groupWarning,$resultWarning,$script:lastQueryFeedbackFailure) | Where-Object {$_}) -join ' / '})}
-        Update-ScanProgress
+        Update-ScanProgress -Boundary
     }
 }
 function Get-MonitorTextResult($Codes,$Length=$null) {
@@ -3019,6 +3041,7 @@ function Show-ScanCompletion($Inventory,$Identifiers,[int]$Read,[int]$Total,[boo
         Write-PnpValue 'Selected IDs' ("$found identifier fields reported by Windows") $(if($found){$palette.Good}else{$palette.Warn})
         $review=Get-ReviewSummary $Inventory $Identifiers $Inventory['Warnings']
         Write-PnpValue 'Review' ("$($review.Total) findings -> Main [4] after Enter.") $(if($review.Total){$palette.Warn}else{$palette.Good})
+        if($info.ProgressHeaderFallback){Write-PnpValue 'Scan progress' 'The live progress row became unavailable. Progress continued between queries.' $palette.Muted}
         if($info.CompatibleReadSections){Write-PnpValue 'Compatible reads' ("$($info.CompatibleReadSections) sections recovered through a compatible reader/query. Main [5] shows details.") $palette.Good}
         if($info.ProgressFallbackSections){Write-PnpValue 'Progress display' ("$($info.ProgressFallbackSections) sections finished after live display updates failed. Read results are shown above; Main [5] has details.") $palette.Warn}
         if($info.QueryCleanupSections -or $Inventory['Extended scan info'].QueryCleanupWarning){Write-PnpValue 'Query cleanup' 'Query resources reported cleanup problems; read status is shown above. Main [5] keeps the details.' $palette.Warn}
@@ -3041,6 +3064,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     $finishedSnapshot=$null
     $warnings=New-Object 'System.Collections.Generic.List[string]'
     $script:scanStep=0
+    $script:scanProgressFallbackUsed=$false
     $script:scanGroupState=[pscustomobject]@{LastGroup='';Index=0;Total=$(if($IncludeExtended){7}else{6})}
     $script:scanTimings=New-Object 'System.Collections.Generic.List[object]'
     Reset-UiPage
@@ -3048,7 +3072,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-PnpLine '  Hardware identity and Windows inventory. Read-only scan.' $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.83'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.85'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-PnpLine "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" $palette.Muted
@@ -3176,7 +3200,8 @@ $report['Warnings'] = @($warnings.ToArray())
     }
     $rows=@(Get-IdentifierRows $report)
     $finalProgressWarning=$null
-    try {Update-ScanProgress $script:scanProgressTotal}catch{$finalProgressWarning=$_.Exception.Message}
+    try {Update-ScanProgress $script:scanProgressTotal -Boundary}catch{$finalProgressWarning=$_.Exception.Message}
+    if($script:scanProgressFallbackUsed){$report['Report info']['ProgressHeaderFallback']=$true}
     $completionWarning=Show-ScanCompletion $report $rows $read $scanTotal $complete $extendedNote
     $completionFeedback=(@($finalProgressWarning,$completionWarning) | Where-Object {$_}) -join ' / '
     if($completionFeedback){$report['Report info']['CompletionDisplayWarning']=$completionFeedback}
@@ -3579,20 +3604,207 @@ function Get-RecentReports($Folder) {
         Get-ChildItem -LiteralPath $Folder -Filter 'HWID-*.json' -File | Sort-Object LastWriteTimeUtc,Name -Descending | Select-Object -First 5
     }
 }
+function Convert-SnapshotFolderPath($Path) {
+    if($Path -isnot [string] -or $Path -cnotmatch '\A[A-Za-z]:[\\/]' -or $Path.Length -gt 32767){return $null}
+    $relative=$Path.Substring(3)
+    if($relative -match '[\p{Cc}:<>"|?*]'){return $null}
+    foreach($part in ($relative -split '[\\/]')) {
+        if(-not $part -or $part -ceq '.' -or $part -ceq '..'){continue}
+        if($part.EndsWith('.') -or $part.EndsWith(' ')){return $null}
+        $deviceName=$part.Split('.')[0].TrimEnd(' ')
+        if($deviceName -match '\A(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|(?:COM|LPT)[1-9\u00B9\u00B2\u00B3])\z'){return $null}
+    }
+    try {
+        $full=[IO.Path]::GetFullPath($Path.Replace('/','\'))
+        if($full.Length -gt 3){$full=$full.TrimEnd('\')}
+        return $full
+    }catch{return $null}
+}
+function Read-SnapshotLibraryText([string]$Path) {
+    try {
+        $sharing=[IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
+        $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,$sharing)
+    }catch [IO.FileNotFoundException]{return $null}
+    catch [IO.DirectoryNotFoundException]{return $null}
+    try {
+        $size=$stream.Length
+        if($size -gt 256KB){throw [IO.InvalidDataException]::new('Folder settings exceed the 256 KiB limit.')}
+        $bytes=New-Object byte[] ([int]$size)
+        $read=0
+        while($read -lt $bytes.Length) {
+            $received=$stream.Read($bytes,$read,$bytes.Length-$read)
+            if(-not $received){throw [IO.EndOfStreamException]::new('Folder settings changed while being read.')}
+            $read+=$received
+        }
+        if($stream.ReadByte() -ne -1){throw [IO.InvalidDataException]::new('Folder settings changed while being read.')}
+        $offset=0
+        if($bytes.Length -ge 3 -and $bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191){$offset=3}
+        return [Text.UTF8Encoding]::new($false,$true).GetString($bytes,$offset,$bytes.Length-$offset)
+    }finally{$stream.Dispose()}
+}
+function Test-SnapshotLibraryJson([string]$Json) {
+    # Windows PowerShell's JSON parser silently collapses duplicate keys. Check tokens before parsing.
+    $names=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $tokens=[regex]::Matches($Json,'\G[ \t\r\n]*(?:"(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9A-Fa-f]{4}))*"|[{}\[\]:,]|(?:true|false|null|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)(?=[ \t\r\n,}\]]|\z))')
+    $position=0;$depth=0;$last=''
+    foreach($match in $tokens) {
+        $token=$match.Value.TrimStart([char[]]@(32,9,13,10))
+        $position=$match.Index+$match.Length
+        if($last -ceq ',' -and $token -in @('}',']')){throw [IO.InvalidDataException]::new('Folder settings contain a trailing comma.')}
+        if($depth -eq 1 -and $last -in @('{',',') -and $token.StartsWith('"')) {
+            $name=$token.Substring(1,$token.Length-2)
+            if($name.Contains('\')){$name=Convert-ReportJson $token}
+            if(-not $names.Add($name)){throw [IO.InvalidDataException]::new('Folder settings contain duplicate properties.')}
+        }
+        if($token -in @('{','[')){$depth++}
+        if($token -in @('}',']')){$depth--}
+        $last=$token
+    }
+    if($Json.Substring($position) -cnotmatch '\A[ \t\r\n]*\z'){throw [IO.InvalidDataException]::new('Folder settings are not valid JSON.')}
+}
+function Read-SnapshotLibrary([string]$Path) {
+    $json=Read-SnapshotLibraryText $Path
+    if($null -eq $json){return $null}
+    Test-SnapshotLibraryJson $json
+    if($json -cnotmatch '\A[ \t\r\n]*\{'){throw [IO.InvalidDataException]::new('Folder settings must be a JSON object.')}
+    $value=Convert-ReportJson $json
+    $names=@($value.PSObject.Properties.Name)
+    if($names -cnotcontains 'version' -or $names -cnotcontains 'primary' -or $names -cnotcontains 'folders' -or
+       ($value.version -isnot [int] -and $value.version -isnot [long]) -or $value.version -ne 1 -or
+       $value.folders -isnot [array] -or $value.folders.Count -gt 32) {
+        throw [IO.InvalidDataException]::new('Unsupported folder settings. Expected version 1, primary and up to 32 tracked folders.')
+    }
+    $primary=$null
+    if($null -ne $value.primary) {
+        $primary=Convert-SnapshotFolderPath $value.primary
+        if(-not $primary){throw [IO.InvalidDataException]::new('The shared save folder is not a valid local drive path.')}
+    }
+    $folders=New-Object 'System.Collections.Generic.List[string]'
+    $seen=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    if($primary){[void]$seen.Add($primary)}
+    foreach($candidate in $value.folders) {
+        $folder=Convert-SnapshotFolderPath $candidate
+        if(-not $folder){throw [IO.InvalidDataException]::new('A tracked folder is not a valid local drive path.')}
+        if($seen.Add($folder)){$folders.Add($folder)}
+    }
+    return [pscustomobject]@{Primary=$primary;Folders=$folders.ToArray()}
+}
+function Get-LegacySnapshotFolders([string]$LibraryPath) {
+    if(-not $LibraryPath){return}
+    try {
+        $path=Join-Path (Split-Path -Parent $LibraryPath) 'Desktop\settings.json'
+        $json=Read-SnapshotLibraryText $path
+        if($null -eq $json){return}
+        if($json -cnotmatch '\A[ \t\r\n]*\{'){return}
+        $legacy=Convert-ReportJson $json
+        $seen=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+        $candidates=@($legacy.lastSaveFolder)
+        if($legacy.snapshotFolders -is [array]){$candidates+=@($legacy.snapshotFolders)}
+        foreach($candidate in $candidates) {
+            $folder=Convert-SnapshotFolderPath $candidate
+            if($folder -and $seen.Add($folder)){
+                $folder
+                if($seen.Count -ge 32){return}
+            }
+        }
+    }catch{}
+}
+function Get-SnapshotLibrary([string]$LocalRoot=$env:LOCALAPPDATA) {
+    if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}
+    $path=if($LocalRoot){Join-Path $LocalRoot 'HWID Checker\snapshot-library.json'}else{$null}
+    $warning=$null
+    if($path) {
+        try {
+            $saved=Read-SnapshotLibrary $path
+            if($null -ne $saved){return [pscustomobject]@{Path=$path;Primary=$saved.Primary;Folders=$saved.Folders;Warning=$null}}
+        }catch{$warning='Shared folder settings could not be read. Default save folders are in use; the settings file was kept.'}
+    }
+    return [pscustomobject]@{Path=$path;Primary=$null;Folders=@(Get-LegacySnapshotFolders $path);Warning=$warning}
+}
+function Open-SnapshotLibraryLock([string]$Path) {
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+    while($true) {
+        try {return [IO.File]::Open($Path,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)}
+        catch [IO.IOException] {
+            if(($_.Exception.HResult -band 65535) -notin @(32,33)){throw}
+            if($clock.ElapsedMilliseconds -ge 1750){throw [IO.IOException]::new('Another window is updating snapshot folders. Try again shortly.',$_.Exception)}
+            Start-Sleep -Milliseconds 60
+        }
+    }
+}
+function Update-SnapshotLibrary([string]$Path,[ValidateSet('SetPrimary','Add','Remove','Reset')][string]$Action,$Folder) {
+    if(-not $Path){throw 'The local app-data settings folder is unavailable.'}
+    if($Action -ne 'Reset') {
+        $Folder=Convert-SnapshotFolderPath $Folder
+        if(-not $Folder){throw 'Enter a valid absolute drive-letter folder, for example C:\HWID-Reports.'}
+    }
+    $directory=Split-Path -Parent $Path
+    [void][IO.Directory]::CreateDirectory($directory)
+    $lock=Open-SnapshotLibraryLock (Join-Path $directory 'snapshot-library.lock')
+    $temporary=$null
+    try {
+        try {$saved=Read-SnapshotLibrary $Path}
+        catch{throw [IO.InvalidDataException]::new('Shared folder settings could not be read and were kept. Repair or move the settings file before changing folders.',$_.Exception)}
+        $primary=$null
+        $folders=New-Object 'System.Collections.Generic.List[string]'
+        if($null -ne $saved) {
+            $primary=$saved.Primary
+            foreach($existing in $saved.Folders){$folders.Add($existing)}
+        }else{foreach($existing in (Get-LegacySnapshotFolders $Path)){$folders.Add($existing)}}
+        $samePrimary=[string]::Equals($Folder,$primary,[StringComparison]::OrdinalIgnoreCase)
+        $index=$folders.FindIndex([Predicate[string]]{param($item) [string]::Equals($item,$Folder,[StringComparison]::OrdinalIgnoreCase)})
+        switch($Action) {
+            'Add' {if($index -lt 0 -and -not $samePrimary){$folders.Add($Folder)}}
+            'Remove' {
+                if($samePrimary){throw 'This is the shared save folder. Choose a different one or use the default before removing it.'}
+                if($index -lt 0){throw 'That folder is no longer tracked. Open the list and try again.'}
+                $folders.RemoveAt($index)
+            }
+            'SetPrimary' {
+                if($index -ge 0){$folders.RemoveAt($index)}
+                if($primary -and -not $samePrimary){$folders.Add($primary)}
+                $primary=$Folder
+            }
+            'Reset' {
+                if($primary){$folders.Add($primary)}
+                $primary=$null
+            }
+        }
+        if($folders.Count -gt 32){throw 'The list allows 32 tracked folders. Remove one before making this change.'}
+        $json=ConvertTo-Json -InputObject ([ordered]@{version=1;primary=$primary;folders=$folders.ToArray()}) -Depth 4 -Compress -ErrorAction Stop
+        $encoding=[Text.UTF8Encoding]::new($false,$true)
+        if($encoding.GetByteCount($json) -gt 256KB){throw 'Folder settings exceed the 256 KiB limit.'}
+        $temporary=Join-Path $directory ('snapshot-library.'+[guid]::NewGuid().ToString('N')+'.tmp')
+        [IO.File]::WriteAllText($temporary,$json,$encoding)
+        if($null -ne $saved){[IO.File]::Replace($temporary,$Path,[NullString]::Value)}
+        else{[IO.File]::Move($temporary,$Path)}
+    }finally{
+        if($temporary){try{[IO.File]::Delete($temporary)}catch{}}
+        $lock.Dispose()
+    }
+}
+function Write-SnapshotLibraryWarning($Locations) {
+    if($Locations.PSObject.Properties['Library'] -and $Locations.Library.Warning) {
+        Write-PnpValue 'STORE-SYNC / settings unavailable' $Locations.Library.Warning $palette.Warn
+        Write-PnpValue 'Settings file' $Locations.Library.Path $palette.Muted
+    }
+}
 function Get-ReportLocations([string]$ScriptPath=$env:HWID_SCRIPT,[string]$LocalRoot=$env:LOCALAPPDATA) {
     $base=Split-Path -Parent ([IO.Path]::GetFullPath($ScriptPath))
-    $primary=Join-Path $base 'HWID-Reports'
+    $default=Join-Path $base 'HWID-Reports'
     if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}
     $fallback=if($LocalRoot){Join-Path $LocalRoot 'HWID Checker\HWID-Reports'}else{$null}
+    $library=Get-SnapshotLibrary $LocalRoot
+    $primary=if($library.Primary){$library.Primary}else{$default}
     $folders=New-Object 'System.Collections.Generic.List[string]'
     $seen=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     $parent=Split-Path -Parent $base
     $adjacent=$null
     try {if($parent -and (Test-Path -LiteralPath (Join-Path $parent 'hwid.bat') -PathType Leaf)){$adjacent=Join-Path $parent 'HWID-Reports'}}catch{}
-    foreach($folder in @($primary,$fallback,$adjacent)) {
+    foreach($folder in (@($primary,$default,$fallback,$adjacent)+$library.Folders)) {
         if($folder -and $seen.Add([IO.Path]::GetFullPath($folder))){$folders.Add([IO.Path]::GetFullPath($folder))}
     }
-    [pscustomobject]@{Primary=$primary;Fallback=$fallback;Search=@($folders.ToArray())}
+    [pscustomobject]@{Primary=$primary;Fallback=$fallback;Search=@($folders.ToArray());Library=$library}
 }
 function Get-ReportCaptureTime($Info) {
     $stamp=[datetimeoffset]::MinValue
@@ -3645,11 +3857,89 @@ function Get-SnapshotDisplayInfo($Entry) {
     if($Entry.Relation -eq 'NEWER'){return [pscustomobject]@{Color='Warn';Hint='Newer than the active scan; check the comparison direction.'}}
     return [pscustomobject]@{Color='Warn';Hint='Capture time is unknown; check the file before comparing.'}
 }
+function Show-SnapshotLibrary {
+    $notice=$null;$noticeColor=$palette.Good
+    while($true) {
+        Reset-UiPage;Start-UiReport
+        Write-Heading 'SAVED SNAPSHOTS / LOCAL LIBRARY'
+        $locations=Get-ReportLocations
+        $library=$locations.Library
+        $destinationLabel=if($library.Primary){'Shared save folder'}else{'Default save folder'}
+        Write-PnpValue $destinationLabel $locations.Primary $palette.Text
+        Write-PnpValue 'Tracked folders' ($library.Folders.Count.ToString()+' / 32') $palette.Muted
+        Write-PnpValue 'Shared with Desktop' 'Both views read the same local report folders. Changing settings keeps existing files in place.' $palette.Muted
+        Write-SnapshotLibraryWarning $locations
+        if($notice){Write-PnpValue 'Folder settings' $notice $noticeColor}
+        Show-MenuItem '1' 'View saved reports and locations' ''
+        Show-MenuItem '2' 'Open a report folder in Explorer' ''
+        Show-MenuItem '3' 'Choose a shared save folder' ''
+        Show-MenuItem '4' 'Track another folder for comparison' ''
+        Show-MenuItem '5' 'Stop tracking a folder' ''
+        Show-MenuItem '6' 'Use the default save folder' ''
+        Show-MenuItem '0' 'Back to main menu' ''
+        Complete-UiReport
+        $selection=Read-MenuChoice -Maximum 6
+        if($null -eq $selection -or $selection -eq '0'){return}
+        $notice=$null
+        if($selection -in @('1','2')){
+            Show-SnapshotStorage -OpenFolder:($selection -eq '2')
+            Wait-UiPage
+            continue
+        }
+        if($library.Warning){
+            $notice='Repair or move the settings file shown above before changing folders.'
+            $noticeColor=$palette.Warn
+            continue
+        }
+        if($selection -eq '5' -and -not $library.Folders.Count){
+            $notice='There are no extra tracked folders to remove.'
+            $noticeColor=$palette.Muted
+            continue
+        }
+        $folder=$null
+        $action=switch($selection){'3'{'SetPrimary'} '4'{'Add'} '5'{'Remove'} '6'{'Reset'}}
+        if($action -eq 'Remove'){
+            Reset-UiPage;Start-UiReport
+            Write-Heading 'STOP TRACKING A FOLDER'
+            for($i=0;$i -lt $library.Folders.Count;$i++){
+                Write-PnpValue ('['+($i+1)+']') $library.Folders[$i] $palette.Text
+            }
+            Write-PnpValue 'Reports' 'Removing a tracked folder keeps its files in place.' $palette.Muted
+            Complete-UiReport
+            $value=([string](Read-CheckerLine 'Folder number (0 or Enter = Back)')).Trim()
+            if(-not $value -or $value -eq '0'){continue}
+            if($value -cnotmatch '\A[1-9][0-9]?\z' -or [int]$value -gt $library.Folders.Count){
+                $notice='Choose a folder number from the list.'
+                $noticeColor=$palette.Warn
+                continue
+            }
+            $folder=$library.Folders[[int]$value-1]
+        }elseif($action -ne 'Reset'){
+            $folder=([string](Read-CheckerLine 'Absolute drive-letter folder (Enter = Back)')).Trim()
+            if(-not $folder){continue}
+            if($folder.Length -ge 2 -and $folder.StartsWith('"') -and $folder.EndsWith('"')){$folder=$folder.Substring(1,$folder.Length-2)}
+        }
+        try {
+            Update-SnapshotLibrary $library.Path $action $folder
+            $notice=switch($action){
+                'SetPrimary' {'Shared save folder updated. The previous shared folder stays tracked.'}
+                'Add' {'The folder is available in the snapshot library.'}
+                'Remove' {'Folder removed from the tracked list. Reports remain in place.'}
+                'Reset' {'Default save folder restored. The previous shared folder stays tracked.'}
+            }
+            $noticeColor=$palette.Good
+        }catch{
+            $notice=$_.Exception.Message
+            $noticeColor=$palette.Warn
+        }
+    }
+}
 function Show-SnapshotStorage([switch]$OpenFolder) {
     Reset-UiPage;Start-UiReport;Add-ReportBookmark '1'
     Write-Heading 'SAVED SNAPSHOTS / STORAGE'
     Write-PnpValue 'Jump' '1 Summary / 2 Folders / 3 Files not read / 4 TXT only. 0 or Enter = menu.' $palette.Muted
     $locations=Get-ReportLocations
+    Write-SnapshotLibraryWarning $locations
     $catalog=Get-SavedSnapshotCatalog $locations.Search $report
     $older=@($catalog.Entries | Where-Object {$_.SamePc -and $_.Older -and $_.UsableIds -gt 0}).Count
     $paired=@($catalog.Entries | Where-Object TextAvailable -eq $true).Count
@@ -3663,11 +3953,16 @@ function Show-SnapshotStorage([switch]$OpenFolder) {
         if($lastSavedReportPath){try{if(Test-Path -LiteralPath (Split-Path -Parent $lastSavedReportPath) -PathType Container){$folder=Split-Path -Parent $lastSavedReportPath;$selected=$true}}catch{}}
         if(-not $selected){foreach($candidate in $locations.Search){try{if(Test-Path -LiteralPath $candidate -PathType Container){$folder=$candidate;break}}catch{}}}
         try {
-            if(Test-Path -LiteralPath $folder -PathType Container){Start-Process explorer.exe -ArgumentList ('"'+$folder+'"');Write-PnpValue 'Opened folder' $folder $palette.Good}
+            if(Test-Path -LiteralPath $folder -PathType Container){
+                $argument=if($folder.EndsWith('\')){$folder+'.'}else{$folder}
+                Start-Process explorer.exe -ArgumentList ('"'+$argument+'"')
+                Write-PnpValue 'Opened folder' $folder $palette.Good
+            }
             else{Write-PnpValue 'No report folder yet' 'Main [6] saves your first snapshot.' $palette.Muted}
         }catch{Write-PnpValue 'STORE-08 / folder not opened' $_.Exception.Message $palette.Warn}
     }
     Add-ReportBookmark '2';Write-Heading 'REPORT LOCATIONS'
+    Write-PnpValue 'Save destination' $locations.Primary $palette.Heading
     foreach($folder in $locations.Search){
         $state='Not created';$color=$palette.Muted
         try{if(Test-Path -LiteralPath $folder -PathType Container){$state='Folder'}}catch{$state='Access unavailable';$color=$palette.Warn}
@@ -3743,6 +4038,7 @@ function Read-CompareReportPath {
     while($true) {
         Reset-UiPage;Start-UiReport
         Write-Heading 'COMPARE / CHOOSE A SAVED BASELINE'
+        Write-SnapshotLibraryWarning $locations
         Write-PnpValue 'Current scan' ($report.'Report info'.Computer+' / '+(Format-ScanTime $report.'Report info'.Generated)) $palette.Text
         $pages=[math]::Max(1,[math]::Ceiling($catalog.Entries.Count/5.0))
         $page=[math]::Max(0,[math]::Min($page,$pages-1))
@@ -3763,7 +4059,11 @@ function Read-CompareReportPath {
         $command=([string]$value).Trim()
         if($command -eq '6'){$page++;continue}
         if($command -eq '7'){$page--;continue}
-        if($command -eq '8'){$catalog=Get-SavedSnapshotCatalog $locations.Search $report;continue}
+        if($command -eq '8'){
+            $locations=Get-ReportLocations
+            $catalog=Get-SavedSnapshotCatalog $locations.Search $report
+            continue
+        }
         if($command -eq '9'){$value=Read-CheckerLine 'JSON or TXT report path (0 = Back)'}
         $path=Resolve-CompareInput $value $recent
         if(-not $path){return $null}
@@ -3991,31 +4291,242 @@ function Start-HardwareRescan([bool]$UseWorker=($ownedConsole -and -not $redirec
     try {Wait-ScanContinue 'snapshot changes' -KeyReader $ContinueReader;Show-RescanResult $lastScanPrevious $lastScanCurrent}
     catch {Write-PnpValue 'RESCAN-02 / summary unavailable' ($_.Exception.Message+' The new snapshot is active; use [1] or [5] from the main menu.') $palette.Warn}
 }
-function Show-ScanTools {
-    Write-Heading 'RESCAN & HELP'
-    Write-PnpValue 'Active snapshot' ("#$($report['Report info'].ScanNumber) / "+(Format-ScanTime $report['Report info'].Generated)) $palette.Text
-    Show-MenuItem '1' 'Rescan entire PC' 'Refresh 17 sections and all Windows-known device records; compare results.'
-    Show-MenuItem '2' 'Help / explain IDs and colors' ''
-    Show-MenuItem '3' 'Review last rescan changes' ''
-    Show-MenuItem '4' 'Extended device scan / hidden & disconnected' ''
-    Show-MenuItem '0' 'Back to main menu' ''
-    Write-PnpValue 'Before rescanning' 'Use main [6] to keep the current snapshot as TXT + JSON. Rescanning does not save automatically.' $palette.Muted
-    Write-PnpValue 'Scope' 'Reads devices currently exposed by Windows; some IDs require administrator access or are not supplied.' $palette.Muted
-    Complete-UiReport
-    $selection=Read-MenuChoice -Maximum 4
-    if($null -eq $selection -or $selection -eq '0'){return $false}
-    Show-UiTransition 'Next' $(if($selection -eq '1'){'Rescan PC'}elseif($selection -eq '2'){'Help'}elseif($selection -eq '4'){'Extended device scan'}else{'Last rescan changes'})
-    Reset-UiPage;Start-UiReport
-    switch($selection) {
-        '1' {Start-HardwareRescan}
-        '2' {Show-Help}
-        '4' {Start-ExtendedDeviceScan}
-        '3' {
-            if($null -ne $lastScanPrevious -and $null -ne $lastScanCurrent){Show-RescanResult $lastScanPrevious $lastScanCurrent}
-            else {Write-Heading 'NO RESCAN YET';Write-PnpValue 'Next' 'Choose main [9] > [1] to rescan first.' $palette.Muted}
+function Get-CheckerPackageVersion {return '1.3.0'}
+function Get-CheckerUpdatePaths([string]$ScriptPath=$env:HWID_SCRIPT,[string]$LocalRoot=$env:LOCALAPPDATA) {
+    $install=[IO.Path]::GetFullPath((Split-Path -Parent ([IO.Path]::GetFullPath($ScriptPath))))
+    if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}
+    if(-not $LocalRoot){throw 'The local update storage folder is unavailable.'}
+    $hash=[Security.Cryptography.SHA256]::Create()
+    try{$key=([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($install.TrimEnd('\').ToUpperInvariant())))).Replace('-','').Substring(0,16).ToLowerInvariant()}
+    finally{$hash.Dispose()}
+    $root=Join-Path $LocalRoot 'HWID Checker\Updates'
+    $directory=Join-Path $root ($key+'-bat')
+    return [pscustomobject]@{
+        InstallDirectory=$install;UpdaterPath=Join-Path $install 'Update-HWID.ps1'
+        Directory=$directory;ResultPath=Join-Path $directory 'result.json'
+        PreferencesPath=Join-Path $root 'preferences.json'
+    }
+}
+function Get-CheckerUpdatePreferences($Paths) {
+    try {
+        $json=Read-SnapshotLibraryText $Paths.PreferencesPath
+        if($null -eq $json){return [pscustomobject]@{Enabled=$true;Warning=$null}}
+        $value=Convert-ReportJson $json
+        if($value -isnot [pscustomobject] -or $value.automaticUpdates -isnot [bool]){throw 'Invalid automatic update preference.'}
+        return [pscustomobject]@{Enabled=$value.automaticUpdates;Warning=$null}
+    }catch{return [pscustomobject]@{Enabled=$false;Warning='Update preferences could not be read. Choose the automatic-update setting below to save your preference again.'}}
+}
+function Set-CheckerAutomaticUpdates($Paths,[bool]$Enabled) {
+    $directory=Split-Path -Parent $Paths.PreferencesPath
+    [void][IO.Directory]::CreateDirectory($directory)
+    $temporary=Join-Path $directory ('preferences.'+[guid]::NewGuid().ToString('N')+'.tmp')
+    try {
+        $json=ConvertTo-Json -InputObject @{automaticUpdates=$Enabled} -Compress -ErrorAction Stop
+        [IO.File]::WriteAllText($temporary,$json,[Text.UTF8Encoding]::new($false,$true))
+        if([IO.File]::Exists($Paths.PreferencesPath)){[IO.File]::Replace($temporary,$Paths.PreferencesPath,[NullString]::Value)}
+        else{[IO.File]::Move($temporary,$Paths.PreferencesPath)}
+    }finally{try{[IO.File]::Delete($temporary)}catch{}}
+}
+function Test-CheckerUpdateRepair($Paths,$Result) {
+    if($Result.currentVersion -isnot [string] -or $Result.currentVersion -cnotmatch '\A[0-9]+\.[0-9]+\.[0-9]+\z' -or
+       [version]$Result.currentVersion -ge [version](Get-CheckerPackageVersion) -or $Result.component -cne 'Bat' -or
+       $Result.installDirectory -isnot [string]){return $false}
+    try {
+        $install=Convert-SnapshotFolderPath $Result.installDirectory
+        if(-not $install){return $false}
+        $install=$install.TrimEnd('\')
+        if(-not [string]::Equals($install,$Paths.InstallDirectory.TrimEnd('\'),[StringComparison]::OrdinalIgnoreCase)){return $false}
+        foreach($directory in (Get-ChildItem -LiteralPath $Paths.InstallDirectory -Directory -Force -ErrorAction Stop)) {
+            if($directory.Name -cnotmatch '\A\.hwid-update-[a-f0-9]{32}\z' -or
+               ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint)){continue}
+            if((Test-Path -LiteralPath (Join-Path $directory.FullName 'completed.json')) -or
+               (Test-Path -LiteralPath (Join-Path $directory.FullName 'recovered.json'))){continue}
+            $path=Join-Path $directory.FullName 'transaction.json'
+            $file=Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+            if($null -eq $file -or $file.PSIsContainer -or $file.Length -gt 256KB -or
+               ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)){continue}
+            try {
+                $journal=Convert-ReportJson (Read-SnapshotLibraryText $path)
+                if($journal -is [pscustomobject] -and $journal.version -is [string] -and $journal.version -ceq $Result.latestVersion){return $true}
+            }catch{}
+        }
+    }catch{}
+    return $false
+}
+function Read-CheckerUpdateResult($Paths) {
+    try {
+        $json=Read-SnapshotLibraryText $Paths.ResultPath
+        if($null -eq $json){return $null}
+        $result=Convert-ReportJson $json
+        if($result -isnot [pscustomobject] -or $result.state -cnotin @('current','available','ready','error','busy') -or $result.message -isnot [string]){return $null}
+        if($result.state -in @('available','ready')) {
+            if($result.latestVersion -isnot [string] -or $result.latestVersion -cnotmatch '\A[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?\z'){return $null}
+            if($result.state -eq 'ready' -and [version]$result.latestVersion -eq [version](Get-CheckerPackageVersion) -and (Test-CheckerUpdateRepair $Paths $result)){
+                $result | Add-Member NoteProperty repair $true -Force
+                $result.message='Ready to finish an interrupted update after normal Exit.'
+            }elseif([version]$result.latestVersion -le [version](Get-CheckerPackageVersion)){
+                $result.state='current'
+                $result.message='The installed package is current or newer than the published release.'
+            }
+        }
+        return $result
+    }catch{return $null}
+}
+function Test-CheckerUpdateRunning {
+    if($null -eq $script:checkerUpdateProcess){return $false}
+    try{if(-not $script:checkerUpdateProcess.HasExited){return $true}}catch{}
+    try{$script:checkerUpdateProcess.Dispose()}catch{}
+    $script:checkerUpdateProcess=$null
+    return $false
+}
+function Start-CheckerUpdateProcess($Paths,[string]$Mode,[string]$HelperPath=$Paths.UpdaterPath,[string]$StageDirectory,[string]$CurrentVersion=(Get-CheckerPackageVersion)) {
+    $parameters=[ordered]@{
+        Mode=$Mode;InstallDirectory=$Paths.InstallDirectory;CurrentVersion=$CurrentVersion
+        Component='Bat';ResultPath=$Paths.ResultPath
+    }
+    if($Mode -eq 'Apply'){
+        $process=[Diagnostics.Process]::GetCurrentProcess()
+        try {
+            $parameters['StageDirectory']=$StageDirectory
+            $parameters['WaitProcessId']=$PID
+            $parameters['WaitProcessStartTicks']=$process.StartTime.ToUniversalTime().Ticks
+        }finally{$process.Dispose()}
+    }
+    $payload=ConvertTo-Json -InputObject @{scriptPath=$HelperPath;parameters=$parameters} -Compress -Depth 4 -ErrorAction Stop
+    $data=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
+    $command='$ErrorActionPreference="Stop";try{$request=ConvertFrom-Json ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("'+$data+'")));$parameters=@{};foreach($item in $request.parameters.PSObject.Properties){$parameters[$item.Name]=$item.Value};& $request.scriptPath @parameters *> $null}catch{exit 1}'
+    $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+    $runtime=Join-Path $PSHOME $(if($PSVersionTable.PSVersion.Major -le 5){'powershell.exe'}else{'pwsh.exe'})
+    $start=[Diagnostics.ProcessStartInfo]::new()
+    $start.FileName=$runtime
+    $start.Arguments='-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand '+$encoded
+    $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
+    $script:checkerUpdateProcess=[Diagnostics.Process]::Start($start)
+    if($null -eq $script:checkerUpdateProcess){throw 'The update helper could not be started.'}
+}
+function Start-CheckerUpdateOperation([ValidateSet('Check','Prepare')][string]$Mode='Prepare',[switch]$Manual) {
+    if($env:HWID_NO_UPDATE -eq '1'){throw 'Update checks are disabled by HWID_NO_UPDATE.'}
+    if(Test-CheckerUpdateRunning){return 'An update check is already running. Refresh the status shortly.'}
+    $paths=Get-CheckerUpdatePaths
+    if(-not [IO.File]::Exists($paths.UpdaterPath)){throw 'Keep Update-HWID.ps1 beside hwid.bat to use update controls.'}
+    $result=Read-CheckerUpdateResult $paths
+    if($result.repair){return 'A prepared interrupted update is ready to finish after normal Exit from the standalone launcher.'}
+    if(-not $Manual) {
+        $preferences=Get-CheckerUpdatePreferences $paths
+        if(-not $preferences.Enabled){return}
+        if($result) {
+            $hours=if($result.state -in @('current','ready')){24}elseif($result.state -eq 'error'){1}else{0}
+            $age=([datetime]::UtcNow-[IO.File]::GetLastWriteTimeUtc($paths.ResultPath)).TotalHours
+            if($hours -and $age -ge 0 -and $age -lt $hours){return}
         }
     }
-    return $true
+    [void][IO.Directory]::CreateDirectory($paths.Directory)
+    Start-CheckerUpdateProcess $paths $Mode
+    $script:checkerUpdateLaunchFailure=$null
+    return $(if($Mode -eq 'Prepare'){'Update preparation is running in the background. Refresh this page to see its result.'}else{'The version check is running in the background. Refresh this page to see its result.'})
+}
+function Start-CheckerAutomaticUpdate {
+    if(-not $ownedConsole -or $redirected -or $env:HWID_NO_UPDATE -eq '1'){return}
+    try{Start-CheckerUpdateOperation -Mode Prepare | Out-Null}
+    catch{$script:checkerUpdateLaunchFailure=$_.Exception.Message}
+}
+function Start-CheckerExitUpdate {
+    if(-not $ownedConsole -or $redirected -or $env:HWID_NO_UPDATE -eq '1'){return}
+    try {
+        if(Test-CheckerUpdateRunning){return}
+        $paths=Get-CheckerUpdatePaths
+        if(-not (Get-CheckerUpdatePreferences $paths).Enabled){return}
+        $result=Read-CheckerUpdateResult $paths
+        if($null -eq $result -or $result.state -ne 'ready'){return}
+        $stage=Convert-SnapshotFolderPath $result.stageDirectory
+        if(-not $stage -or -not [IO.Directory]::Exists($stage)){throw 'The prepared update folder is unavailable. Prepare the update again from [9] > [5].'}
+        if(-not [IO.File]::Exists($paths.UpdaterPath)){throw 'The update helper is missing. Keep Update-HWID.ps1 beside hwid.bat.'}
+        $helperDirectory=Join-Path $paths.Directory ('apply-'+[guid]::NewGuid().ToString('N'))
+        [void][IO.Directory]::CreateDirectory($helperDirectory)
+        $helper=Join-Path $helperDirectory 'Update-HWID.ps1'
+        [IO.File]::Copy($paths.UpdaterPath,$helper,$false)
+        $applyVersion=if($result.repair){$result.currentVersion}else{Get-CheckerPackageVersion}
+        Start-CheckerUpdateProcess $paths 'Apply' $helper $stage $applyVersion
+        Write-PnpValue 'Update ready' 'The prepared update will install after this checker process exits.' $palette.Good
+    }catch{Write-PnpValue 'Update deferred' $_.Exception.Message $palette.Warn}
+}
+function Show-CheckerUpdates {
+    $notice=$null
+    while($true) {
+        Reset-UiPage;Start-UiReport
+        Write-Heading 'UPDATES / BAT & DESKTOP PACKAGE'
+        $paths=Get-CheckerUpdatePaths
+        $preferences=Get-CheckerUpdatePreferences $paths
+        Write-PnpValue 'Installed' ('Scanner 3.85 / package '+(Get-CheckerPackageVersion)) $palette.Text
+        Write-PnpValue 'Automatic updates' $(if($preferences.Enabled){'On. Standalone-launcher sessions prepare updates and install after normal Exit.'}else{'Off. Enable this setting to install a prepared update after normal Exit.'}) $palette.Muted
+        if($preferences.Warning){Write-PnpValue 'Preferences' $preferences.Warning $palette.Warn}
+        $result=Read-CheckerUpdateResult $paths
+        if(Test-CheckerUpdateRunning){Write-PnpValue 'Status' 'Checking or preparing an update in the background. Choose Refresh status shortly.' $palette.Heading}
+        elseif(-not [IO.File]::Exists($paths.UpdaterPath)){Write-PnpValue 'Update unavailable' 'Keep Update-HWID.ps1 beside hwid.bat to use this page.' $palette.Warn}
+        elseif($result) {
+            $color=if($result.state -eq 'ready'){$palette.Good}elseif($result.state -eq 'error'){$palette.Warn}else{$palette.Text}
+            Write-PnpValue 'Status' $result.message $color
+            if($result.latestVersion -and $result.state -in @('available','ready')){Write-PnpValue 'Update package' $result.latestVersion $palette.Text}
+            if($result.state -eq 'ready') {
+                if($result.batVersion){Write-PnpValue 'Prepared scanner' $result.batVersion $palette.Text}
+                Write-PnpValue 'Installation' $(if($preferences.Enabled){if($ownedConsole -and -not $redirected){'Ready for installation after normal Exit from the standalone launcher.'}else{'Prepared. Open hwid.bat normally, then choose Exit to install.'}}else{'Prepared. Enable automatic updates to install after normal Exit.'}) $palette.Muted
+            }
+        }else{Write-PnpValue 'Status' 'No update status has been recorded yet.' $palette.Muted}
+        if($script:checkerUpdateLaunchFailure){Write-PnpValue 'Update deferred' $script:checkerUpdateLaunchFailure $palette.Warn}
+        if($notice){Write-PnpValue 'Action' $notice $palette.Heading}
+        Show-MenuItem '1' 'Check and prepare an update' ''
+        Show-MenuItem '2' 'Check the published version' ''
+        Show-MenuItem '3' $(if($preferences.Enabled){'Turn automatic updates off'}else{'Turn automatic updates on'}) ''
+        Show-MenuItem '4' 'Refresh status' ''
+        Show-MenuItem '0' 'Back to rescan and help' ''
+        Complete-UiReport
+        $choice=Read-MenuChoice -Maximum 4
+        if($null -eq $choice -or $choice -eq '0'){return}
+        $notice=$null
+        try {
+            switch($choice) {
+                '1' {$notice=Start-CheckerUpdateOperation -Mode Prepare -Manual}
+                '2' {$notice=Start-CheckerUpdateOperation -Mode Check -Manual}
+                '3' {
+                    $enabled=-not $preferences.Enabled
+                    Set-CheckerAutomaticUpdates $paths $enabled
+                    if($enabled){Start-CheckerUpdateOperation -Mode Prepare | Out-Null}
+                    $notice='Automatic-update preference saved.'
+                }
+            }
+        }catch{$notice=$_.Exception.Message}
+    }
+}
+
+function Show-ScanTools {
+    :ScanTools while($true) {
+        Write-Heading 'RESCAN, UPDATES & HELP'
+        Write-PnpValue 'Active snapshot' ("#$($report['Report info'].ScanNumber) / "+(Format-ScanTime $report['Report info'].Generated)) $palette.Text
+        Show-MenuItem '1' 'Rescan entire PC' 'Refresh 17 sections and all Windows-known device records; compare results.'
+        Show-MenuItem '2' 'Help / explain IDs and colors' ''
+        Show-MenuItem '3' 'Review last rescan changes' ''
+        Show-MenuItem '4' 'Extended device scan / hidden & disconnected' ''
+        Show-MenuItem '5' 'Updates / automatic update controls' ''
+        Show-MenuItem '0' 'Back to main menu' ''
+        Write-PnpValue 'Before rescanning' 'Use main [6] to keep the current snapshot as TXT + JSON. Rescanning does not save automatically.' $palette.Muted
+        Write-PnpValue 'Scope' 'Reads devices currently exposed by Windows; some IDs require administrator access or are not supplied.' $palette.Muted
+        Complete-UiReport
+        $selection=Read-MenuChoice -Maximum 5
+        if($null -eq $selection -or $selection -eq '0'){return $false}
+        Show-UiTransition 'Next' $(if($selection -eq '1'){'Rescan PC'}elseif($selection -eq '2'){'Help'}elseif($selection -eq '4'){'Extended device scan'}elseif($selection -eq '5'){'Updates'}else{'Last rescan changes'})
+        Reset-UiPage;Start-UiReport
+        switch($selection) {
+            '1' {Start-HardwareRescan}
+            '2' {Show-Help}
+            '4' {Start-ExtendedDeviceScan}
+            '5' {Show-CheckerUpdates;Reset-UiPage;Start-UiReport;continue ScanTools}
+            '3' {
+                if($null -ne $lastScanPrevious -and $null -ne $lastScanCurrent){Show-RescanResult $lastScanPrevious $lastScanCurrent}
+                else {Write-Heading 'NO RESCAN YET';Write-PnpValue 'Next' 'Choose main [9] > [1] to rescan first.' $palette.Muted}
+            }
+        }
+        return $true
+    }
 }
 function Save-Reports {
     Write-Heading 'SAVE REPORTS / TXT + JSON'
@@ -4030,6 +4541,7 @@ function Save-Reports {
         foreach($property in $properties){$info[$property.Name]=$property.Value}
         $info['SavedAt']=(Get-Date).ToString('o');$report['Report info']=$info
         $locations=Get-ReportLocations
+        Write-SnapshotLibraryWarning $locations
         $name='HWID-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8)
         $lines = @(
             'HWID CHECKER - HARDWARE REPORT'
@@ -4066,7 +4578,7 @@ function Save-Reports {
         $folder=$saved.Folder;$stem=$saved.Stem
         $script:lastSavedReportPath=$stem+'.json'
         Write-PnpValue 'SAVED' 'TXT + JSON created; both final files verified.' $palette.Good
-        if($saved.UsedFallback){Write-PnpValue 'Fallback location' 'The normal report folder could not be written. The snapshot was saved in your local app-data folder.' $palette.Warn;Write-PnpValue 'Primary save issue' $saved.PrimaryFailure $palette.Muted}
+        if($saved.UsedFallback){Write-PnpValue 'Fallback location' 'The preferred report folder could not be written. The snapshot was saved in your local app-data folder.' $palette.Warn;Write-PnpValue 'Primary save issue' $saved.PrimaryFailure $palette.Muted}
         Write-PnpValue 'Computer / scan' ($report['Report info'].Computer+' / '+(Format-ScanTime $report['Report info'].Generated)) $palette.Text
         Write-PnpValue 'Saved at' (Format-ScanTime $report['Report info'].SavedAt) $palette.Text
         $coverage=@(Get-ScanCoverage $report);$read=($coverage | Measure-Object Read -Sum).Sum;$total=($coverage | Measure-Object Total -Sum).Sum
@@ -4080,7 +4592,7 @@ function Save-Reports {
             Write-PnpValue 'Older snapshots' ("$older usable baselines from this PC detected / $($catalog.Entries.Count) saved JSON snapshots total") $(if($older){$palette.Good}else{$palette.Muted})
             if($catalog.Skipped.Count){Write-PnpValue 'Not listed' ("$($catalog.Skipped.Count) unreadable/unsupported files or folders; Main [8] explains why.") $(if(@($catalog.Skipped | Where-Object Color -eq 'Error').Count){$palette.Error}else{$palette.Warn})}
         }catch{Write-PnpValue 'Snapshot lookup' 'Save succeeded. Automatic lookup was unavailable; [7] also accepts a path.' $palette.Warn}
-        Write-PnpValue 'Next' '[7] Choose an older snapshot to compare IDs / [8] Saved reports and storage status' $palette.Heading
+        Write-PnpValue 'Next' '[7] Choose an older snapshot to compare IDs / [8] Saved snapshots and folder settings' $palette.Heading
     } catch {
         Write-PnpValue 'SAVE-01 / not completed' $_.Exception.Message $palette.Error
     }
@@ -4099,6 +4611,7 @@ $initialScan=$null
 $script:checkerPhase='Finished scan / continue'
 if ($redirected -or -not $ownedConsole) { Show-Overview }
 Wait-ScanContinue 'main menu'
+Start-CheckerAutomaticUpdate
 :MainMenu while ($true) {
     $script:checkerPhase='Main menu'
     Show-ControlDeck
@@ -4128,8 +4641,8 @@ Wait-ScanContinue 'main menu'
                 Show-ComparisonResult $previous $report -SourcePath $previousPath
             } catch { Write-PnpValue 'COMPARE-01 / unavailable' $_.Exception.Message $palette.Warn }
         }
-        '8' {Show-SnapshotStorage -OpenFolder}
-        '0' { Show-UiTransition 'Exit'; return }
+        '8' { Show-SnapshotLibrary;Show-UiTransition 'Back';continue MainMenu }
+        '0' { Show-UiTransition 'Exit';Start-CheckerExitUpdate;return }
         default { Show-MenuInputError; continue }
     }
     if ($choice -ne '2') { Wait-UiPage }
