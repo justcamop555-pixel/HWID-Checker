@@ -330,6 +330,9 @@ public partial class MainWindow : Window
         if (IsVerification) return;
         _darkTheme = !_darkTheme;
         ApplyTheme(_darkTheme);
+        // A brief dip makes the palette swap read as a deliberate transition.
+        if (SystemParameters.ClientAreaAnimation)
+            Dashboard.BeginAnimation(OpacityProperty, new DoubleAnimation(0.82, 1, TimeSpan.FromMilliseconds(220)));
         if (!await RememberPreferencesAsync()) ShowStatus("Theme changed", "The theme could not be saved for future sessions.", true);
     }
 
@@ -374,6 +377,12 @@ public partial class MainWindow : Window
             button.SetResourceReference(ForegroundProperty, active ? "AccentBrush" : "MutedBrush");
             System.Windows.Automation.AutomationProperties.SetItemStatus(button, active ? "Current page" : "");
         }
+        // Clicking a nav button leaves keyboard focus (and the pale focus ring)
+        // on it, which reads as a theme flash after switching tabs. Clear it.
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
+        {
+            if (!_closing && !_closeRequested) Keyboard.ClearFocus();
+        }));
         _page = page;
         (PageTitle.Text, PageSubtitle.Text) = page switch
         {

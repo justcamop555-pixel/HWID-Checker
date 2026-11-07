@@ -92,7 +92,7 @@
         <Trigger.EnterActions>
          <BeginStoryboard>
           <Storyboard>
-           <DoubleAnimation Storyboard.TargetName="Shade" Storyboard.TargetProperty="Opacity" To="0.07" Duration="0:0:0.12"/>
+           <DoubleAnimation Storyboard.TargetName="Shade" Storyboard.TargetProperty="Opacity" To="0.05" Duration="0:0:0.12"/>
           </Storyboard>
          </BeginStoryboard>
         </Trigger.EnterActions>

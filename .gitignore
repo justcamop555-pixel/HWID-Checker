@@ -28,3 +28,4 @@ desktop/tests/test-output-*/
 desktop-builds/
 /HWID Checker.exe
 *.zip
+desktop/test-publish/
