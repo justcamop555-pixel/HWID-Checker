@@ -15,7 +15,7 @@ $install=Join-Path $root ("installer's ! & [1] "+[char]0x03a9)
 $env:HWID_SCRIPT=Join-Path $install 'hwid.bat'
 $env:LOCALAPPDATA=Join-Path $root 'local'
 $paths=Get-CheckerUpdatePaths
-Assert ((Get-CheckerPackageVersion) -ceq '1.4.0' -and $paths.InstallDirectory -ceq $install) 'BAT compares package 1.4.0 and preserves literal install paths'
+Assert ((Get-CheckerPackageVersion) -ceq '1.4.1' -and $paths.InstallDirectory -ceq $install) 'BAT compares package 1.4.1 and preserves literal install paths'
 $hash=[Security.Cryptography.SHA256]::Create()
 try{$key=([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($install.ToUpperInvariant())))).Replace('-','').Substring(0,16).ToLowerInvariant()}finally{$hash.Dispose()}
 Assert ($paths.ResultPath -ceq (Join-Path $env:LOCALAPPDATA ('HWID Checker\Updates\'+$key+'-bat\result.json'))) 'The cache has the agreed install-bound component key'
@@ -75,8 +75,8 @@ Assert ($scheduled.Mode -eq 'Apply' -and $scheduled.Stage -eq $stage -and $sched
 Assert ([IO.File]::ReadAllText($scheduled.Helper) -ceq [IO.File]::ReadAllText($paths.UpdaterPath)) 'Copied helper content remains exact'
 $transaction=Join-Path $install ('.hwid-update-'+('a'*32))
 [void][IO.Directory]::CreateDirectory($transaction)
-[IO.File]::WriteAllText((Join-Path $transaction 'transaction.json'),'{"version":"1.4.0"}')
-$repair=@{state='ready';message='Synthetic interrupted update';latestVersion='1.4.0';currentVersion='1.3.0';installDirectory=$install;component='Bat';stageDirectory=$stage}
+[IO.File]::WriteAllText((Join-Path $transaction 'transaction.json'),'{"version":"1.4.1"}')
+$repair=@{state='ready';message='Synthetic interrupted update';latestVersion='1.4.1';currentVersion='1.4.0';installDirectory=$install;component='Bat';stageDirectory=$stage}
 [IO.File]::WriteAllText($paths.ResultPath,($repair | ConvertTo-Json -Compress))
 $cached=Read-CheckerUpdateResult $paths
 Assert ($cached.state -ceq 'ready' -and $cached.repair) 'An unfinished matching journal permits exact same-package repair'
@@ -85,7 +85,7 @@ $before=$script:launches.Count
 Start-CheckerAutomaticUpdate
 Assert ($script:launches.Count -eq $before) 'Automatic preparation keeps an interrupted repair cache intact'
 Start-CheckerExitUpdate
-Assert ($script:launches.Count -eq $before+1 -and $script:launches[-1].CurrentVersion -ceq '1.3.0') 'Repair Apply receives the original current-version binding'
+Assert ($script:launches.Count -eq $before+1 -and $script:launches[-1].CurrentVersion -ceq '1.4.0') 'Repair Apply receives the original current-version binding'
 $before=$script:launches.Count
 $notice=Start-CheckerUpdateOperation -Mode Check -Manual
 Assert ($script:launches.Count -eq $before -and $notice -match 'interrupted update' -and (Read-CheckerUpdateResult $paths).repair) 'A manual version check also preserves the interrupted update for recovery'
@@ -125,7 +125,7 @@ Set-Item Function:Start-CheckerUpdateProcess -Value $realProcess
 Start-CheckerUpdateProcess $paths 'Check'
 Assert ($script:checkerUpdateProcess.WaitForExit(10000) -and $script:checkerUpdateProcess.ExitCode -eq 0) 'Hidden same-runtime helper finishes with output suppressed'
 $packet=Convert-ReportJson ([IO.File]::ReadAllText($paths.ResultPath))
-Assert ($packet.install -ceq $install -and $packet.version -ceq '1.4.0' -and $packet.component -ceq 'Bat') 'Encoded arguments preserve Unicode and shell metacharacters'
+Assert ($packet.install -ceq $install -and $packet.version -ceq '1.4.1' -and $packet.component -ceq 'Bat') 'Encoded arguments preserve Unicode and shell metacharacters'
 $script:checkerUpdateProcess.Dispose();$script:checkerUpdateProcess=$null
 Start-CheckerUpdateProcess $paths 'Apply' $paths.UpdaterPath $stage
 Assert ($script:checkerUpdateProcess.WaitForExit(10000) -and $script:checkerUpdateProcess.ExitCode -eq 0) 'Synthetic Apply finishes without installing anything'

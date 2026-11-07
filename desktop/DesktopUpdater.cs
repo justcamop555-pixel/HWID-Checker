@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -17,7 +18,10 @@ internal sealed record UpdateStatus(
 
 internal sealed class DesktopUpdater : IDisposable
 {
-    internal const string CurrentVersion = "1.3.0";
+    // Derived from the assembly so the reported version can never drift from
+    // the built binary (a stale constant made the 1.4.0 app report 1.3.0).
+    internal static readonly string CurrentVersion =
+        ((Assembly.GetEntryAssembly()?.GetName().Version) ?? new Version(1, 0, 0)).ToString(3);
     private readonly string _directory;
     private readonly string _script;
     private readonly string _resultPath;

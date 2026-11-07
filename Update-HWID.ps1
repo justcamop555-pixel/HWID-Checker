@@ -1,4 +1,4 @@
-# HWID_PACKAGE_VERSION = '1.4.0'
+# HWID_PACKAGE_VERSION = '1.4.1'
 [CmdletBinding()]
 param(
     [ValidateSet('Check','Prepare','Apply')][string]$Mode='Check',
@@ -343,6 +343,11 @@ function Assert-UpdateNewerThanInstalled([string]$Installation,[string]$Candidat
         $info=[Diagnostics.FileVersionInfo]::GetVersionInfo(('\\?\'+$executable))
         $version=[version]::new($info.FileMajorPart,$info.FileMinorPart,$info.FileBuildPart)
         if($latest -le $version){
+            if((ConvertTo-UpdateVersion $Current) -lt $version){
+                # The files on disk are newer than the running application: the
+                # update was already applied. Say so instead of reporting a failure.
+                throw [IO.InvalidDataException]::new(('The update is already installed on disk (desktop '+$version.ToString(3)+'). Restart the application to load it.'))
+            }
             throw [IO.InvalidDataException]::new('The installed desktop application is already this version or newer.')
         }
     }

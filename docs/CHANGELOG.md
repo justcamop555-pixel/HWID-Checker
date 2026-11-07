@@ -2,6 +2,12 @@
 
 [Back to the main README](../README.md)
 
+## Desktop 1.4.1
+
+- Fixed the desktop update dialog reporting a stale version: the app now derives its own version from the built assembly, so the sidebar, the updates dialog and the updater always agree with the installed binary.
+- The updater now distinguishes "already installed on disk, restart to load it" from a failed check instead of reporting a generic version error when files are newer than the running window, and the desktop startup surface shows that state.
+- Updated the packaged updater stamp and package version to 1.4.1.
+
 ## Desktop 1.4.0 and BAT 3.86
 
 - Added a battery section to the normal scan. Absent battery hardware reports an explicit "no battery" record instead of a failed read, and the Windows section now records the Secure Boot state and TPM presence/specification when Windows exposes them. Scan totals moved from 17 to 18 sections.

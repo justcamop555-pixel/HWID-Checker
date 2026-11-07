@@ -4416,7 +4416,7 @@ function Start-ChangeWatch {
         $script:checkerPhase='Main menu'
     }
 }
-function Get-CheckerPackageVersion {return '1.4.0'}
+function Get-CheckerPackageVersion {return '1.4.1'}
 function Get-CheckerUpdatePaths([string]$ScriptPath=$env:HWID_SCRIPT,[string]$LocalRoot=$env:LOCALAPPDATA) {
     $install=[IO.Path]::GetFullPath((Split-Path -Parent ([IO.Path]::GetFullPath($ScriptPath))))
     if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}

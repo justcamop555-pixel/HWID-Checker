@@ -94,6 +94,7 @@ public partial class MainWindow : Window
         }
         Dashboard.SizeChanged += (_, _) => FitLayout();
         DataContext = this;
+        SideVersionText.Text = "Desktop " + DesktopUpdater.CurrentVersion;
         _initialized = true;
         ApplyTheme(_darkTheme);
         FitLayout();
@@ -161,6 +162,16 @@ public partial class MainWindow : Window
         }
         if (!IsVerification)
         {
+            // An update can complete on disk while an older window is still open;
+            // say so plainly instead of looking like a failed update check.
+            try
+            {
+                var disk = Version.Parse(FileVersionInfo.GetVersionInfo(Process.GetCurrentProcess().MainModule!.FileName!).FileVersion ?? "0.0.0");
+                if (disk > Version.Parse(DesktopUpdater.CurrentVersion))
+                    ShowStatus("Update already installed", "The files on disk are desktop v" + disk.ToString(3) +
+                        ", newer than this running window (v" + DesktopUpdater.CurrentVersion + "). Close and reopen the app to load it.", true);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or FormatException) { }
             _updater = new DesktopUpdater(AppContext.BaseDirectory);
             _updater.Changed += (_, _) => UpdateUpdateButton();
             UpdateUpdateButton();

@@ -5,7 +5,7 @@
 **Inspect Windows hardware identifiers, save snapshots, and see what changed.**
 
 [![Version: 3.86](https://img.shields.io/badge/version-3.86-2563eb?style=flat-square)](docs/CHANGELOG.md)
-[![Desktop: 1.4.0](https://img.shields.io/badge/desktop-1.4.0-238579?style=flat-square)](desktop/README.md)
+[![Desktop: 1.4.1](https://img.shields.io/badge/desktop-1.4.1-238579?style=flat-square)](desktop/README.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square)](#compatibility)
 [![Language: PowerShell + Batch](https://img.shields.io/badge/language-PowerShell%20%2B%20Batch-5391fe?style=flat-square)](hwid.bat)
 [![Desktop: C# + WPF](https://img.shields.io/badge/desktop-C%23%20%2B%20WPF-5965b0?style=flat-square)](desktop/HwidDesktop.csproj)
