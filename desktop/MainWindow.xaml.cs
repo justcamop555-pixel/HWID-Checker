@@ -625,6 +625,13 @@ public partial class MainWindow : Window
     {
         if (IdentifiersGrid.SelectedItem is IdentifierRow row && row.Value.Length > 0) Copy(row.Value);
     }
+    private void OnCopyAllIds(object sender, RoutedEventArgs e)
+    {
+        var lines = (IdentifiersGrid.ItemsSource as IEnumerable<IdentifierRow>)?
+            .Select(row => row.Section + " · " + row.Field + " · " + (row.Value.Length > 0 ? row.Value : "(not supplied)")).ToArray();
+        if (lines == null || lines.Length == 0) { ShowStatus("Nothing to copy", "Run a scan first, then copy the identifier list."); return; }
+        Copy(string.Join(Environment.NewLine, lines));
+    }
     private void OnCopyId(object sender, RoutedEventArgs e) { if (IdentifiersGrid.SelectedItem is IdentifierRow row) Copy(row.Value); }
     private void Copy(string text)
     {
@@ -940,6 +947,12 @@ public partial class MainWindow : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ShowError("Could not export the comparison", ex); }
     }
     private void OnComparisonSelected(object sender, SelectionChangedEventArgs e) { CompareDetail.Text = CompareGrid.SelectedItem is ChangeRow row ? row.Label + "\n" + row.Detail : ""; }
+    private void OnComparisonDoubleClicked(object sender, MouseButtonEventArgs e)
+    {
+        if (CompareGrid.SelectedItem is not ChangeRow row) return;
+        if (row.Previous.Length == 0 && row.Current.Length == 0) { ShowStatus("Nothing to copy", "This change has no values on either side."); return; }
+        Copy(row.Label + ": " + (row.Previous.Length > 0 ? row.Previous : "(none)") + " → " + (row.Current.Length > 0 ? row.Current : "(none)"));
+    }
     private async void OnSave(object sender, RoutedEventArgs e) => await SaveSnapshotAsync();
 
     private async void OnExportSnapshot(object sender, RoutedEventArgs e)

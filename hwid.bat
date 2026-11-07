@@ -1529,7 +1529,7 @@ function Show-Categories {
         $hint = '{0} record(s) captured' -f $records
         Show-MenuItem ($index + 1) $names[$index] $hint
     }
-    Show-MenuItem ([string]$pickMaximum) 'All device IDs (PnP / drivers)' ''
+    Show-MenuItem ([string]$pickMaximum) 'All device IDs (PnP / drivers)' 'Live PnP and driver ID scan on open'
     Show-MenuItem '0' 'Back to main menu' ''
     Write-Host '  [0] Back. Empty Enter is ignored.' -ForegroundColor $palette.Muted
     Complete-UiReport
