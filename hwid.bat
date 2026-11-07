@@ -523,9 +523,9 @@ function Get-UiTransitionFrame($Direction,$Step,$Width,$Destination) {
     $bar=('-'*$cells).ToCharArray()
     $time=$step/17.0
     $progress=$time*$time*(3-2*$time)
-    if($Direction -eq 'Exit') {
+    if($Direction -in @('Exit','Restart')) {
         $bar=(' '*$cells).ToCharArray()
-        $label=if($step -eq 17){'EXIT / Goodbye'}else{'EXIT / Closing console'}
+        $label=if($step -eq 17){if($Direction -eq 'Restart'){'RESTART / Fresh checker'}else{'EXIT / Goodbye'}}else{if($Direction -eq 'Restart'){'RESTART / Reloading checker'}else{'EXIT / Closing console'}}
         $edge=[int][math]::Ceiling(($cells/2.0)*$progress)
         for($i=$edge;$i -lt $cells-$edge;$i++){$bar[$i]='='}
         if($edge -gt 0 -and $edge -lt $cells-$edge){$bar[$edge]='>';$bar[$cells-$edge-1]='<'}
@@ -548,7 +548,7 @@ function Get-UiTransitionLines($Direction,$Step,[int]$Width,$Destination) {
     $width=[math]::Max(0,$Width);$step=[math]::Max(0,[math]::Min(17,[int]$Step))
     $inner=[math]::Max(0,$width-4);$bar=('-'*$inner).ToCharArray()
     $time=$step/17.0;$progress=$time*$time*(3-2*$time)
-    if($Direction -eq 'Exit'){
+    if($Direction -in @('Exit','Restart')){
         $edge=[int][math]::Ceiling($inner*$progress/2)
         for($i=0;$i -lt $inner;$i++){$bar[$i]=if($i -lt $edge -or $i -ge $inner-$edge){' '}else{'='}}
     }else{
@@ -560,9 +560,9 @@ function Get-UiTransitionLines($Direction,$Step,[int]$Width,$Destination) {
     @($border,(Get-UiTransitionFrame $Direction $step $width $Destination),$border)
 }
 function Get-UiTransitionDuration($Direction) {
-    switch($Direction){'Back'{return 160};'Exit'{return 260};default{return 200}}
+    switch($Direction){'Back'{return 160};'Exit'{return 260};'Restart'{return 260};default{return 200}}
 }
-function Show-UiTransition([ValidateSet('Back','Next','Exit')]$Direction,$Destination,[scriptblock]$PendingInput) {
+function Show-UiTransition([ValidateSet('Back','Next','Exit','Restart')]$Direction,$Destination,[scriptblock]$PendingInput) {
     if(-not $ownedConsole -or $redirected -or $env:HWID_NO_ANIMATION -eq '1'){return}
     $saved=$false
     $patch=$null
@@ -912,7 +912,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.86' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.87' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -3095,7 +3095,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-PnpLine '  Hardware identity and Windows inventory. Read-only scan.' $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.86'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.87'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-PnpLine "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" $palette.Muted
@@ -4416,7 +4416,7 @@ function Start-ChangeWatch {
         $script:checkerPhase='Main menu'
     }
 }
-function Get-CheckerPackageVersion {return '1.4.1'}
+function Get-CheckerPackageVersion {return '1.4.2'}
 function Get-CheckerUpdatePaths([string]$ScriptPath=$env:HWID_SCRIPT,[string]$LocalRoot=$env:LOCALAPPDATA) {
     $install=[IO.Path]::GetFullPath((Split-Path -Parent ([IO.Path]::GetFullPath($ScriptPath))))
     if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}
@@ -4575,6 +4575,35 @@ function Start-CheckerExitUpdate {
         Write-PnpValue 'Update ready' 'The prepared update will install after this checker process exits.' $palette.Good
     }catch{Write-PnpValue 'Update deferred' $_.Exception.Message $palette.Warn}
 }
+function Start-CheckerRestart {
+    if(-not $ownedConsole -or $redirected){Write-PnpValue 'RESTART-01' 'Restarting needs an interactive console window. Close this checker and run hwid.bat again.' $palette.Warn;return}
+    $pending=$false
+    try {
+        $paths=Get-CheckerUpdatePaths
+        if([IO.File]::Exists($paths.ResultPath)){
+            $result=Read-CheckerUpdateResult $paths
+            if($result -and $result.state -eq 'ready'){$pending=$true}
+        }
+    }catch{}
+    if($pending){
+        Write-PnpValue 'RESTART-02' 'A prepared update installs after normal Exit. Choose [0] Exit instead of restarting this time; the updated checker opens afterwards.' $palette.Warn
+        return
+    }
+    Show-UiTransition 'Restart' 'Fresh checker'
+    Start-CheckerExitUpdate
+    try {
+        $start=[Diagnostics.ProcessStartInfo]::new()
+        $start.FileName=$env:HWID_SCRIPT
+        $start.UseShellExecute=$true
+        $start.WorkingDirectory=Split-Path -Parent $env:HWID_SCRIPT
+        foreach($name in @('HWID_OWN_CONSOLE','HWID_CURRENT_WINDOW','HWID_STARTUP_SIGNAL','HWID_NO_ANIMATION','HWID_NO_UPDATE')){[void]$start.Environment.Remove($name)}
+        [void][Diagnostics.Process]::Start($start)
+    }catch{
+        Write-PnpValue 'RESTART-03' ('Could not start a new checker window: '+$_.Exception.Message+' This checker stays open.') $palette.Warn
+        return
+    }
+    exit 0
+}
 function Show-CheckerUpdates {
     $notice=$null
     while($true) {
@@ -4582,7 +4611,7 @@ function Show-CheckerUpdates {
         Write-Heading 'UPDATES / BAT & DESKTOP PACKAGE'
         $paths=Get-CheckerUpdatePaths
         $preferences=Get-CheckerUpdatePreferences $paths
-        Write-PnpValue 'Installed' ('Scanner 3.86 / package '+(Get-CheckerPackageVersion)) $palette.Text
+        Write-PnpValue 'Installed' ('Scanner 3.87 / package '+(Get-CheckerPackageVersion)) $palette.Text
         Write-PnpValue 'Automatic updates' $(if($preferences.Enabled){'On. Standalone-launcher sessions prepare updates and install after normal Exit.'}else{'Off. Enable this setting to install a prepared update after normal Exit.'}) $palette.Muted
         if($preferences.Warning){Write-PnpValue 'Preferences' $preferences.Warning $palette.Warn}
         $result=Read-CheckerUpdateResult $paths
@@ -4633,13 +4662,14 @@ function Show-ScanTools {
         Show-MenuItem '4' 'Extended device scan / hidden & disconnected' ''
         Show-MenuItem '5' 'Updates / automatic update controls' ''
         Show-MenuItem '6' 'Watch for changes (auto rescan)' ''
+        Show-MenuItem '7' 'Restart checker (fresh window)' ''
         Show-MenuItem '0' 'Back to main menu' ''
         Write-PnpValue 'Before rescanning' 'Use main [6] to keep the current snapshot as TXT + JSON. Rescanning does not save automatically.' $palette.Muted
         Write-PnpValue 'Scope' 'Reads devices currently exposed by Windows; some IDs require administrator access or are not supplied.' $palette.Muted
         Complete-UiReport
-        $selection=Read-MenuChoice -Maximum 6
+        $selection=Read-MenuChoice -Maximum 7
         if($null -eq $selection -or $selection -eq '0'){return $false}
-        Show-UiTransition 'Next' $(if($selection -eq '1'){'Rescan PC'}elseif($selection -eq '2'){'Help'}elseif($selection -eq '4'){'Extended device scan'}elseif($selection -eq '5'){'Updates'}elseif($selection -eq '6'){'Change watch'}else{'Last rescan changes'})
+        Show-UiTransition 'Next' $(if($selection -eq '1'){'Rescan PC'}elseif($selection -eq '2'){'Help'}elseif($selection -eq '4'){'Extended device scan'}elseif($selection -eq '5'){'Updates'}elseif($selection -eq '6'){'Change watch'}elseif($selection -eq '7'){'Restart checker'}else{'Last rescan changes'})
         Reset-UiPage;Start-UiReport
         switch($selection) {
             '1' {Start-HardwareRescan}
@@ -4647,6 +4677,7 @@ function Show-ScanTools {
             '4' {Start-ExtendedDeviceScan}
             '5' {Show-CheckerUpdates;Reset-UiPage;Start-UiReport;continue ScanTools}
             '6' {Start-ChangeWatch}
+            '7' {Start-CheckerRestart;return $false}
             '3' {
                 if($null -ne $lastScanPrevious -and $null -ne $lastScanCurrent){Show-RescanResult $lastScanPrevious $lastScanCurrent}
                 else {Write-Heading 'NO RESCAN YET';Write-PnpValue 'Next' 'Choose main [9] > [1] to rescan first.' $palette.Muted}

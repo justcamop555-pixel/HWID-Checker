@@ -2,6 +2,13 @@
 
 [Back to the main README](../README.md)
 
+## Desktop 1.4.2 and BAT 3.87
+
+- Fixed the Review page layout: the search row addition had left the findings table in an auto-height row, collapsing it and letting the detail pane take the remaining space.
+- Fixed stale theme colors: the navigation buttons, status title and snapshot-folder label now follow theme switches immediately instead of keeping the previous palette until redrawn.
+- Desktop motion: page switches fade with a short upward slide, buttons get a smooth hover shade and a subtle press sink, the snapshot list fades when refreshed, closing (and restart) fade the window out, and the title bar shows live scan percentage.
+- Added **Restart app** to the desktop sidebar: closes with the fade animation, installs any prepared update first, and relaunches. The BAT gained **[9] > [7] Restart checker (fresh window)** with its own closing sweep; restart is refused while a prepared update is waiting for a normal Exit.
+
 ## Desktop 1.4.1
 
 - Fixed the desktop update dialog reporting a stale version: the app now derives its own version from the built assembly, so the sidebar, the updates dialog and the updater always agree with the installed binary.

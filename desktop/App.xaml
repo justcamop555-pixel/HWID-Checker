@@ -70,8 +70,11 @@
    <Setter Property="Template">
     <Setter.Value>
      <ControlTemplate TargetType="Button">
-      <Border x:Name="Frame" CornerRadius="0" Background="{TemplateBinding Background}"
+      <Border x:Name="Frame" CornerRadius="0" Background="{TemplateBinding Background}" RenderTransformOrigin="0.5,0.5"
               BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+       <Border.RenderTransform>
+        <ScaleTransform x:Name="FrameScale" ScaleX="1" ScaleY="1"/>
+       </Border.RenderTransform>
        <Grid>
         <Border x:Name="Shade" CornerRadius="0" Background="{DynamicResource TextBrush}" Opacity="0" IsHitTestVisible="False"/>
         <ContentPresenter x:Name="Label" Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"
@@ -86,12 +89,42 @@
       <ControlTemplate.Triggers>
        <Trigger Property="IsMouseOver" Value="True">
         <Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-        <Setter TargetName="Shade" Property="Opacity" Value="0.09"/>
-       </Trigger>
+        <Trigger.EnterActions>
+         <BeginStoryboard>
+          <Storyboard>
+           <DoubleAnimation Storyboard.TargetName="Shade" Storyboard.TargetProperty="Opacity" To="0.09" Duration="0:0:0.12"/>
+          </Storyboard>
+         </BeginStoryboard>
+        </Trigger.EnterActions>
+         <Trigger.ExitActions>
+          <BeginStoryboard>
+           <Storyboard>
+            <DoubleAnimation Storyboard.TargetName="Shade" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16"/>
+           </Storyboard>
+          </BeginStoryboard>
+         </Trigger.ExitActions>
+        </Trigger>
        <Trigger Property="IsPressed" Value="True">
         <Setter TargetName="Shade" Property="Background" Value="{DynamicResource CanvasBrush}"/>
-        <Setter TargetName="Shade" Property="Opacity" Value="0.20"/>
-       </Trigger>
+        <Trigger.EnterActions>
+         <BeginStoryboard>
+          <Storyboard>
+           <DoubleAnimation Storyboard.TargetName="Shade" Storyboard.TargetProperty="Opacity" To="0.20" Duration="0:0:0.06"/>
+           <DoubleAnimation Storyboard.TargetName="FrameScale" Storyboard.TargetProperty="ScaleX" To="0.985" Duration="0:0:0.06"/>
+           <DoubleAnimation Storyboard.TargetName="FrameScale" Storyboard.TargetProperty="ScaleY" To="0.985" Duration="0:0:0.06"/>
+          </Storyboard>
+         </BeginStoryboard>
+        </Trigger.EnterActions>
+         <Trigger.ExitActions>
+          <BeginStoryboard>
+           <Storyboard>
+            <DoubleAnimation Storyboard.TargetName="Shade" Storyboard.TargetProperty="Opacity" To="0.09" Duration="0:0:0.10"/>
+            <DoubleAnimation Storyboard.TargetName="FrameScale" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.10"/>
+            <DoubleAnimation Storyboard.TargetName="FrameScale" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.10"/>
+           </Storyboard>
+          </BeginStoryboard>
+         </Trigger.ExitActions>
+        </Trigger>
        <Trigger Property="IsKeyboardFocused" Value="True">
         <Setter TargetName="FocusRing" Property="Opacity" Value="1"/>
        </Trigger>

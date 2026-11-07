@@ -64,6 +64,7 @@ public partial class MainWindow : Window
     private string _page = "Overview", _operation = "", _lastSaveFolder = "";
     private string? _rememberedBat;
     private bool _darkTheme = true;
+    private bool _restarting;
     private IReadOnlyList<ChangeRow>? _lastComparisonRows;
     private string _lastComparisonSummary = "", _lastComparisonNotes = "", _lastComparisonBaseline = "", _lastComparisonCurrent = "";
     private bool IsVerification => _args.Any(argument => argument.Split('=', 2)[0].ToLowerInvariant() is
@@ -354,8 +355,8 @@ public partial class MainWindow : Window
         foreach (var button in new[] { OverviewNav, IdentifiersNav, HardwareNav, ReviewNav, SnapshotsNav, CompareNav })
         {
             var active = (string)button.Tag == page;
-            button.Background = active ? (Brush)FindResource("NavActiveBrush") : Brushes.Transparent;
-            button.Foreground = (Brush)FindResource(active ? "AccentBrush" : "MutedBrush");
+            if (active) button.SetResourceReference(BackgroundProperty, "NavActiveBrush"); else button.Background = Brushes.Transparent;
+            button.SetResourceReference(ForegroundProperty, active ? "AccentBrush" : "MutedBrush");
             System.Windows.Automation.AutomationProperties.SetItemStatus(button, active ? "Current page" : "");
         }
         _page = page;
@@ -369,14 +370,32 @@ public partial class MainWindow : Window
             _ => ("Overview", "A clear view of the identifiers Windows reports.")
         };
         if (SystemParameters.ClientAreaAnimation)
-            pages[page].BeginAnimation(OpacityProperty, new DoubleAnimation(0.65, 1, TimeSpan.FromMilliseconds(150)));
+        {
+            // Fade plus a short upward slide so switching tabs reads as motion.
+            var element = pages[page];
+            var slide = element.RenderTransform as TranslateTransform ?? new TranslateTransform();
+            element.RenderTransform = slide;
+            slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(14, 0, TimeSpan.FromMilliseconds(180)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+            element.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
+        }
+    }
+    private void BeginWindowFade(Action completed)
+    {
+        if (SystemParameters.ClientAreaAnimation && Opacity > 0)
+        {
+            var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(170));
+            fade.Completed += (_, _) => completed();
+            BeginAnimation(OpacityProperty, fade);
+            return;
+        }
+        completed();
     }
     private void ShowStatus(string title, string detail, bool warning = false)
     {
         if (_closing) return;
         StatusTitle.Text = title;
         SetSummary(StatusDetail, detail);
-        StatusTitle.Foreground = (Brush)FindResource(warning ? "WarningBrush" : "AccentBrush");
+        StatusTitle.SetResourceReference(TextBlock.ForegroundProperty, warning ? "WarningBrush" : "AccentBrush");
     }
     private static void SetSummary(TextBlock label, string text, string? fullText = null)
     {
@@ -401,6 +420,7 @@ public partial class MainWindow : Window
         if (!_initialized) return;
         ScanButton.IsEnabled = !_busy && _engine != null;
         ConnectButton.IsEnabled = !_busy;
+        RestartButton.IsEnabled = !_busy;
         SaveButton.IsEnabled = !_busy && _snapshot != null && _engine != null;
         ExportButton.IsEnabled = !_busy && _snapshot != null;
         CompareFilesButton.IsEnabled = !_busy && _engine != null;
@@ -429,6 +449,7 @@ public partial class MainWindow : Window
             {
                 if (!_busy || _operation != "Scan" || _closing || _closeRequested) return;
                 ScanProgress.Value = value.Total > 0 ? Math.Clamp(100d * value.Completed / value.Total, 0, 100) : 0;
+                Title = "HWID Checker — Desktop · scanning " + Math.Round(ScanProgress.Value) + "%";
                 var name = string.IsNullOrWhiteSpace(value.Name) ? value.Section : value.Name;
                 if (string.IsNullOrWhiteSpace(name)) return;
                 if (name == "Preparing") { ShowStatus("Preparing scanner", value.Message); return; }
@@ -457,6 +478,7 @@ public partial class MainWindow : Window
         finally
         {
             _scanClock.Stop();
+            Title = "HWID Checker — Desktop";
             ScanElapsedText.Text = $"{_scanClock.Elapsed:mm\\:ss} elapsed";
             SnapshotContextText.Text = _snapshot == null ? "No completed snapshot" : "Current completed snapshot";
             SetBusy(false);
@@ -659,7 +681,7 @@ public partial class MainWindow : Window
         var details = settings.Error == null ? label : label + Environment.NewLine + settings.Error;
         if (searchedFolders is { Count: > 0 })
             details += Environment.NewLine + Environment.NewLine + "Searched locations:" + Environment.NewLine + string.Join(Environment.NewLine, searchedFolders);
-        SnapshotFoldersText.Foreground = (Brush)FindResource(settings.Error == null ? "MutedBrush" : "WarningBrush");
+        SnapshotFoldersText.SetResourceReference(TextBlock.ForegroundProperty, settings.Error == null ? "MutedBrush" : "WarningBrush");
         SetSummary(SnapshotFoldersText, text, details);
     }
     private Task RefreshSnapshotsAsync()
@@ -685,6 +707,9 @@ public partial class MainWindow : Window
                 var selectedPath = (SnapshotsGrid.SelectedItem as SnapshotEntry)?.Path;
                 SnapshotsGrid.ItemsSource = catalog.Entries;
                 SnapshotsGrid.SelectedItem = catalog.Entries.FirstOrDefault(x => x.Path.Equals(selectedPath, StringComparison.OrdinalIgnoreCase));
+                // Brief fade so a refreshed list reads as refreshed, not shuffled.
+                if (SystemParameters.ClientAreaAnimation && !_closing)
+                    SnapshotsGrid.BeginAnimation(OpacityProperty, new DoubleAnimation(0.35, 1, TimeSpan.FromMilliseconds(220)));
             }
             SetSummary(SnapshotCountText, $"{catalog.Entries.Count} saved captures found" +
                 (catalog.Skipped > 0 ? $" · {catalog.Skipped} unreadable or unrecognized files/folders skipped" : " · JSON is validated again before comparison"));
@@ -1061,6 +1086,35 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private void OnRestartApp(object sender, RoutedEventArgs e)
+    {
+        if (_busy) { ShowStatus("Finish the active action", "Cancel or wait for the running scan or report action, then restart.", true); return; }
+        if (!IsVerification && _updater != null && _updater.IsReady)
+        {
+            // A prepared update installs during this close and relaunches the app.
+            _restartForUpdate = true;
+            Close();
+            return;
+        }
+        _restarting = true;
+        _ = RememberPreferencesAsync();
+        Close();
+    }
+
+    private void LaunchRelaunch()
+    {
+        try
+        {
+            var exe = Process.GetCurrentProcess().MainModule?.FileName;
+            if (!string.IsNullOrWhiteSpace(exe) && File.Exists(exe))
+                Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+        }
+        catch (Exception)
+        {
+            // A failed relaunch must not block shutdown; the user can start the app normally.
+        }
+    }
+
     private async void OnWindowClosing(object? sender, CancelEventArgs e)
     {
         if (_closing) return;
@@ -1073,10 +1127,15 @@ public partial class MainWindow : Window
             _operationCancellation?.Cancel();
             if (_operationFinished != null) await _operationFinished.Task;
             if (!PrepareDesktopExit()) { _closeRequested = false; IsEnabled = true; return; }
-            _closing = true; _timer.Stop(); _engine?.Dispose(); Close(); return;
+            _closing = true; _timer.Stop(); _engine?.Dispose();
+            e.Cancel = true;
+            BeginWindowFade(() => Close());
+            return;
         }
         if (!PrepareDesktopExit()) { e.Cancel = true; return; }
         _closing = true; _timer.Stop(); _operationCancellation?.Cancel(); _engine?.Dispose();
+        e.Cancel = true;
+        BeginWindowFade(() => { if (_restarting) LaunchRelaunch(); Close(); });
     }
     private void PrepareLayoutStress()
     {
