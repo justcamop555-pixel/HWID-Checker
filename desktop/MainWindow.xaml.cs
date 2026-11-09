@@ -66,10 +66,13 @@ public partial class MainWindow : Window
     private bool _darkTheme = true;
     private bool _restarting;
     private string _pendingPage = "";
+    private readonly Dictionary<FrameworkElement, AnimationClock> _fadeClocks = [];
+    private Action? _closeCompletion;
+    private bool _closeCompletionQueued;
     private IReadOnlyList<ChangeRow>? _lastComparisonRows;
     private string _lastComparisonSummary = "", _lastComparisonNotes = "", _lastComparisonBaseline = "", _lastComparisonCurrent = "";
     private bool IsVerification => _args.Any(argument => argument.Split('=', 2)[0].ToLowerInvariant() is
-        "--fixture" or "--render" or "--scan-test" or "--workflow-test");
+        "--fixture" or "--render" or "--scan-test" or "--workflow-test" or "--ui-test");
     private int _ticks, _responsiveTicks;
     private string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HWID Checker", "Desktop", "settings.json");
     private string DefaultReportsFolder => Path.Combine(Path.GetDirectoryName(_engine?.BatPath) ?? AppContext.BaseDirectory, "HWID-Reports");
@@ -135,6 +138,7 @@ public partial class MainWindow : Window
         }
         var workflow = Argument("--workflow-test");
         if (workflow != null) await VerifyWorkflowAsync(workflow);
+        if (Argument("--ui-test") is { } uiTest) await VerifyUiRegressionAsync(uiTest);
         var scanTest = Argument("--scan-test");
         if (scanTest != null)
         {
@@ -213,6 +217,16 @@ public partial class MainWindow : Window
         }
         Workspace.Margin = new Thickness(inset, shortWindow ? 12 : 20, inset, shortWindow ? 8 : 12);
         PageTitle.FontSize = stackedHeader ? 24 : 28;
+        PageSubtitle.Visibility = shortWindow ? Visibility.Collapsed : Visibility.Visible;
+        HeaderPanel.Margin = new Thickness(0, 0, 0, shortWindow ? 8 : 12);
+        StatusPanel.Padding = shortWindow ? new Thickness(10, 6, 10, 6) : new Thickness(11, 8, 11, 8);
+        StatusPanel.Margin = new Thickness(0, 0, 0, shortWindow ? 8 : 13);
+        FooterPanel.Margin = new Thickness(0, shortWindow ? 6 : 9, 0, 0);
+        foreach (var button in HeaderActions.Children.OfType<Button>())
+        {
+            button.Padding = shortWindow ? new Thickness(9, 5, 9, 5) : new Thickness(15, 10, 15, 10);
+            button.FontSize = shortWindow || button == ConnectButton ? 12 : 13;
+        }
         HeaderText.Margin = stackedHeader ? new Thickness(0) : new Thickness(0, 0, 14, 0);
         Grid.SetColumnSpan(HeaderText, stackedHeader ? 2 : 1);
         Grid.SetRow(HeaderActions, stackedHeader ? 1 : 0);
@@ -236,6 +250,15 @@ public partial class MainWindow : Window
         HardwareSectionTitle.Visibility = compactHardware ? Visibility.Collapsed : Visibility.Visible;
         Grid.SetColumn(HardwareRecord, compactHardware ? 1 : 0);
         Grid.SetColumnSpan(HardwareRecord, compactHardware ? 1 : 2);
+        HardwareSearch.Padding = shortWindow ? new Thickness(8, 5, 8, 5) : new Thickness(12, 9, 12, 9);
+        HardwareSearchHost.Margin = new Thickness(0, 0, 0, shortWindow ? 5 : 8);
+        HardwareDetailRow.MinHeight = shortWindow ? 54 : 66;
+        foreach (var picker in new[] { HardwareSectionPicker, HardwareRecord })
+        {
+            picker.MinHeight = shortWindow ? 30 : 38;
+            picker.Padding = shortWindow ? new Thickness(8, 5, 27, 5) : new Thickness(12, 8, 33, 8);
+        }
+        CopyHardwareButton.Padding = shortWindow ? new Thickness(9, 5, 9, 5) : new Thickness(15, 10, 15, 10);
         foreach (var table in new[] { ScanGrid, IdentifiersGrid, HardwareFields, ReviewGrid, SnapshotsGrid, CompareGrid })
         {
             table.RowHeight = shortWindow ? 32 : 40;
@@ -349,8 +372,7 @@ public partial class MainWindow : Window
         _darkTheme = !_darkTheme;
         ApplyTheme(_darkTheme);
         // A brief dip makes the palette swap read as a deliberate transition.
-        if (SystemParameters.ClientAreaAnimation)
-            Dashboard.BeginAnimation(OpacityProperty, new DoubleAnimation(0.82, 1, TimeSpan.FromMilliseconds(220)));
+        FadeIn(Dashboard, 0.94, 120);
         if (!await RememberPreferencesAsync()) ShowStatus("Theme changed", "The theme could not be saved for future sessions.", true);
     }
 
@@ -377,7 +399,12 @@ public partial class MainWindow : Window
         if (!_initialized) return;
         var pages = new Dictionary<string, FrameworkElement> { ["Overview"] = OverviewPage, ["Identifiers"] = IdentifiersPage, ["Hardware"] = HardwarePage, ["Review"] = ReviewPage, ["Snapshots"] = SnapshotsPage, ["Compare"] = ComparePage };
         if (!pages.ContainsKey(page)) page = "Overview";
-        foreach (var pair in pages) pair.Value.Visibility = pair.Key == page ? Visibility.Visible : Visibility.Collapsed;
+        var changed = _page != page;
+        foreach (var pair in pages)
+        {
+            ResetPageMotion(pair.Value);
+            pair.Value.Visibility = pair.Key == page ? Visibility.Visible : Visibility.Collapsed;
+        }
         foreach (var button in new[] { OverviewNav, IdentifiersNav, HardwareNav, ReviewNav, SnapshotsNav, CompareNav })
         {
             var active = (string)button.Tag == page;
@@ -395,12 +422,6 @@ public partial class MainWindow : Window
             button.SetResourceReference(ForegroundProperty, active ? "AccentBrush" : "MutedBrush");
             System.Windows.Automation.AutomationProperties.SetItemStatus(button, active ? "Current page" : "");
         }
-        // Clicking a nav button leaves keyboard focus (and the pale focus ring)
-        // on it, which reads as a theme flash after switching tabs. Clear it.
-        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
-        {
-            if (!_closing && !_closeRequested) Keyboard.ClearFocus();
-        }));
         _page = page;
         (PageTitle.Text, PageSubtitle.Text) = page switch
         {
@@ -411,26 +432,84 @@ public partial class MainWindow : Window
             "Compare" => ("Compare IDs", "See the previous value, current value and exact difference."),
             _ => ("Overview", "A clear view of the identifiers Windows reports.")
         };
-        if (SystemParameters.ClientAreaAnimation)
+        if (changed && UiMotion.GetEnabled(this) && !_closing)
         {
             // Fade plus a short upward slide so switching tabs reads as motion.
             var element = pages[page];
             var slide = element.RenderTransform as TranslateTransform ?? new TranslateTransform();
             element.RenderTransform = slide;
-            slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(14, 0, TimeSpan.FromMilliseconds(180)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
-            element.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
+            slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(6, 0, TimeSpan.FromMilliseconds(140))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                FillBehavior = FillBehavior.Stop
+            });
+            FadeIn(element, 0.88, 140, () => ResetPageMotion(element));
         }
     }
+    private void StopFade(FrameworkElement element)
+    {
+        element.ApplyAnimationClock(OpacityProperty, null);
+        element.Opacity = 1;
+        _fadeClocks.Remove(element);
+    }
+
+    private void ResetPageMotion(FrameworkElement element)
+    {
+        StopFade(element);
+        if (element.RenderTransform is TranslateTransform slide)
+        {
+            slide.BeginAnimation(TranslateTransform.YProperty, null);
+            slide.Y = 0;
+        }
+    }
+
+    private void FadeIn(FrameworkElement element, double from, int milliseconds, Action? completed = null)
+    {
+        StopFade(element);
+        if (!UiMotion.GetEnabled(this) || _closing || !element.IsVisible) { completed?.Invoke(); return; }
+        var clock = new DoubleAnimation(from, 1, TimeSpan.FromMilliseconds(milliseconds)) { FillBehavior = FillBehavior.Stop }.CreateClock();
+        _fadeClocks[element] = clock;
+        clock.Completed += (_, _) =>
+        {
+            if (!_fadeClocks.TryGetValue(element, out var active) || !ReferenceEquals(active, clock)) return;
+            StopFade(element);
+            completed?.Invoke();
+        };
+        element.ApplyAnimationClock(OpacityProperty, clock, HandoffBehavior.SnapshotAndReplace);
+    }
+
+    protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        if (!_initialized || e.Property != UiMotion.EnabledProperty || UiMotion.GetEnabled(this)) return;
+        foreach (var element in _fadeClocks.Keys.ToArray()) StopFade(element);
+        foreach (var page in PageHost.Children.OfType<FrameworkElement>()) ResetPageMotion(page);
+        FinishWindowFade();
+    }
+
     private void BeginWindowFade(Action completed)
     {
-        if (SystemParameters.ClientAreaAnimation && Opacity > 0)
+        _closeCompletion = completed;
+        IsEnabled = false;
+        foreach (var element in _fadeClocks.Keys.ToArray()) StopFade(element);
+        if (!UiMotion.GetEnabled(this) || Opacity <= 0) { FinishWindowFade(); return; }
+        var fade = new DoubleAnimation(Opacity, 0, TimeSpan.FromMilliseconds(120));
+        fade.Completed += (_, _) => FinishWindowFade();
+        BeginAnimation(OpacityProperty, fade, HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private void FinishWindowFade()
+    {
+        if (_closeCompletion == null || _closeCompletionQueued) return;
+        _closeCompletionQueued = true;
+        BeginAnimation(OpacityProperty, null);
+        Dispatcher.BeginInvoke(new Action(() =>
         {
-            var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(170));
-            fade.Completed += (_, _) => completed();
-            BeginAnimation(OpacityProperty, fade);
-            return;
-        }
-        completed();
+            var completed = _closeCompletion;
+            _closeCompletion = null;
+            _closeCompletionQueued = false;
+            completed?.Invoke();
+        }));
     }
     private Task FocusSearch()
     {
@@ -501,24 +580,7 @@ public partial class MainWindow : Window
         ShowStatus("Scanning this PC", _snapshot == null ? "Reading Windows hardware providers. You can cancel at any time." : "Refreshing hardware. The last completed snapshot remains available while this scan runs.");
         try
         {
-            var progress = new Progress<BridgeProgress>(value =>
-            {
-                if (!_busy || _operation != "Scan" || _closing || _closeRequested) return;
-                ScanProgress.Value = value.Total > 0 ? Math.Clamp(100d * value.Completed / value.Total, 0, 100) : 0;
-                Title = "HWID Checker — Desktop · scanning " + Math.Round(ScanProgress.Value) + "%";
-                var name = string.IsNullOrWhiteSpace(value.Name) ? value.Section : value.Name;
-                if (string.IsNullOrWhiteSpace(name)) return;
-                if (name == "Preparing") { ShowStatus("Preparing scanner", value.Message); return; }
-                if (name == "Extended device inventory") name = "All-known device catalog";
-                var finished = value.Status is not ("READING" or "WAITING" or "");
-                var row = new ScanRow(name, value.Status == "UNAVAILABLE" ? "NOT READ" : value.Status,
-                    finished ? value.Records.ToString() : "—", value.Message,
-                    value.Seconds is { } seconds ? seconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " s" : "");
-                var existing = ScanRows.Select((x, i) => (x, i)).FirstOrDefault(x => x.x.Name == name);
-                if (existing.x != null) { ScanRows[existing.i] = row; ScanGrid.ScrollIntoView(ScanRows[existing.i]); } else ScanRows.Add(row);
-                StatusTitle.Text = "Scanning this PC";
-                SetSummary(StatusDetail, name + " · " + value.Message);
-            });
+            var progress = new Progress<BridgeProgress>(ApplyScanProgress);
             var result = await _engine.ScanAsync(progress, _operationCancellation.Token);
             var candidate = new DesktopSnapshot(result);
             ApplySnapshot(candidate);
@@ -541,6 +603,25 @@ public partial class MainWindow : Window
             _operationCancellation?.Dispose();
             _operationCancellation = null;
         }
+    }
+    private void ApplyScanProgress(BridgeProgress value)
+    {
+        if (!_busy || _operation != "Scan" || _closing || _closeRequested) return;
+        ScanProgress.Value = value.Total > 0 ? Math.Clamp(100d * value.Completed / value.Total, 0, 100) : 0;
+        Title = "HWID Checker — Desktop · scanning " + Math.Round(ScanProgress.Value) + "%";
+        var name = string.IsNullOrWhiteSpace(value.Name) ? value.Section : value.Name;
+        if (string.IsNullOrWhiteSpace(name)) return;
+        if (name == "Preparing") { ShowStatus("Preparing scanner", value.Message); return; }
+        if (name == "Extended device inventory") name = "All-known device catalog";
+        var finished = value.Status is not ("READING" or "WAITING" or "");
+        var row = new ScanRow(name, value.Status == "UNAVAILABLE" ? "NOT READ" : value.Status,
+            finished ? value.Records.ToString() : "—", value.Message,
+            value.Seconds is { } seconds ? seconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " s" : "");
+        var existing = ScanRows.Select((item, index) => (item, index)).FirstOrDefault(entry => entry.item.Name == name);
+        if (existing.item != null) ScanRows[existing.index] = row;
+        else ScanRows.Add(row);
+        StatusTitle.Text = "Scanning this PC";
+        SetSummary(StatusDetail, name + " · " + value.Message);
     }
     private void ApplySnapshot(DesktopSnapshot snapshot)
     {
@@ -623,7 +704,9 @@ public partial class MainWindow : Window
     private void OnIdSelected(object sender, SelectionChangedEventArgs e) { IdDetail.Text = IdentifiersGrid.SelectedItem is IdentifierRow row ? row.Device + "\n" + row.Field + ": " + (row.Value.Length > 0 ? row.Value : "(not supplied)") : ""; }
     private void OnIdDoubleClicked(object sender, MouseButtonEventArgs e)
     {
-        if (IdentifiersGrid.SelectedItem is IdentifierRow row && row.Value.Length > 0) Copy(row.Value);
+        if (e.OriginalSource is DependencyObject source &&
+            ItemsControl.ContainerFromElement(IdentifiersGrid, source) is DataGridRow { Item: IdentifierRow row } && row.Value.Length > 0)
+            Copy(row.Value);
     }
     private void OnCopyAllIds(object sender, RoutedEventArgs e)
     {
@@ -663,14 +746,18 @@ public partial class MainWindow : Window
         HardwareRecord.ItemsSource = _snapshot.Inventory.Get(section.Name).Rows()
             .Select((value, index) => (value, index, title: new[] { "FriendlyName", "Name", "Model", "DeviceLocator", "DeviceID", "Section" }.Select(name => value.Text(name)).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))))
             .Where(entry => needle.Length == 0 || entry.title?.Contains(needle, StringComparison.OrdinalIgnoreCase) == true ||
-                entry.value.EnumerateObject().Any(field =>
-                    (field.Value.ValueKind == JsonValueKind.String && field.Value.GetString()!.Contains(needle, StringComparison.OrdinalIgnoreCase)) ||
-                    (field.Value.ValueKind is not (JsonValueKind.String or JsonValueKind.Object or JsonValueKind.Array) && field.Value.Text().Contains(needle, StringComparison.OrdinalIgnoreCase))))
+                HardwareValueMatches(entry.value, needle))
             .Select((entry, position) => new HardwareRecord($"{position + 1}. " + (entry.title ?? "Record"), entry.value, entry.index))
             .ToArray();
         HardwareRecord.SelectedIndex = HardwareRecord.Items.Count > 0 ? 0 : -1;
         if (HardwareRecord.Items.Count == 0) { HardwareFields.ItemsSource = Array.Empty<FieldRow>(); HardwareDetail.Text = needle.Length == 0 ? "No records captured for this section." : "No records in this section match the search."; }
     }
+    private static bool HardwareValueMatches(JsonElement value, string needle) => value.ValueKind switch
+    {
+        JsonValueKind.Object => value.EnumerateObject().Any(field => HardwareValueMatches(field.Value, needle)),
+        JsonValueKind.Array => value.EnumerateArray().Any(item => HardwareValueMatches(item, needle)),
+        _ => value.Text().Contains(needle, StringComparison.OrdinalIgnoreCase)
+    };
     private void OnHardwareFilterChanged(object sender, RoutedEventArgs e)
     {
         if (_initialized && _snapshot != null && HardwareSections.SelectedItem is HardwareSection section) PopulateHardwareRecords(section);
@@ -784,8 +871,7 @@ public partial class MainWindow : Window
                 SnapshotsGrid.ItemsSource = catalog.Entries;
                 SnapshotsGrid.SelectedItem = catalog.Entries.FirstOrDefault(x => x.Path.Equals(selectedPath, StringComparison.OrdinalIgnoreCase));
                 // Brief fade so a refreshed list reads as refreshed, not shuffled.
-                if (SystemParameters.ClientAreaAnimation && !_closing)
-                    SnapshotsGrid.BeginAnimation(OpacityProperty, new DoubleAnimation(0.35, 1, TimeSpan.FromMilliseconds(220)));
+                if (_page == "Snapshots" && !_busy) FadeIn(SnapshotsGrid, 0.9, 120);
             }
             SetSummary(SnapshotCountText, $"{catalog.Entries.Count} saved captures found" +
                 (catalog.Skipped > 0 ? $" · {catalog.Skipped} unreadable or unrecognized files/folders skipped" : " · JSON is validated again before comparison"));
@@ -949,7 +1035,8 @@ public partial class MainWindow : Window
     private void OnComparisonSelected(object sender, SelectionChangedEventArgs e) { CompareDetail.Text = CompareGrid.SelectedItem is ChangeRow row ? row.Label + "\n" + row.Detail : ""; }
     private void OnComparisonDoubleClicked(object sender, MouseButtonEventArgs e)
     {
-        if (CompareGrid.SelectedItem is not ChangeRow row) return;
+        if (e.OriginalSource is not DependencyObject source ||
+            ItemsControl.ContainerFromElement(CompareGrid, source) is not DataGridRow { Item: ChangeRow row }) return;
         if (row.Previous.Length == 0 && row.Current.Length == 0) { ShowStatus("Nothing to copy", "This change has no values on either side."); return; }
         Copy(row.Label + ": " + (row.Previous.Length > 0 ? row.Previous : "(none)") + " → " + (row.Current.Length > 0 ? row.Current : "(none)"));
     }
@@ -958,25 +1045,28 @@ public partial class MainWindow : Window
     private async void OnExportSnapshot(object sender, RoutedEventArgs e)
     {
         if (_snapshot == null || _busy) return;
+        var snapshot = _snapshot;
         var settings = ReadSharedLibrary();
         string starting;
         try { starting = EnsureSaveFolder(settings); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ShowError("Could not open an export folder", ex); return; }
         var picker = new OpenFolderDialog { Title = "Choose where to export the CSV and HTML report", InitialDirectory = starting };
         if (picker.ShowDialog(this) != true) return;
-        var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmssfff") + "-" + Guid.NewGuid().ToString("N")[..6];
         var csvPath = Path.Combine(picker.FolderName, "HWID-Export-" + stamp + ".csv");
         var htmlPath = Path.Combine(picker.FolderName, "HWID-Export-" + stamp + ".html");
+        SetBusy(true, "Export");
         try
         {
             await Task.Run(() =>
             {
-                WriteSnapshotCsv(csvPath, _snapshot!);
-                WriteSnapshotHtmlCore(htmlPath, _snapshot!);
+                WriteSnapshotCsv(csvPath, snapshot);
+                WriteSnapshotHtmlCore(htmlPath, snapshot);
             });
             ShowStatus("Snapshot exported", Path.GetFileName(csvPath) + " + " + Path.GetFileName(htmlPath) + " in " + picker.FolderName + " · Exports contain device IDs; share carefully.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ShowError("Could not export the snapshot", ex); }
+        finally { SetBusy(false); }
     }
 
     private static string CsvField(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";
@@ -1199,7 +1289,7 @@ public partial class MainWindow : Window
 
     private async void OnWindowClosing(object? sender, CancelEventArgs e)
     {
-        if (_closing) return;
+        if (_closing) { e.Cancel = _closeCompletion != null; return; }
         if (_busy)
         {
             e.Cancel = true;
@@ -1313,6 +1403,162 @@ public partial class MainWindow : Window
         layoutStress = _args.Contains("--layout-stress", StringComparer.OrdinalIgnoreCase)
     }, new JsonSerializerOptions { WriteIndented = true }));
 
+    private async Task VerifyUiRegressionAsync(string resultPath)
+    {
+        if (!IsVerification || _snapshot == null) throw new InvalidOperationException("A synthetic fixture is required.");
+        var original = _snapshot;
+        var previousPage = _page;
+        var motion = ReadLocalValue(UiMotion.EnabledProperty);
+        var checks = new List<string>();
+        void Check(bool condition, string name)
+        {
+            if (!condition) throw new InvalidOperationException("Dashboard layout: UI regression: " + name);
+            checks.Add(name);
+        }
+        async Task SettleAsync()
+        {
+            await Task.Delay(180);
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            UpdateLayout();
+        }
+        var directory = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(resultPath))!, "ui-fixtures-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var data = System.Text.Json.Nodes.JsonNode.Parse(original.Data.GetRawText())!;
+            data["inventory"]!["UI scalar fixture"] = new System.Text.Json.Nodes.JsonArray(
+                "MATCH scalar", 42, true, null,
+                System.Text.Json.Nodes.JsonNode.Parse("""{"Name":"Object record","Aliases":["MATCH nested"]}"""));
+            using (var document = JsonDocument.Parse(data.ToJsonString()))
+                ApplySnapshot(new DesktopSnapshot(document.RootElement));
+            Navigate("Hardware");
+            HardwareSections.SelectedItem = HardwareSections.Items.Cast<HardwareSection>().First(section => section.Name == "UI scalar fixture");
+            HardwareSearch.Text = "MATCH";
+            Check(HardwareRecord.Items.Count == 2, "hardware search matches scalar and nested array values");
+            HardwareSearch.Text = "42";
+            Check(HardwareRecord.Items.Count == 1, "hardware search accepts numeric records");
+            HardwareSearch.Text = "true";
+            Check(HardwareRecord.Items.Count == 1, "hardware search accepts boolean records");
+            HardwareSearch.Text = "absent-ui-record";
+            Check(HardwareRecord.Items.Count == 0 && HardwareDetail.Text.Contains("No records"), "empty hardware search clears old details");
+            HardwareSearch.Clear();
+            ApplySnapshot(original);
+            var originalActivity = ScanRows.ToArray();
+
+            foreach (var page in new[] { "Identifiers", "Hardware", "Snapshots", "Review", "Identifiers" }) Navigate(page);
+            await SettleAsync();
+            Check(PageHost.Children.OfType<FrameworkElement>().Count(page => page.Visibility == Visibility.Visible) == 1 &&
+                IdentifiersPage.Visibility == Visibility.Visible, "rapid navigation ends on the last requested page");
+            Check(PageHost.Children.OfType<FrameworkElement>().All(page => page.Opacity == 1 &&
+                !DependencyPropertyHelper.GetValueSource(page, OpacityProperty).IsAnimated &&
+                (page.RenderTransform is not TranslateTransform slide || slide.Y == 0 && !slide.HasAnimatedProperties)),
+                "interrupted navigation restores opacity and transforms");
+            IdSearch.Focus();
+            Navigate("Identifiers");
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            Check(Keyboard.FocusedElement == IdSearch, "reopening the active page preserves search focus");
+            IdentifiersGrid.SelectedIndex = 0;
+            var status = StatusTitle.Text;
+            OnIdDoubleClicked(IdentifiersGrid, new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                { RoutedEvent = Control.MouseDoubleClickEvent, Source = IdentifiersGrid });
+            Check(StatusTitle.Text == status, "blank identifier double-click does not copy the previous selection");
+            CompareGrid.ItemsSource = new[] { new ChangeRow("Changed", "Synthetic field", "OLD-SYNTHETIC", "NEW-SYNTHETIC", "") };
+            CompareGrid.SelectedIndex = 0;
+            OnComparisonDoubleClicked(CompareGrid, new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                { RoutedEvent = Control.MouseDoubleClickEvent, Source = CompareGrid });
+            Check(StatusTitle.Text == status, "blank comparison double-click does not copy the previous selection");
+
+            Navigate("Overview");
+            SetBusy(true, "Scan");
+            ScanRows.Clear();
+            foreach (var name in ScanSectionNames) ScanRows.Add(new(name, "WAITING", "—", "Synthetic waiting", ""));
+            await SettleAsync();
+            OverviewPage.ScrollToTop();
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            var offset = OverviewPage.VerticalOffset;
+            var update = new BridgeProgress("Extended device inventory", "Extended device inventory", 18, 19, "READING", 0, "Synthetic heartbeat");
+            ApplyScanProgress(update);
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            ApplyScanProgress(update);
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            Check(Math.Abs(OverviewPage.VerticalOffset - offset) < 1, "scan heartbeats preserve manual scroll position");
+            SetBusy(false);
+            RestoreScanActivity();
+            var restored = ScanRows.ToArray();
+            ApplyScanProgress(update);
+            Check(ScanRows.SequenceEqual(restored), "late progress cannot change a completed or cancelled display");
+            Check(ScanRows.SequenceEqual(originalActivity), "older snapshots restore their original activity coverage");
+
+            var first = Path.Combine(directory, "first.json");
+            await File.WriteAllTextAsync(first, original.Inventory.GetRawText());
+            _additionalFolders.Add(directory);
+            Navigate("Snapshots");
+            await RefreshSnapshotsAsync();
+            SnapshotsGrid.SelectedItem = SnapshotsGrid.Items.Cast<SnapshotEntry>().First(entry => entry.Path == first);
+            await File.WriteAllTextAsync(Path.Combine(directory, "second.json"), original.Inventory.GetRawText());
+            await RefreshSnapshotsAsync();
+            Check(SnapshotsGrid.SelectedItem is SnapshotEntry selected && selected.Path == first, "snapshot refresh preserves selection by file path");
+            await SettleAsync();
+            Check(SnapshotsGrid.Opacity == 1 && !DependencyPropertyHelper.GetValueSource(SnapshotsGrid, OpacityProperty).IsAnimated,
+                "snapshot refresh finishes without retaining a fade clock");
+
+            FadeIn(Dashboard, 0.9, 500);
+            FadeIn(SnapshotsGrid, 0.9, 500);
+            Navigate("Hardware");
+            UiMotion.SetEnabled(this, false);
+            Check(Dashboard.Opacity == 1 && SnapshotsGrid.Opacity == 1 && _fadeClocks.Count == 0,
+                "reducing motion immediately clears running fades");
+            Navigate("Review");
+            Check(!DependencyPropertyHelper.GetValueSource(ReviewPage, OpacityProperty).IsAnimated &&
+                (ReviewPage.RenderTransform is not TranslateTransform reducedSlide || reducedSlide.Y == 0),
+                "reduced motion changes pages without animation");
+            HardwareRecord.ApplyTemplate();
+            var popup = (System.Windows.Controls.Primitives.Popup)HardwareRecord.Template.FindName("PART_Popup", HardwareRecord);
+            Check(!UiMotion.GetEnabled(ScanButton) && popup.PopupAnimation == System.Windows.Controls.Primitives.PopupAnimation.None,
+                "reduced motion propagates to buttons and dropdowns");
+            var completions = 0;
+            BeginWindowFade(() => completions++);
+            FinishWindowFade();
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            Check(completions == 1, "close completion executes once when motion is disabled");
+            IsEnabled = true;
+            UiMotion.SetEnabled(this, true);
+            var interruptedClose = 0;
+            BeginWindowFade(() => interruptedClose++);
+            await Task.Delay(35);
+            Check(DependencyPropertyHelper.GetValueSource(this, OpacityProperty).IsAnimated,
+                "animated close starts its fade clock");
+            UiMotion.SetEnabled(this, false);
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            Check(interruptedClose == 1 && Opacity == 1 && !DependencyPropertyHelper.GetValueSource(this, OpacityProperty).IsAnimated,
+                "reducing motion during close finishes once and clears the clock");
+            IsEnabled = true;
+            UiMotion.SetEnabled(this, true);
+            var animatedClose = 0;
+            BeginWindowFade(() => animatedClose++);
+            await SettleAsync();
+            Check(animatedClose == 1 && !DependencyPropertyHelper.GetValueSource(this, OpacityProperty).IsAnimated,
+                "animated close completes once and releases its clock");
+            IsEnabled = true;
+            await File.WriteAllTextAsync(resultPath, JsonSerializer.Serialize(new
+            {
+                success = true, checks = checks.Count, names = checks, syntheticOnly = true,
+                hardwareIdentifiersSaved = false
+            }, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        finally
+        {
+            SetBusy(false);
+            _additionalFolders.Remove(directory);
+            HardwareSearch.Clear();
+            if (motion == DependencyProperty.UnsetValue) ClearValue(UiMotion.EnabledProperty);
+            else SetValue(UiMotion.EnabledProperty, motion);
+            ApplySnapshot(original);
+            Navigate(previousPage);
+            IsEnabled = true;
+        }
+    }
+
     private async Task VerifyWorkflowAsync(string resultPath)
     {
         if (_snapshot == null || _engine == null) throw new InvalidOperationException("A synthetic fixture and BAT connection are required for workflow verification.");
@@ -1394,13 +1640,14 @@ public partial class MainWindow : Window
             await CompareAsync(previousPath);
             Check(!_busy && _operationCancellation == null && _operationFinished?.Task.IsCompleted == true, "operation state and completion signal are released");
             var completed = _snapshot;
+            var previousActivity = ScanRows.ToArray();
             var attempt = RunScanAsync();
             var preparedDisplay = ScanRows.Count == 19 && ScanRows.All(row => row.Status == "WAITING" && row.Records == "—") &&
                 MetricsGrid.Visibility == Visibility.Collapsed && OverviewComputerCard.Visibility == Visibility.Collapsed;
             await Task.Delay(1500); _operationCancellation?.Cancel(); await attempt;
             Check(preparedDisplay && ReferenceEquals(_snapshot, completed) && StatusTitle.Text == "Scan cancelled",
                 "scan starts with waiting rows and cancellation retains the last completed snapshot");
-            Check(ScanRows.Count == 19 && ScanRows.Last().Name == "All-known device catalog", "cancelled rescan restores all previous activity rows");
+            Check(ScanRows.SequenceEqual(previousActivity), "cancelled rescan restores all previous activity rows");
             await CompareAsync(previousPath); CompareGrid.SelectedIndex = 0;
             await File.WriteAllTextAsync(resultPath, JsonSerializer.Serialize(new { success = true, checks, hardwareIdentifiersSaved = false, syntheticOnly = true }, new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -1413,4 +1660,13 @@ internal sealed class UiCommand(Func<Task> execute, Func<bool> canExecute) : ICo
     public bool CanExecute(object? parameter) => canExecute();
     public async void Execute(object? parameter) => await execute();
     public event EventHandler? CanExecuteChanged { add => CommandManager.RequerySuggested += value; remove => CommandManager.RequerySuggested -= value; }
+}
+
+public static class UiMotion
+{
+    public static readonly DependencyProperty EnabledProperty = DependencyProperty.RegisterAttached(
+        "Enabled", typeof(bool), typeof(UiMotion), new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.Inherits));
+
+    public static bool GetEnabled(DependencyObject element) => (bool)element.GetValue(EnabledProperty);
+    public static void SetEnabled(DependencyObject element, bool value) => element.SetValue(EnabledProperty, value);
 }

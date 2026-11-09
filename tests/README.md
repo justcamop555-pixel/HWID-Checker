@@ -19,6 +19,10 @@ Tests are optional for users. Run them from the repository root in a Windows Pow
 | `test-snapshot-sync.ps1` | Shared folder settings, legacy discovery, invalid paths, compare refresh and BAT storage menu | No |
 | `test-updates.ps1` | Package version selection, archive and checksum validation, process waiting, installation and rollback | No |
 | `test-console-updates.ps1` | BAT background update scheduling, shared preferences and normal-exit controls | No |
+| `test-battery-scan.ps1` | 19 checks: supported provider fields, exact device IDs, optional absence, stable multi-battery comparison, contextual presence labels and unread-category counts | No |
+| `test-restart.ps1` | 11 checks: native fresh-window startup through the real BAT prelude, punctuation/Unicode directories, preference inheritance, startup acknowledgement and recoverable launch failures | No; opens a temporary console |
+| `test-animation.ps1` | 47 checks: bounded frames, directional timing, input interruption and resize/failure cleanup | No |
+| `test-animation-native.ps1` | 15 checks: real console screen/cursor restoration, input skipping and buffer-resize cancellation | No; opens a temporary console |
 | `test-scan-display-fallback.ps1` | Resized progress fallback and standalone catalog result-line completion | No |
 | `test-id-view.ps1` | 28 checks: malformed scalar IDs, valid strings/lists/zero values, serial/MAC labels, null rows, adapter metadata and safe display | No |
 | `test-review.ps1` | 24 checks: warning deduplication/recovery, stored failures, extended failures, duplicate statuses, resource shortages/conflicts and consistent review totals | No |

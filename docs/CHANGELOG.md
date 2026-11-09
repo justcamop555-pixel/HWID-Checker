@@ -2,6 +2,14 @@
 
 [Back to the main README](../README.md)
 
+## Desktop 1.4.3 and BAT 3.88
+
+- Fixed BAT restart, device-presence labels, battery provider fields and status meanings, and category counts that previously included unreadable placeholders.
+- Fixed Hardware searches over warning text, compact-window table space and scan progress that overrode manual scrolling.
+- Improved interrupted page, list and closing animations while respecting the Windows animation preference.
+- Preserved section-aware labels when comparing saved snapshots, and corrected prepared-update source-version binding after an intermediate manual upgrade.
+- Updated regression fixtures and added checks for the affected scan, comparison, update and desktop behavior.
+
 ## Desktop 1.4.2 and BAT 3.87
 
 - Fixed the Review page layout: the search row addition had left the findings table in an auto-height row, collapsing it and letting the detail pane take the remaining space.

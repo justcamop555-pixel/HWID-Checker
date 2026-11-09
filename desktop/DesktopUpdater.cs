@@ -33,9 +33,29 @@ internal sealed class DesktopUpdater : IDisposable
     public UpdateStatus Status { get; private set; } = new("idle", "Updates have not been checked yet.");
     public bool IsBusy => _cancellation != null;
     public bool AutomaticEnabled { get; private set; }
-    public bool IsReady => Status.State is "ready" or "repair" && Status.StageDirectory.Length > 0 &&
-        Version.TryParse(Status.LatestVersion, out var next) &&
-        (next > Version.Parse(CurrentVersion) || Status.State == "repair" && next == Version.Parse(CurrentVersion));
+    public bool IsReady => CanApply(Status);
+
+    private static bool CanApply(UpdateStatus status)
+    {
+        var current = Version.Parse(CurrentVersion);
+        return status.State is "ready" or "repair" && status.StageDirectory.Length > 0 &&
+            TryPackageVersion(status.SourceVersion, out var source) &&
+            TryPackageVersion(status.LatestVersion, out var next) &&
+            source < next && source <= current &&
+            (next > current || status.State == "repair" && next == current);
+    }
+
+    private static bool TryPackageVersion(string value, out Version version)
+    {
+        if (Version.TryParse(value, out var parsed) && parsed.Build >= 0 && parsed.Revision == -1 &&
+            parsed.ToString(3) == value)
+        {
+            version = parsed;
+            return true;
+        }
+        version = new Version(0, 0, 0);
+        return false;
+    }
 
     public DesktopUpdater(string directory, string? updatesRoot = null)
     {
@@ -115,13 +135,14 @@ internal sealed class DesktopUpdater : IDisposable
             if (!result.Text("installDirectory").Equals(_directory, StringComparison.OrdinalIgnoreCase) ||
                 !result.Text("component").Equals("Package", StringComparison.OrdinalIgnoreCase)) return;
             var status = ParseResult(result);
-            if (status.State == "ready" && (!Version.TryParse(status.LatestVersion, out var version) ||
+            if (status.State == "ready" && (!TryPackageVersion(status.LatestVersion, out var version) ||
                 version <= Version.Parse(CurrentVersion)))
             {
                 if (version == Version.Parse(CurrentVersion) && HasInterruptedTransaction(status.LatestVersion))
                     status = status with { State = "repair", Message = "An interrupted update is ready to finish after the app closes." };
                 else return;
             }
+            if (status.State is "ready" or "repair" && !CanApply(status)) return;
             Status = status;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { }
@@ -230,7 +251,7 @@ internal sealed class DesktopUpdater : IDisposable
         Directory.CreateDirectory(helperFolder);
         var helper = Path.Combine(helperFolder, "Update-HWID.ps1");
         File.Copy(_script, helper);
-        var start = CreateStart(helper, "Apply", Status.State == "repair" ? Status.SourceVersion : null);
+        var start = CreateStart(helper, "Apply", Status.SourceVersion);
         using var current = Process.GetCurrentProcess();
         AddArguments(start, "-StageDirectory", Status.StageDirectory,
             "-WaitProcessId", current.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),

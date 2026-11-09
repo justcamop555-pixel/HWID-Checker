@@ -1,5 +1,27 @@
 # Desktop verification
 
+## Desktop 1.4.3 and BAT 3.88
+
+Verified on Windows build 26300 with .NET SDK 10.0.403 and the self-contained .NET 10.0.14 runtime packs.
+
+| Check | Result |
+| --- | --- |
+| Packaged desktop layout | All six pages passed at default size and 640 × 480; compact tests used long synthetic names, paths, warnings and IDs |
+| Desktop interactions | 21 checks passed for scalar/nested search, rapid navigation and focus, clicked-row copy guards, manual scan scrolling, selection preservation and animation cleanup |
+| Closing and reduced motion | Actual fade completion, interrupted fade and disabled-animation closing passed without duplicate close completion |
+| Snapshot workflow | 22 legacy and 24 shared-library workflow checks passed; the final package passed the 24-check shared workflow |
+| BAT scanning/startup/motion | 764 checks passed on each of Windows PowerShell 5.1 and PowerShell 7, including native restart acknowledgement and console animation restoration |
+| Additional BAT regressions | 256 checks passed per runtime for updater transactions, identifier views/labels, snapshot storage, shared folders and warning review |
+| BAT update controls | 49 checks passed per runtime, including cached source-version binding, malformed cache rejection and interrupted recovery |
+| Desktop bridge and transport | 34 bridge checks passed per runtime; 34 process-host checks passed |
+| Desktop updater | 23 checks passed with dynamic version fixtures, including version 1.4.3 |
+| Shared local library | 14 cross-app checks passed with synthetic saved reports and isolated folder settings |
+| Full read-only desktop scan | All 18 sections read; 176 known device records; 22 responsive UI timer ticks; completed with 19 activity rows |
+
+Renders used 96 DPI and reduced window sizes; these checks do not change Windows display scaling. Saved test reports contain synthetic identifiers. The live-scan diagnostic records counts/status, not identifier values. Actual public update installation was not performed.
+
+The published archive SHA-256 is provided in [SHA256SUMS.txt](https://github.com/justcamop555-pixel/HWID-Checker/releases/download/desktop-v1.4.3/SHA256SUMS.txt). The archive also includes a per-file `SHA256SUMS.txt` with the executable and companion-file hashes.
+
 ## Desktop 1.3.0 and BAT 3.85
 
 Verified the packaged Windows x64 application on Windows build 26300.

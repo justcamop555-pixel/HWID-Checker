@@ -56,7 +56,7 @@
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <Grid Margin="0,0,0,12">
+            <Grid x:Name="HeaderPanel" Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
@@ -77,7 +77,7 @@
                     <Button x:Name="ConnectButton" Content="Connect BAT…" Click="OnChooseBat" FontSize="12"/>
                 </WrapPanel>
             </Grid>
-            <Border Grid.Row="1" Background="{DynamicResource StatusBrush}" BorderBrush="{DynamicResource StatusBorderBrush}"
+            <Border x:Name="StatusPanel" Grid.Row="1" Background="{DynamicResource StatusBrush}" BorderBrush="{DynamicResource StatusBorderBrush}"
                     BorderThickness="1" CornerRadius="0" Padding="11,8" Margin="0,0,0,13">
                 <Grid>
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -234,13 +234,13 @@
                         <ListBox x:Name="HardwareSections" SelectionChanged="OnHardwareSectionSelected" DisplayMemberPath="Display" AutomationProperties.Name="Hardware section"/>
                     </Border>
                     <Grid Grid.Column="1">
-                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="0.42*" MinHeight="66" MaxHeight="136"/></Grid.RowDefinitions>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition x:Name="HardwareDetailRow" Height="0.42*" MinHeight="66" MaxHeight="136"/></Grid.RowDefinitions>
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                             <TextBlock x:Name="HardwareSectionTitle" Grid.ColumnSpan="3" Text="Hardware fields" FontSize="17" FontWeight="SemiBold"
                                        Margin="0,0,0,6" Style="{StaticResource TrimmedText}"/>
-                            <Grid Grid.Row="1" Grid.ColumnSpan="3" Margin="0,0,0,8">
+                            <Grid x:Name="HardwareSearchHost" Grid.Row="1" Grid.ColumnSpan="3" Margin="0,0,0,8">
                                 <TextBox x:Name="HardwareSearch" TextChanged="OnHardwareFilterChanged" AutomationProperties.Name="Search hardware records"
                                          VerticalContentAlignment="Center" ToolTip="Filter records in this section by any field"/>
                                 <TextBlock Text="Search records…" IsHitTestVisible="False" Margin="10,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}">
@@ -261,9 +261,9 @@
                                       SelectedItem="{Binding SelectedItem,ElementName=HardwareSections,Mode=TwoWay}" AutomationProperties.Name="Hardware section"/>
                             <ComboBox x:Name="HardwareRecord" Grid.Row="2" Grid.ColumnSpan="2" DisplayMemberPath="Title"
                                       SelectionChanged="OnHardwareRecordSelected" AutomationProperties.Name="Hardware record"/>
-                            <Button Grid.Row="2" Grid.Column="2" Content="Copy value" Click="OnCopyField" Margin="8,0,0,0"/>
+                            <Button x:Name="CopyHardwareButton" Grid.Row="2" Grid.Column="2" Content="Copy value" Click="OnCopyField" Margin="8,0,0,0"/>
                         </Grid>
-                        <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0">
+                        <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0">
                             <DataGrid x:Name="HardwareFields" Style="{StaticResource PageGrid}" SelectionChanged="OnHardwareFieldSelected">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Field" Binding="{Binding Field}" Width="*" MinWidth="92" ElementStyle="{StaticResource CellText}"/>
@@ -271,7 +271,7 @@
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Border>
-                        <TextBox Grid.Row="3" x:Name="HardwareDetail" Margin="0,8,0,0" Style="{StaticResource DetailBox}"
+                        <TextBox Grid.Row="2" x:Name="HardwareDetail" Margin="0,8,0,0" Style="{StaticResource DetailBox}"
                                  FontFamily="Consolas" AutomationProperties.Name="Selected hardware field value"/>
                     </Grid>
                 </Grid>
@@ -378,7 +378,7 @@
                 </Grid>
             </Grid>
 
-            <Grid Grid.Row="3" Margin="0,9,0,0">
+            <Grid x:Name="FooterPanel" Grid.Row="3" Margin="0,9,0,0">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="FooterText" Text="Windows-reported inventory" Style="{StaticResource TrimmedText}"
                            Foreground="{DynamicResource MutedBrush}" FontSize="10" Margin="0,0,8,0"/>

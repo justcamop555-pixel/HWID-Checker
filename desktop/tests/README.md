@@ -6,13 +6,14 @@ The BAT remains the collection/report engine. Desktop checks exercise the bridge
 
 | Suite | Coverage | Uses actual hardware? |
 | --- | --- | --- |
-| `test-desktop-bridge.ps1` | 33 checks per PowerShell runtime: complete/partial scans, progress, exact values and field labels, TXT/JSON pairs, old/current comparison, metadata and malformed inputs | No; synthetic engine fixture |
+| `test-desktop-bridge.ps1` | 34 checks per PowerShell runtime: complete/partial scans, progress, exact values and imported field labels, TXT/JSON pairs, old/current comparison, metadata and malformed inputs | No; synthetic engine fixture |
 | `EngineClientSmoke` | 34 checks: UTF-8/Unicode paths, literal arguments, result lifetime, stderr draining, protocol/error validation, cancellation, overlap/disposal and temporary-file cleanup | No; synthetic bridge |
 | `verify-desktop.ps1 -Mode Render` | Six desktop pages rendered from synthetic inventory for visual inspection | No |
 | `verify-desktop.ps1 -Mode Workflow` | 22 checks: ID filtering, hardware refresh, detail reset, RAM display, verified saves, old/new folder detection, coalesced refresh, exact ID changes, comparison invalidation and cancelled-scan restoration | Includes a cancelled read-only scan; saved captures and images use the synthetic fixture |
-| `verify-desktop.ps1 -Mode LiveScan` | Full 17-section scan, catalog coverage, returned UI state and responsive timer ticks | Yes; records counts/status only |
+| `verify-desktop.ps1 -Mode Interactions` | 21 checks: scalar/nested hardware search, interrupted navigation, keyboard focus, blank-area copy guards, manual scan scrolling, snapshot selection, fade cleanup, reduced motion and animated/interrupted close completion | No; synthetic fixture and progress events |
+| `verify-desktop.ps1 -Mode LiveScan` | Full 18-section scan, catalog coverage, returned UI state and responsive timer ticks | Yes; records counts/status only |
 | `test-local-sync.ps1` | Shared settings interoperability, concurrent writers, and BAT/desktop discovery of saved pairs | No |
-| `UpdaterClientSmoke` | Desktop updater preferences, literal helper arguments, cancellation, downgrade prevention and interrupted-update scheduling | No |
+| `UpdaterClientSmoke` | 23 checks: updater preferences, literal helper arguments, cancellation, downgrade prevention, interrupted recovery and cached source-version binding after a manual upgrade | No |
 
 From the repository root, after building the desktop package:
 
@@ -30,6 +31,7 @@ $desktopExe = 'C:\path\to\HWID Checker Desktop\HWID Checker.exe'
 .\desktop\tests\verify-desktop.ps1 -ExePath $desktopExe -Mode Render -Size 640x480 -LayoutStress
 .\desktop\tests\verify-desktop.ps1 -ExePath $desktopExe -Mode Workflow
 .\desktop\tests\verify-desktop.ps1 -ExePath $desktopExe -Mode Workflow -TestSharedLibrary
+.\desktop\tests\verify-desktop.ps1 -ExePath $desktopExe -Mode Interactions -Size 640x480
 .\desktop\tests\verify-desktop.ps1 -ExePath $desktopExe -Mode LiveScan
 ```
 

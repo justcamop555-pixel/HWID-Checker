@@ -2,14 +2,14 @@
 param(
     [Parameter(Mandatory=$true)][string]$ExePath,
     [string]$BatPath=(Join-Path $PSScriptRoot '..\..\hwid.bat'),
-    [ValidateSet('Render','Workflow','LiveScan')][string]$Mode='Render',
+    [ValidateSet('Render','Workflow','Interactions','LiveScan')][string]$Mode='Render',
     [string]$OutputDirectory=(Join-Path $PSScriptRoot ('test-output-ui-'+[guid]::NewGuid().ToString('N'))),
     [ValidatePattern('^[1-9][0-9]{2,3}[xX][1-9][0-9]{2,3}$')][string]$Size,
     [switch]$LayoutStress,
     [switch]$TestSharedLibrary
 )
 $ErrorActionPreference='Stop'
-if($Size -and $Mode -eq 'LiveScan'){throw 'Choose Render or Workflow mode to request a window size.'}
+if($Size -and $Mode -eq 'LiveScan'){throw 'Choose Render, Workflow or Interactions mode to request a window size.'}
 if($LayoutStress -and $Mode -ne 'Render'){throw 'Choose Render mode to exercise the layout stress states.'}
 if($TestSharedLibrary -and $Mode -ne 'Workflow'){throw 'Choose Workflow mode to exercise the shared snapshot library.'}
 if($Size){
@@ -29,6 +29,7 @@ foreach($page in $pages){
     $resultPath=Join-Path $OutputDirectory ($page.ToLowerInvariant()+'-result.json')
     $start=[Diagnostics.ProcessStartInfo]::new($ExePath)
     $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.WindowStyle='Hidden'
+    $start.Environment['HWID_NO_UPDATE']='1'
     $arguments=@('--engine',$BatPath)
     if($Mode -eq 'LiveScan'){$arguments+=@('--scan-test',$resultPath)}
     else{
@@ -36,6 +37,7 @@ foreach($page in $pages){
         if($LayoutStress){$arguments+='--layout-stress'}
         $arguments+=@('--fixture',(Join-Path $PSScriptRoot 'fixtures\desktop-scan.json'),'--page',$page,'--render',(Join-Path $OutputDirectory ($page.ToLowerInvariant()+'.png')),'--verify',$resultPath)
         if($Mode -eq 'Workflow'){$arguments+=@('--workflow-test',(Join-Path $OutputDirectory 'workflow-result.json'))}
+        if($Mode -eq 'Interactions'){$arguments+=@('--ui-test',(Join-Path $OutputDirectory 'ui-result.json'))}
         if($TestSharedLibrary){$arguments+=@('--shared-settings',(Join-Path $OutputDirectory ('shared-'+[guid]::NewGuid().ToString('N')+'\snapshot-library.json')))}
     }
     foreach($argument in $arguments){$start.ArgumentList.Add($argument)}
@@ -73,6 +75,10 @@ foreach($page in $pages){
         $expectedChecks=if($TestSharedLibrary){24}else{22}
         if(-not $workflow.success -or $workflow.checks -ne $expectedChecks -or -not $workflow.syntheticOnly){throw 'Synthetic desktop workflow failed.'}
         $checks=$workflow.checks
+    }elseif($Mode -eq 'Interactions'){
+        $interaction=Get-Content -LiteralPath (Join-Path $OutputDirectory 'ui-result.json') -Raw | ConvertFrom-Json
+        if(-not $interaction.success -or $interaction.checks -ne 21 -or -not $interaction.syntheticOnly){throw 'Synthetic desktop interactions failed.'}
+        $checks=$interaction.checks
     }else{$checks++}
     [Console]::WriteLine('PASS: '+$Mode+' / '+$page)
 }

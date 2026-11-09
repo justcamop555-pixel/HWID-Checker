@@ -6,7 +6,7 @@ Application updates are available from Desktop **Updates** or BAT **[9] → [5]*
 
 ## Read a scan
 
-Use **[1]** for the overview. It separates normal query coverage, identifier fields, present devices and the all-known extended catalog. Startup and full rescans collect the 17 normal sections plus this catalog automatically. The overall progress bar has 18 stages and reaches 100% after the catalog attempt finishes; READ/NOT READ shows whether collection succeeded.
+Use **[1]** for the overview. It separates normal query coverage, identifier fields, present devices and the all-known extended catalog. Startup and full rescans collect the 18 normal sections plus this catalog automatically. The overall progress bar has 19 stages and reaches 100% after the catalog attempt finishes; READ/NOT READ shows whether collection succeeded.
 
 The scan display groups related queries together:
 
@@ -16,11 +16,14 @@ The scan display groups related queries together:
 | 2. CPU & memory | CPU and memory modules |
 | 3. Storage | Physical disks, storage identifiers, volumes and partitions |
 | 4. Graphics & network | Graphics adapters, monitors and network adapters |
-| 5. Windows | Operating-system details and Machine GUID |
-| 6. Present device IDs | Present PnP nodes and their reported ID lists |
-| 7. All-known device catalog | Windows-known nodes, including hidden/disconnected records |
+| 5. Power | Optional battery identity, charge, voltage and Windows-reported status |
+| 6. Windows | Operating-system details, available Secure Boot/TPM information and Machine GUID |
+| 7. Present device IDs | Present PnP nodes and their reported ID lists |
+| 8. All-known device catalog | Windows-known nodes, including hidden/disconnected records |
 
-Group numbers organize the display; they do not replace the 17 query counters or 18-stage overall progress. Section-only diagnostic scans show six groups. Firmware queries stay together before CPU/memory. Every new scan resets group numbering, and the scrollbar continues to track written content rather than empty reserved rows.
+Group numbers organize the display; they do not replace the 18 query counters or 19-stage overall progress. Section-only diagnostic scans show seven groups. Firmware queries stay together before CPU/memory. Every new scan resets group numbering, and the scrollbar continues to track written content rather than empty reserved rows.
+
+Battery hardware is optional. A desktop PC can correctly report no battery. Device IDs identify the Windows battery record and should not be read as a manufacturer serial number. The checker does not manufacture a missing-serial warning for fields its battery provider does not support.
 
 Short successful results stay compact. **CHECK**, PnP coverage and unread-result details use indented continuation lines, keeping record/time status separate from longer explanations. Result details wrap at word boundaries in narrow windows; they are not shortened with ellipses. The formatter uses the current width after resizing, while completed query metadata keeps its full summary. Progress displays retain fractional elapsed seconds.
 

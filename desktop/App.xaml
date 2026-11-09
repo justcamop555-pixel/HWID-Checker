@@ -1,4 +1,4 @@
-<Application x:Class="HwidDesktop.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" ShutdownMode="OnMainWindowClose">
+<Application x:Class="HwidDesktop.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:HwidDesktop" ShutdownMode="OnMainWindowClose">
  <Application.Resources>
   <SolidColorBrush x:Key="CanvasBrush" Color="#0D1521"/>
   <SolidColorBrush x:Key="SidebarBrush" Color="#101B29"/>
@@ -29,6 +29,7 @@
   <SolidColorBrush x:Key="ListHoverBrush" Color="#213349"/>
 
   <Style TargetType="Window">
+   <Setter Property="local:UiMotion.Enabled" Value="{DynamicResource {x:Static SystemParameters.ClientAreaAnimationKey}}"/>
    <Setter Property="FontFamily" Value="Segoe UI"/>
    <Setter Property="FontSize" Value="13"/>
    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
@@ -56,6 +57,15 @@
   <Style x:Key="Muted" TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="LineHeight" Value="20"/></Style>
   <Style x:Key="Eyebrow" TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="FontSize" Value="10"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/></Style>
   <Style x:Key="Card" TargetType="Border"><Setter Property="Background" Value="{DynamicResource PanelBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Padding" Value="20"/></Style>
+  <Style x:Key="ButtonKeyboardFocus" TargetType="Control">
+   <Setter Property="Template">
+    <Setter.Value>
+     <ControlTemplate TargetType="Control">
+      <Border BorderThickness="2" BorderBrush="{DynamicResource FocusBrush}"/>
+     </ControlTemplate>
+    </Setter.Value>
+   </Setter>
+  </Style>
   <Style TargetType="Button">
    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
    <Setter Property="Background" Value="{DynamicResource ControlBrush}"/>
@@ -66,7 +76,7 @@
    <Setter Property="FontWeight" Value="SemiBold"/>
    <Setter Property="HorizontalContentAlignment" Value="Center"/>
    <Setter Property="VerticalContentAlignment" Value="Center"/>
-   <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+   <Setter Property="FocusVisualStyle" Value="{StaticResource ButtonKeyboardFocus}"/>
    <Setter Property="Template">
     <Setter.Value>
      <ControlTemplate TargetType="Button">
@@ -80,52 +90,44 @@
         <ContentPresenter x:Name="Label" Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"
                           HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
-        <Border x:Name="FocusRing" CornerRadius="0" BorderThickness="2" BorderBrush="{DynamicResource FocusBrush}"
-                Opacity="0" IsHitTestVisible="False">
-         <Border CornerRadius="0" BorderThickness="1" BorderBrush="{DynamicResource CanvasBrush}"/>
-        </Border>
        </Grid>
       </Border>
       <ControlTemplate.Triggers>
        <Trigger Property="IsMouseOver" Value="True">
         <Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-        <Trigger.EnterActions>
-         <BeginStoryboard>
-          <Storyboard>
-           <DoubleAnimation Storyboard.TargetName="Shade" Storyboard.TargetProperty="Opacity" To="0.05" Duration="0:0:0.12"/>
-          </Storyboard>
-         </BeginStoryboard>
-        </Trigger.EnterActions>
-         <Trigger.ExitActions>
-          <BeginStoryboard>
-           <Storyboard>
-            <DoubleAnimation Storyboard.TargetName="Shade" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16"/>
-           </Storyboard>
-          </BeginStoryboard>
-         </Trigger.ExitActions>
-        </Trigger>
+        <Setter TargetName="Shade" Property="Opacity" Value="0.05"/>
+       </Trigger>
        <Trigger Property="IsPressed" Value="True">
-        <Trigger.EnterActions>
-         <BeginStoryboard>
+        <Setter TargetName="Shade" Property="Opacity" Value="0.15"/>
+       </Trigger>
+       <MultiTrigger>
+        <MultiTrigger.Conditions>
+         <Condition Property="IsPressed" Value="True"/>
+         <Condition Property="IsEnabled" Value="True"/>
+         <Condition Property="local:UiMotion.Enabled" Value="True"/>
+        </MultiTrigger.Conditions>
+        <MultiTrigger.EnterActions>
+         <BeginStoryboard x:Name="PressMotion">
           <Storyboard>
-           <DoubleAnimation Storyboard.TargetName="Shade" Storyboard.TargetProperty="Opacity" To="0.15" Duration="0:0:0.06"/>
            <DoubleAnimation Storyboard.TargetName="FrameScale" Storyboard.TargetProperty="ScaleX" To="0.985" Duration="0:0:0.06"/>
            <DoubleAnimation Storyboard.TargetName="FrameScale" Storyboard.TargetProperty="ScaleY" To="0.985" Duration="0:0:0.06"/>
           </Storyboard>
          </BeginStoryboard>
-        </Trigger.EnterActions>
-         <Trigger.ExitActions>
-          <BeginStoryboard>
-           <Storyboard>
-            <DoubleAnimation Storyboard.TargetName="Shade" Storyboard.TargetProperty="Opacity" To="0.07" Duration="0:0:0.10"/>
+        </MultiTrigger.EnterActions>
+        <MultiTrigger.ExitActions>
+          <BeginStoryboard x:Name="ReleaseMotion">
+           <Storyboard FillBehavior="Stop">
             <DoubleAnimation Storyboard.TargetName="FrameScale" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.10"/>
             <DoubleAnimation Storyboard.TargetName="FrameScale" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.10"/>
            </Storyboard>
           </BeginStoryboard>
-         </Trigger.ExitActions>
-        </Trigger>
-       <Trigger Property="IsKeyboardFocused" Value="True">
-        <Setter TargetName="FocusRing" Property="Opacity" Value="1"/>
+        </MultiTrigger.ExitActions>
+       </MultiTrigger>
+       <Trigger Property="local:UiMotion.Enabled" Value="False">
+        <Trigger.EnterActions>
+         <RemoveStoryboard BeginStoryboardName="PressMotion"/>
+         <RemoveStoryboard BeginStoryboardName="ReleaseMotion"/>
+        </Trigger.EnterActions>
        </Trigger>
        <Trigger Property="IsEnabled" Value="False">
         <Setter Property="Cursor" Value="Arrow"/>
@@ -133,7 +135,10 @@
         <Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
         <Setter TargetName="Label" Property="TextElement.Foreground" Value="{DynamicResource DisabledTextBrush}"/>
         <Setter TargetName="Shade" Property="Opacity" Value="0"/>
-        <Setter TargetName="FocusRing" Property="Opacity" Value="0"/>
+        <Trigger.EnterActions>
+         <RemoveStoryboard BeginStoryboardName="PressMotion"/>
+         <RemoveStoryboard BeginStoryboardName="ReleaseMotion"/>
+        </Trigger.EnterActions>
        </Trigger>
       </ControlTemplate.Triggers>
      </ControlTemplate>
@@ -183,6 +188,7 @@
    <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
   </Style>
   <Style TargetType="ComboBox">
+   <Setter Property="Padding" Value="12,8,33,8"/>
    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
    <Setter Property="Background" Value="{DynamicResource ControlBrush}"/>
    <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}"/>
@@ -221,7 +227,7 @@
           </ControlTemplate>
          </ToggleButton.Template>
         </ToggleButton>
-        <ContentPresenter x:Name="SelectionContent" Margin="12,8,33,8" VerticalAlignment="Center"
+        <ContentPresenter x:Name="SelectionContent" Margin="{TemplateBinding Padding}" VerticalAlignment="Center"
                           ClipToBounds="True" IsHitTestVisible="False"
                           Content="{TemplateBinding SelectionBoxItem}"
                           ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
@@ -246,6 +252,9 @@
        </Grid>
       </Border>
       <ControlTemplate.Triggers>
+       <Trigger Property="local:UiMotion.Enabled" Value="False">
+        <Setter TargetName="PART_Popup" Property="PopupAnimation" Value="None"/>
+       </Trigger>
        <Trigger Property="IsMouseOver" Value="True">
         <Setter TargetName="ComboFrame" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
        </Trigger>

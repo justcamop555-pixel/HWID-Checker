@@ -36,6 +36,7 @@ function Get-CimInstance {
 }
 function Get-NetAdapter {param([switch]$IncludeHidden) [pscustomobject]@{Name='Synthetic adapter';InterfaceDescription='Synthetic network';InterfaceGuid='11111111-2222-3333-4444-555555555555';MacAddress='001122334455';PermanentAddress='001122334455';PNPDeviceID='USB\SYNTHETIC';Status='Up';LinkSpeed=1000000000;HardwareInterface=$true}}
 function Get-ItemProperty {param($LiteralPath,$Name) [pscustomobject]@{MachineGuid='SYNTHETIC-MACHINE-0001'}}
+function Confirm-SecureBootUEFI {param($ErrorAction) return $true}
 function Get-PnpDevice {param([switch]$PresentOnly) [pscustomobject]@{Name='Synthetic device';PNPDeviceID='USB\SYNTHETIC';PNPClass='USB';ClassGuid='TEST';Present=$true;ConfigManagerErrorCode=0;HardwareID=@('MODEL-0001')}}
 function Get-PnpDeviceProperty {param($InstanceId,$KeyName,$ErrorAction,$ErrorVariable)}
 function Get-ExtendedDeviceInventory {[pscustomobject]@{Devices=@([pscustomobject]@{Name='Synthetic device';DeviceInstanceId='USB\SYNTHETIC';PNPClass='USB';ClassGuid='TEST';Present=$true;ConfigManagerErrorCode=0;HardwareID=@('MODEL-0001')});Info=[ordered]@{Captured='2026-11-04T12:00:00-05:00';Source='Synthetic desktop tests';Records=1;PropertyNodesRequested=1;PropertyNodesReturned=1;PropertyNodesWithoutRows=0}}}
@@ -82,6 +83,7 @@ Assert ($change.kind -eq 'Changed' -and $change.section -eq 'CPU' -and $change.f
 Assert ($change.difference -match 'character' -and $compare.Data.previousCount -gt 0 -and $compare.Data.currentCount -gt 0) 'Comparison includes the engine character-difference explanation and comparable counts'
 Assert ($null -ne $compare.Data.PSObject.Properties['skippedSections'] -and $null -ne $compare.Data.PSObject.Properties['scopeWarnings']) 'Comparison exposes unread/schema/reader-coverage context'
 Assert ($compare.Data.previousComputer -ceq 'SYNTHETIC-PC' -and $compare.Data.currentComputer -ceq 'SYNTHETIC-PC' -and [string]$compare.Data.previousCaptured -eq [string]$saved.'Report info'.Generated -and [string]$compare.Data.currentCaptured -eq [string]$changed.'Report info'.Generated) 'Comparison returns prior/current computer and capture metadata from the validated reports'
+Assert ($compare.Data.fieldLabels.CPU.ProcessorId -ceq 'CPU identifier' -and $compare.Data.fieldLabels.'Memory modules'.Speed -match 'raw') 'Imported comparison inventories retain the engine field labels for both identity and hardware fields'
 $same=Invoke-Bridge Compare $fixture @{previousPath=$inventoryPath;currentPath=$inventoryPath}
 Assert ($same.Data.changes.Count -eq 0) 'An unchanged snapshot does not manufacture ID changes'
 $badFixture=Join-Path $root 'not-hwid.bat';[IO.File]::WriteAllText($badFixture,'@echo off',[Text.UTF8Encoding]::new($false))

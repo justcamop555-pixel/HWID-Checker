@@ -2,7 +2,7 @@
 
 A Windows desktop interface for the existing HWID Checker scanner. The application launches the PowerShell scanner embedded in the adjacent `hwid.bat`, then presents its results in a graphical dashboard.
 
-Desktop **1.3.0** pairs with BAT **3.85** for a shared local snapshot library and application updates.
+Desktop **1.4.3** pairs with BAT **3.88** for a shared local snapshot library and application updates. See the [changelog](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/CHANGELOG.md) for release details.
 
 ## Start the application
 
@@ -18,18 +18,25 @@ The package targets **Windows x64** and includes its .NET desktop runtime. The s
 | Task | Behavior |
 | --- | --- |
 | Scan or rescan | Refresh the same 18 hardware/system sections and all-known device catalog used by the BAT. Progress and per-section results remain visible while the scan runs. |
-| Inspect hardware | Browse the collected system, firmware, CPU, memory, storage, graphics, network and device records. |
+| Inspect hardware | Browse the collected system, firmware, CPU, memory, storage, graphics, network, battery and device records. Search within a section to find a record. |
 | Inspect identifiers | Read the captured identifier values and their supplied/missing/default status. |
 | Review findings | Inspect unread sections, missing/default values and conflicts reported by the scanning engine. |
 | Save a snapshot | Export a verified TXT and JSON report pair using the BAT engine's existing report writer. |
+| Export a readable report | Use **Export CSV / HTML…** to save the identifier table as CSV and the captured inventory as a standalone HTML page. Use the JSON snapshot for later comparison. |
 | Share folders with the BAT | Open **Snapshots → Folder settings…** to choose a shared save folder and manage the folders both apps watch. |
-| Compare snapshots | Select an older JSON snapshot and compare it with the current scan using the engine's validation and identifier-comparison rules. |
+| Compare snapshots | Compare an older JSON snapshot with the current scan, or choose two saved JSON snapshots without starting a scan. Results show old/new values and exact identifier differences. |
+| Export comparison results | After a comparison finds changes, save its displayed results as a text report. |
 | Open BAT console | Open the connected scanner in its console. The standard package includes `Start-HWID.ps1` for the standard BAT filename. |
+| Theme and restart | Switch between **Midnight** and **Daylight**, or use **Restart app** in the sidebar. |
 | Updates | Check newer packages, download a verified update, and install it after closing or with **Install and restart**. |
 
 The square layout keeps table headers aligned with their card borders. In a narrow window, the scan buttons move below the page title, PC details stack vertically, and **Hardware** uses a section dropdown. While scanning, the activity table uses the overview space. Hover over truncated text for the full value, or select a table row to read and copy its details.
 
 You can cancel a running scan. The last completed scan remains available until a replacement finishes successfully. A scan can finish with unread sections; those results remain explicitly marked and should be reviewed before interpreting a comparison.
+
+Scrolling to earlier scan rows preserves your reading position while new progress arrives. Page and button motion follows the Windows animation preference; disabling animations in Windows keeps navigation immediate.
+
+Battery hardware is optional. A PC without a battery receives an explicit absence record. Battery fields reflect the properties Windows supplies; a device-instance ID is not a manufacturer serial number.
 
 Comparisons show the selected identifier fields supported by the engine. Missing/default fields, unread sections and uncertain reader coverage may be left un-compared. Windows device nodes, grouping IDs and serial numbers have different meanings; a reported difference alone does not establish physical hardware replacement.
 
@@ -67,7 +74,7 @@ Keyboard shortcuts: **Ctrl+R** scans/rescans; **Ctrl+S** saves the current snaps
 
 ## Verification
 
-The initial build was checked with synthetic data for 33 bridge integration checks on each of PowerShell 5.1 and 7, 34 process-host checks and 21 desktop workflow checks. Coverage includes Unicode paths, cancellation, complete result validation, verified exports, exact old/new values, older-file discovery and view-state reset. A live standard-user desktop scan read all 17 sections, refreshed the known-device catalog and kept the UI responsive. Live diagnostics recorded counts/status rather than identifiers.
+See [desktop verification](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/desktop/VERIFICATION.md) for the results of specific builds, and [test instructions](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/desktop/tests/README.md) to reproduce the checks. Historical results identify their original scanner version and section count; the current scanner has 18 normal sections plus the all-known device catalog. Synthetic fixtures cover Unicode paths, cancellation, exports, identifier comparison and saved-file discovery. Live diagnostics record counts/status rather than identifiers.
 
 The current portable build targets Windows x64. Other architectures are not packaged by this build script. The desktop runtime is bundled; Windows hardware providers and PowerShell remain system dependencies.
 

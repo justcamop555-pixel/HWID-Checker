@@ -8,6 +8,13 @@ var cache = Path.Combine(root, "Preferences");
 Directory.CreateDirectory(install);
 File.Copy(Path.Combine(AppContext.BaseDirectory, "FakeUpdater.ps1"), Path.Combine(install, "Update-HWID.ps1"));
 var checks = 0;
+var currentVersion = Version.Parse(DesktopUpdater.CurrentVersion);
+var nextVersion = new Version(currentVersion.Major, currentVersion.Minor, currentVersion.Build + 1).ToString(3);
+var previousVersion = (currentVersion.Build > 0
+    ? new Version(currentVersion.Major, currentVersion.Minor, currentVersion.Build - 1)
+    : currentVersion.Minor > 0
+        ? new Version(currentVersion.Major, currentVersion.Minor - 1, 0)
+        : new Version(currentVersion.Major - 1, 0, 0)).ToString(3);
 void Check(bool value, string description)
 {
     if (!value) throw new InvalidOperationException(description);
@@ -20,7 +27,7 @@ Check(updater.AutomaticEnabled, "automatic updates default to enabled for a new 
 await updater.CheckAsync();
 Check(updater.Status.State == "available" && !updater.IsBusy, "version checking releases its process and busy state");
 await updater.DownloadAsync();
-Check(updater.IsReady && updater.Status.LatestVersion == "1.4.0", "preparation exposes a newer ready package");
+Check(updater.IsReady && updater.Status.LatestVersion == nextVersion, "preparation exposes a newer ready package");
 Check(updater.ScheduleApply(true), "the installer helper starts through the literal PowerShell argument list");
 var marker = Path.Combine(install, "applied.json");
 var wait = Stopwatch.StartNew();
@@ -29,7 +36,8 @@ using (var applied = JsonDocument.Parse(File.ReadAllText(marker)))
 {
     Check(applied.RootElement.GetProperty("component").GetString() == "Package" &&
         applied.RootElement.GetProperty("relaunch").GetBoolean() &&
-        applied.RootElement.GetProperty("process").GetString() == Environment.ProcessId.ToString(),
+        applied.RootElement.GetProperty("process").GetString() == Environment.ProcessId.ToString() &&
+        applied.RootElement.GetProperty("source").GetString() == DesktopUpdater.CurrentVersion,
         "the copied helper receives the exact component, parent and restart request");
 }
 updater.SetAutomatic(false);
@@ -42,13 +50,43 @@ File.WriteAllText(Path.Combine(cache, "preferences.json"), "{\"automaticUpdates\
 using (var duplicate = new DesktopUpdater(install, cache))
     Check(!duplicate.AutomaticEnabled, "conflicting automatic preference fields do not enable updates");
 
+var cachedResultPath = Directory.GetFiles(cache, "result.json", SearchOption.AllDirectories).Single();
+void WriteCachedReady(string sourceVersion)
+{
+    File.WriteAllText(cachedResultPath, JsonSerializer.Serialize(new
+    {
+        state = "ready", currentVersion = sourceVersion, latestVersion = nextVersion,
+        component = "Package", installDirectory = install, stageDirectory = Path.Combine(install, "stage"),
+        message = "Synthetic update prepared before an intermediate manual upgrade"
+    }));
+}
+WriteCachedReady(previousVersion);
+using (var intermediate = new DesktopUpdater(install, cache))
+{
+    Check(intermediate.IsReady, "a future package prepared by an older application remains ready after a manual upgrade");
+    File.Delete(marker);
+    Check(intermediate.ScheduleApply(false), "the previously prepared package can still be scheduled");
+    wait.Restart();
+    while (!File.Exists(marker) && wait.Elapsed < TimeSpan.FromSeconds(10)) await Task.Delay(100);
+    using var request = JsonDocument.Parse(File.ReadAllText(marker));
+    Check(request.RootElement.GetProperty("source").GetString() == previousVersion,
+        "normal installation retains the prepared manifest's original source version");
+}
+foreach (var invalidSource in new[] { "", "invalid", currentVersion.Major + ".0", DesktopUpdater.CurrentVersion + ".0", nextVersion })
+{
+    WriteCachedReady(invalidSource);
+    using var invalid = new DesktopUpdater(install, cache);
+    Check(!invalid.IsReady && !invalid.ScheduleApply(false),
+        "a missing, malformed or inapplicable prepared source cannot schedule installation: " + invalidSource);
+}
+
 File.WriteAllText(Path.Combine(install, "equal.flag"), "");
 await updater.DownloadAsync();
 var interrupted = Path.Combine(install, ".hwid-update-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(interrupted);
 File.WriteAllText(Path.Combine(interrupted, "transaction.json"), JsonSerializer.Serialize(new
 {
-    schema = 1, installDirectory = install, component = "Package", version = "1.3.0", state = "active"
+    schema = 1, installDirectory = install, component = "Package", version = DesktopUpdater.CurrentVersion, state = "active"
 }));
 using (var repair = new DesktopUpdater(install, cache))
 {
@@ -58,7 +96,7 @@ using (var repair = new DesktopUpdater(install, cache))
     wait.Restart();
     while (!File.Exists(marker) && wait.Elapsed < TimeSpan.FromSeconds(10)) await Task.Delay(100);
     using var request = JsonDocument.Parse(File.ReadAllText(marker));
-    Check(request.RootElement.GetProperty("source").GetString() == "1.2.0",
+    Check(request.RootElement.GetProperty("source").GetString() == previousVersion,
         "repair keeps the prepared transaction's original version identity");
 }
 File.WriteAllText(Path.Combine(interrupted, "recovered.json"), "{}");

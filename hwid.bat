@@ -2,6 +2,8 @@
 setlocal EnableExtensions DisableDelayedExpansion
 set "ERRORLEVEL="
 set "HWID_STARTUP_SIGNAL="
+if defined HWID_RESTART_SIGNAL set "HWID_STARTUP_SIGNAL=%HWID_RESTART_SIGNAL%"
+set "HWID_RESTART_SIGNAL="
 title HWID Checker - Preparing
 echo.
 echo   HWID CHECKER
@@ -279,7 +281,7 @@ function Start-ReadableConsole($ScriptPath, $Redirected, $Owned, $CurrentWindow)
         $priorSignal=$env:HWID_STARTUP_SIGNAL
         try {
             $env:HWID_STARTUP_SIGNAL=$signal
-            $child = Start-Process -FilePath $plan.FilePath -ArgumentList $plan.Arguments -WorkingDirectory (Split-Path -Parent $ScriptPath) -PassThru
+            $child = Start-Process -FilePath $plan.FilePath -ArgumentList $plan.Arguments -WorkingDirectory ([Management.Automation.WildcardPattern]::Escape((Split-Path -Parent $ScriptPath))) -PassThru
         }finally{$env:HWID_STARTUP_SIGNAL=$priorSignal}
         $result=Wait-ReadableConsoleStart $child $signal
         if($result.State -in @('READY','COMPLETED')){return $true}
@@ -566,12 +568,14 @@ function Show-UiTransition([ValidateSet('Back','Next','Exit','Restart')]$Directi
     if(-not $ownedConsole -or $redirected -or $env:HWID_NO_ANIMATION -eq '1'){return}
     $saved=$false
     $patch=$null
+    $clock=$null
     try {
         if([Console]::IsOutputRedirected -or [Console]::IsInputRedirected){return}
         if(-not $PendingInput){$PendingInput={[Console]::KeyAvailable}}
         if(& $PendingInput){return}
         $viewTop=[Console]::WindowTop; $viewLeft=[Console]::WindowLeft
         $width=[Console]::WindowWidth; $height=[Console]::WindowHeight
+        $bufferWidth=[Console]::BufferWidth; $bufferHeight=[Console]::BufferHeight
         if($width -lt 16 -or $height -lt 5){return}
         $patch=[HwidConsoleDisplay]::CaptureRegion($viewLeft,($viewTop+$height-4),($width-1),3)
         if($null -eq $patch){return}
@@ -583,8 +587,8 @@ function Show-UiTransition([ValidateSet('Back','Next','Exit','Restart')]$Directi
         $heading=[uint16]($background+[int][ConsoleColor]$palette.Heading)
         $clock=[Diagnostics.Stopwatch]::StartNew()
         for($frame=0;$frame -le 17;$frame++) {
-            if([Console]::WindowWidth -ne $width -or [Console]::WindowHeight -ne $height -or [Console]::WindowTop -ne $viewTop -or [Console]::WindowLeft -ne $viewLeft){break}
             if(& $PendingInput){break}
+            if([Console]::WindowWidth -ne $width -or [Console]::WindowHeight -ne $height -or [Console]::WindowTop -ne $viewTop -or [Console]::WindowLeft -ne $viewLeft -or [Console]::BufferWidth -ne $bufferWidth -or [Console]::BufferHeight -ne $bufferHeight){break}
             $step=[math]::Max($frame,[math]::Min(17,[int][math]::Floor(17*$clock.Elapsed.TotalMilliseconds/$duration)))
             $lines=[string[]]@(Get-UiTransitionLines $Direction $step ($width-1) $Destination)
             if(-not [HwidConsoleDisplay]::PaintRegion($patch,$lines,[uint16[]]@($border,$heading,$border))){break}
@@ -596,8 +600,12 @@ function Show-UiTransition([ValidateSet('Back','Next','Exit','Restart')]$Directi
     } catch {
         # Resize and unavailable console APIs must not prevent navigation.
     } finally {
+        if($null -ne $clock){$clock.Stop()}
         if($saved) {
-            try {[void][HwidConsoleDisplay]::RestoreRegion($patch)}catch{}
+            # Resizing can reflow the buffer. Old coordinates must not overwrite the new layout.
+            try {
+                if([Console]::BufferWidth -eq $bufferWidth -and [Console]::BufferHeight -eq $bufferHeight){[void][HwidConsoleDisplay]::RestoreRegion($patch)}
+            }catch{}
             try {[Console]::CursorVisible=$visible}catch{}
         }
     }
@@ -912,7 +920,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.87' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.88' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -984,13 +992,14 @@ function Get-FieldLabel($Name,$SectionName='') {
         RawDriveLetter='Raw drive-letter value';DriveLetterReadStatus='Drive-letter read status'
         TotalPhysicalMemory='Raw installed memory (bytes)';Capacity='Raw module capacity (bytes)';Size='Raw size (bytes)';FreeSpace='Raw free space (bytes)'
         EstimatedChargeRemaining='Estimated charge remaining (%)';DesignVoltage='Design voltage (mV)';BatteryStatusName='Battery status (Windows-reported)'
-        Present='Battery present';SecureBoot='Secure Boot state';TPM='TPM (Windows-reported)'
+        Present='Present';SecureBoot='Secure Boot state';TPM='TPM (Windows-reported)'
         ManufacturerName='Raw monitor maker codes';UserFriendlyName='Raw monitor name codes';ProductCodeID='Raw monitor product codes';SerialNumberID='Raw monitor serial codes'
         SerialNumberReadStatus='Monitor serial read status';NameReadStatus='Monitor name read status';RawLinkSpeedBps='Raw link speed (bits/s)';ReceiveLinkSpeed='Raw receive link speed (bits/s)'
         RawName='Raw PnP name';RawFriendlyName='Raw friendly name';RawBusDescription='Raw bus description';RawPNPClass='Raw PnP class';RawClass='Raw class alias'
         VolumeSerialNumber='Volume serial number'; Guid='GPT disk ID'; UniqueId='Storage unique ID'; Signature='MBR disk signature'
         DeviceLocator='Memory slot'; BankLabel='Memory bank'; DeviceID='Device / drive'; NumberOfCores='CPU cores'; NumberOfLogicalProcessors='CPU threads'
     }
+    if($Name -eq 'Present' -and $SectionName -eq 'Battery'){return 'Battery present'}
     if ($labels.ContainsKey($Name)) { return $labels[$Name] }
     return (($Name -creplace '([a-z])([A-Z])', '$1 $2') -replace '_', ' ')
 }
@@ -1524,7 +1533,7 @@ function Show-Categories {
     for ($index = 0; $index -lt $names.Count; $index++) {
         $records = 0
         foreach ($section in $sectionGroups[$names[$index]]) {
-            if ($report.Contains($section)) { $records += @($report[$section] | Where-Object {$null -ne $_}).Count }
+            if ($report.Contains($section)) { $records += @($report[$section] | Where-Object {$null -ne $_ -and -not (Test-UnavailableRecord $_)}).Count }
         }
         $hint = '{0} record(s) captured' -f $records
         Show-MenuItem ($index + 1) $names[$index] $hint
@@ -3042,16 +3051,16 @@ function Get-MonitorIdentifiers {
 function Get-BatteryStatusName($Code) {
     $parsed=Get-DeviceUInt32Info $Code
     if(-not $parsed.Valid){return $null}
-    $labels=@{1='Other';2='Unknown';3='Fully charged';4='Low';5='Critical';6='Charging';7='Charging / high';8='Charging / low';9='Charging / critical';10='Discharging';11='Partially charged'}
+    $labels=@{1='Other';2='Unknown';3='Fully charged';4='Low';5='Critical';6='Charging';7='Charging / high';8='Charging / low';9='Charging / critical';10='Undefined';11='Partially charged'}
     if($labels.ContainsKey([int]$parsed.Value)){return $labels[[int]$parsed.Value]}
     return "Windows code $($parsed.Value)"
 }
 function Get-BatteryIdentifiers {
     # Battery hardware is optional; an empty result is a normal desktop-PC answer,
     # not a failed read. Return one explicit record instead of an unreadable section.
-    $batteries=@(Get-HwidInstance -OperationTimeoutSec 20 Win32_Battery -Property Name,Manufacturer,SerialNumber,EstimatedChargeRemaining,BatteryStatus,DesignVoltage,Chemistry | Where-Object {$null -ne $_})
+    $batteries=@(Get-HwidInstance -OperationTimeoutSec 20 Win32_Battery -Property DeviceID,PNPDeviceID,Name,EstimatedChargeRemaining,BatteryStatus,DesignVoltage,Chemistry | Where-Object {$null -ne $_})
     if(-not $batteries.Count){return [pscustomobject]@{Present='No';Status='No battery reported (normal for desktop PCs)'}}
-    $batteries | Select-Object Name,Manufacturer,SerialNumber,EstimatedChargeRemaining,DesignVoltage,
+    $batteries | Select-Object DeviceID,PNPDeviceID,Name,EstimatedChargeRemaining,DesignVoltage,
         @{n='BatteryStatusName';e={Get-BatteryStatusName $_.BatteryStatus}},
         @{n='RawBatteryStatus';e={,$_.BatteryStatus}},
         @{n='RawChemistry';e={,$_.Chemistry}}
@@ -3102,7 +3111,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-PnpLine '  Hardware identity and Windows inventory. Read-only scan.' $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.87'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.88'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-PnpLine "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" $palette.Muted
@@ -4423,7 +4432,7 @@ function Start-ChangeWatch {
         $script:checkerPhase='Main menu'
     }
 }
-function Get-CheckerPackageVersion {return '1.4.2'}
+function Get-CheckerPackageVersion {return '1.4.3'}
 function Get-CheckerUpdatePaths([string]$ScriptPath=$env:HWID_SCRIPT,[string]$LocalRoot=$env:LOCALAPPDATA) {
     $install=[IO.Path]::GetFullPath((Split-Path -Parent ([IO.Path]::GetFullPath($ScriptPath))))
     if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}
@@ -4491,14 +4500,26 @@ function Read-CheckerUpdateResult($Paths) {
         if($null -eq $json){return $null}
         $result=Convert-ReportJson $json
         if($result -isnot [pscustomobject] -or $result.state -cnotin @('current','available','ready','error','busy') -or $result.message -isnot [string]){return $null}
+        $result.PSObject.Properties.Remove('repair')
         if($result.state -in @('available','ready')) {
-            if($result.latestVersion -isnot [string] -or $result.latestVersion -cnotmatch '\A[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?\z'){return $null}
-            if($result.state -eq 'ready' -and [version]$result.latestVersion -eq [version](Get-CheckerPackageVersion) -and (Test-CheckerUpdateRepair $Paths $result)){
+            $latest=$null
+            if($result.latestVersion -isnot [string] -or $result.latestVersion -cnotmatch '\A(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\z' -or
+               -not [version]::TryParse($result.latestVersion,[ref]$latest)){return $null}
+            $current=[version](Get-CheckerPackageVersion)
+            if($result.state -eq 'ready' -and $latest -eq $current -and (Test-CheckerUpdateRepair $Paths $result)){
                 $result | Add-Member NoteProperty repair $true -Force
                 $result.message='Ready to finish an interrupted update after normal Exit.'
-            }elseif([version]$result.latestVersion -le [version](Get-CheckerPackageVersion)){
+            }elseif($latest -le $current){
                 $result.state='current'
                 $result.message='The installed package is current or newer than the published release.'
+            }
+            if($result.state -eq 'ready'){
+                $source=$null
+                if($result.currentVersion -isnot [string] -or $result.currentVersion -cnotmatch '\A(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\z' -or
+                   -not [version]::TryParse($result.currentVersion,[ref]$source) -or $source -ge $latest -or $source -gt $current -or
+                   $result.component -cne 'Bat' -or $result.installDirectory -isnot [string]){return $null}
+                $install=Convert-SnapshotFolderPath $result.installDirectory
+                if(-not $install -or -not [string]::Equals($install.TrimEnd('\'),$Paths.InstallDirectory.TrimEnd('\'),[StringComparison]::OrdinalIgnoreCase)){return $null}
             }
         }
         return $result
@@ -4577,10 +4598,68 @@ function Start-CheckerExitUpdate {
         [void][IO.Directory]::CreateDirectory($helperDirectory)
         $helper=Join-Path $helperDirectory 'Update-HWID.ps1'
         [IO.File]::Copy($paths.UpdaterPath,$helper,$false)
-        $applyVersion=if($result.repair){$result.currentVersion}else{Get-CheckerPackageVersion}
-        Start-CheckerUpdateProcess $paths 'Apply' $helper $stage $applyVersion
+        Start-CheckerUpdateProcess $paths 'Apply' $helper $stage $result.currentVersion
         Write-PnpValue 'Update ready' 'The prepared update will install after this checker process exits.' $palette.Good
     }catch{Write-PnpValue 'Update deferred' $_.Exception.Message $palette.Warn}
+}
+function Get-CheckerRestartPlan([string]$ScriptPath=$env:HWID_SCRIPT,[string]$SignalPath) {
+    $scriptPath=[IO.Path]::GetFullPath($ScriptPath)
+    if(-not [IO.File]::Exists($scriptPath)){throw 'The BAT launcher is missing. Keep hwid.bat in its original folder.'}
+    if(-not (Test-DedicatedConsoleSupport ([Environment]::OSVersion.Version))){throw 'A fresh console restart is unavailable on this Windows version. Close this checker and run hwid.bat again.'}
+    $console=Join-Path $env:SystemRoot 'System32\conhost.exe'
+    $command=Join-Path $env:SystemRoot 'System32\cmd.exe'
+    if(-not [IO.File]::Exists($console) -or -not [IO.File]::Exists($command)){throw 'Windows console or Command Prompt is unavailable. Close this checker and run hwid.bat again.'}
+    $engine=[Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    $pathData=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($scriptPath))
+    $signalData=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($SignalPath))
+    $loader=@'
+$ErrorActionPreference='Stop'
+$signal=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__RESTART_SIGNAL__'))
+try {
+    $env:HWID_SCRIPT=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__BAT_PATH__'))
+    $env:HWID_OWN_CONSOLE='1'
+    foreach($name in @('HWID_CURRENT_WINDOW','HWID_STARTUP_SIGNAL','WT_SESSION','WT_PROFILE_ID')){[Environment]::SetEnvironmentVariable($name,$null,'Process')}
+    $env:HWID_RESTART_SIGNAL=$signal
+    $start=[Diagnostics.ProcessStartInfo]::new()
+    $start.FileName=Join-Path $env:SystemRoot 'System32\cmd.exe'
+    $start.Arguments='/d /v:off /s /c ""%HWID_SCRIPT%""'
+    $start.WorkingDirectory=Split-Path -Parent $env:HWID_SCRIPT
+    $start.UseShellExecute=$false
+    $child=[Diagnostics.Process]::Start($start)
+    try{$child.WaitForExit();$code=$child.ExitCode}finally{$child.Dispose()}
+    exit $code
+}catch{
+    if($signal){try{[IO.File]::WriteAllText($signal,('FAILED'+[Environment]::NewLine+($_.Exception.Message -replace '[\x00-\x1f\x7f]',' ')),[Text.UTF8Encoding]::new($false))}catch{}}
+    Write-Host ('[RESTART-03] The restarted checker could not launch: '+$_.Exception.Message) -ForegroundColor Red
+    if(-not [Console]::IsInputRedirected){Read-Host 'Press Enter to close' | Out-Null}
+    exit 1
+}
+'@
+    $loader=$loader.Replace('__BAT_PATH__',$pathData).Replace('__RESTART_SIGNAL__',$signalData)
+    $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($loader))
+    return [pscustomobject]@{
+        FilePath=$console
+        Arguments='-ForceNoHandoff -- "'+$engine+'" -NoLogo -NoProfile -ExecutionPolicy Bypass -EncodedCommand '+$encoded
+        WorkingDirectory=Split-Path -Parent $scriptPath
+    }
+}
+function Start-CheckerRestartWindow([string]$ScriptPath=$env:HWID_SCRIPT) {
+    $signal=[IO.Path]::GetTempFileName()
+    $child=$null;$ready=$false
+    try {
+        $plan=Get-CheckerRestartPlan $ScriptPath $signal
+        $child=Start-Process -FilePath $plan.FilePath -ArgumentList $plan.Arguments -WorkingDirectory ([Management.Automation.WildcardPattern]::Escape($plan.WorkingDirectory)) -WindowStyle Normal -PassThru
+        $result=Wait-ReadableConsoleStart $child $signal
+        if($result.State -notin @('READY','COMPLETED')){
+            $detail=if($result.Detail){$result.Detail}else{'The new window has not confirmed startup yet. Check that window before trying again.'}
+            throw $detail
+        }
+        $ready=$true
+        return $child
+    }finally{
+        try{[IO.File]::Delete($signal)}catch{}
+        if(-not $ready -and $null -ne $child){$child.Dispose()}
+    }
 }
 function Start-CheckerRestart {
     if(-not $ownedConsole -or $redirected){Write-PnpValue 'RESTART-01' 'Restarting needs an interactive console window. Close this checker and run hwid.bat again.' $palette.Warn;return}
@@ -4593,18 +4672,15 @@ function Start-CheckerRestart {
         }
     }catch{}
     if($pending){
-        Write-PnpValue 'RESTART-02' 'A prepared update installs after normal Exit. Choose [0] Exit instead of restarting this time; the updated checker opens afterwards.' $palette.Warn
+        Write-PnpValue 'RESTART-02' 'A prepared update installs after normal Exit. Choose [0] Exit, then open hwid.bat again after installation.' $palette.Warn
         return
     }
     Show-UiTransition 'Restart' 'Fresh checker'
     Start-CheckerExitUpdate
     try {
-        $start=[Diagnostics.ProcessStartInfo]::new()
-        $start.FileName=$env:HWID_SCRIPT
-        $start.UseShellExecute=$true
-        $start.WorkingDirectory=Split-Path -Parent $env:HWID_SCRIPT
-        foreach($name in @('HWID_OWN_CONSOLE','HWID_CURRENT_WINDOW','HWID_STARTUP_SIGNAL','HWID_NO_ANIMATION','HWID_NO_UPDATE')){[void]$start.Environment.Remove($name)}
-        [void][Diagnostics.Process]::Start($start)
+        $child=Start-CheckerRestartWindow
+        if($null -eq $child){throw 'The new checker window did not start.'}
+        $child.Dispose()
     }catch{
         Write-PnpValue 'RESTART-03' ('Could not start a new checker window: '+$_.Exception.Message+' This checker stays open.') $palette.Warn
         return
@@ -4618,7 +4694,7 @@ function Show-CheckerUpdates {
         Write-Heading 'UPDATES / BAT & DESKTOP PACKAGE'
         $paths=Get-CheckerUpdatePaths
         $preferences=Get-CheckerUpdatePreferences $paths
-        Write-PnpValue 'Installed' ('Scanner 3.87 / package '+(Get-CheckerPackageVersion)) $palette.Text
+        Write-PnpValue 'Installed' ('Scanner 3.88 / package '+(Get-CheckerPackageVersion)) $palette.Text
         Write-PnpValue 'Automatic updates' $(if($preferences.Enabled){'On. Standalone-launcher sessions prepare updates and install after normal Exit.'}else{'Off. Enable this setting to install a prepared update after normal Exit.'}) $palette.Muted
         if($preferences.Warning){Write-PnpValue 'Preferences' $preferences.Warning $palette.Warn}
         $result=Read-CheckerUpdateResult $paths

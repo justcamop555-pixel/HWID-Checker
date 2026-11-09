@@ -4,8 +4,8 @@
 
 **Inspect Windows hardware identifiers, save snapshots, and see what changed.**
 
-[![Version: 3.87](https://img.shields.io/badge/version-3.87-2563eb?style=flat-square)](docs/CHANGELOG.md)
-[![Desktop: 1.4.2](https://img.shields.io/badge/desktop-1.4.2-238579?style=flat-square)](desktop/README.md)
+[![Version: 3.88](https://img.shields.io/badge/version-3.88-2563eb?style=flat-square)](docs/CHANGELOG.md)
+[![Desktop: 1.4.3](https://img.shields.io/badge/desktop-1.4.3-238579?style=flat-square)](desktop/README.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square)](#compatibility)
 [![Language: PowerShell + Batch](https://img.shields.io/badge/language-PowerShell%20%2B%20Batch-5391fe?style=flat-square)](hwid.bat)
 [![Desktop: C# + WPF](https://img.shields.io/badge/desktop-C%23%20%2B%20WPF-5965b0?style=flat-square)](desktop/HwidDesktop.csproj)
@@ -34,7 +34,7 @@
 
 HWID Checker is a local, read-only Windows hardware inventory tool with a desktop interface and a PowerShell/Batch console. Both interfaces use the scanning and report functions in `hwid.bat`. They bring hardware information and identifiers from Windows providers into one inventory, then let you save it and compare selected ID fields with an earlier capture.
 
-**Desktop 1.3.0** and **BAT 3.85** share a local snapshot library and a package updater. The desktop overview presents the PC name, model and capture time, and uses square controls with a responsive layout. [Desktop guide and source build](desktop/README.md)
+**Desktop 1.4.3** and **BAT 3.88** share a local snapshot library and a package updater. The desktop overview presents the PC name, model and capture time, and uses square controls with a responsive layout. [Desktop guide and source build](desktop/README.md)
 
 It is intended for PC owners, support technicians, and developers troubleshooting missing identifiers, documenting a system, or checking changes after hardware or Windows updates. It reports what Windows exposes; it does not certify hardware health, authenticity, or identifier uniqueness.
 
@@ -52,7 +52,8 @@ Each full scan reads **18 hardware/system sections**, followed by an **all-known
 | Storage | Physical disk serials and firmware, disk unique IDs/GUIDs, partition identifiers, volume serials, filesystem and capacity |
 | Graphics and monitors | GPU name, device/driver information, WMI-reported pixel dimensions, and available monitor identification data |
 | Network | Adapter/device identifiers, explicitly reported current addresses, available permanent addresses, and source-labeled link rates/state |
-| Windows and devices | Windows version/build and installation metadata, Machine GUID, and present Plug and Play device records |
+| Power | Windows-reported battery identity, presence, charge, status and design voltage; absence is normal on a desktop PC |
+| Windows and devices | Windows version/build and installation metadata, Machine GUID, available Secure Boot/TPM information, and present Plug and Play device records |
 
 ### Inspection, reporting, and comparison
 
@@ -61,7 +62,7 @@ Each full scan reads **18 hardware/system sections**, followed by an **all-known
 - **Graphics and network view:** separate graphics, network and monitor sections with jump shortcuts, interfaces grouped by reported hardware flags, address evidence, and directional fallback rates. See the [field-label audit and limits](docs/GRAPHICS-NETWORK.md).
 - **All-known device catalog:** startup and full rescans collect Windows' known hidden, disabled, disconnected, and unknown-presence records, with available parent links, container/base-container IDs and status properties. Container IDs describe Windows device grouping, rather than factory serials. The separate extended view can refresh this catalog on demand.
 - **Device relationships:** parent links use consistent Windows-reported observations. Conflicting or malformed readings are labeled, with all observations retained in full reports and snapshot exports.
-- **Organized scanning:** seven group headings keep firmware, CPU/memory, storage, graphics/network, Windows, present-device IDs and the all-known catalog together. The overall progress still counts 17 normal queries plus the catalog attempt.
+- **Organized scanning:** eight group headings keep firmware, CPU/memory, storage, graphics/network, power, Windows, present-device IDs and the all-known catalog together. Overall progress counts 18 normal queries plus the catalog attempt.
 - **Readable scan results:** compact successful rows, separate CHECK/device-ID/error details, word wrapping for narrow windows, and fractional elapsed times. Record counts and selected ID-field counts are explained separately.
 - **Scan completion:** a clear finished summary separates read coverage, selected ID fields and review findings. Unread sections stay explicit, Enter continues to the menu, and summary/cleanup errors preserve finished snapshots with diagnostic details.
 - **Accurate scan errors:** query cleanup problems retain their own diagnostics. They preserve validated hardware results and the original provider failure code, including during extended-device refreshes.
@@ -70,6 +71,7 @@ Each full scan reads **18 hardware/system sections**, followed by an **all-known
 - **Warnings and conflicts:** review missing/default IDs, unread sections, device-status findings, duplicate keys, and conflicting storage serial readings separately. Resource shortages and reported conflicts have separate categories. A readable device name alone does not imply a fault; the extended scan can recover usable name/class aliases while retaining malformed raw labels.
 - **ID-source checks:** preserve exact hardware/compatible-ID observations, flag disagreement between native and property readers, and report distinct-node property coverage. Property reads use bounded batches with one concurrent operation to avoid duplicate-node results observed with parallel Windows queries.
 - **TXT and JSON exports:** save a new report pair with scan/save timestamps and final-content verification. Existing snapshots are not overwritten.
+- **Desktop reading exports:** save the identifier table as CSV and the full inventory as standalone HTML, or export comparison changes as text. JSON snapshots remain the input for later comparisons.
 - **Consistent field reading:** hardware views and TXT use section-specific labels. RAM `Speed` stays a raw Windows value; a configured memory clock of zero is shown as unknown. JSON retains the original values.
 - **Shared snapshot library:** open saved captures in the BAT or desktop app. Both use the same preferred folder and can watch other locations. Existing reports stay in their original folders.
 - **Application updates:** detect newer published Windows x64 packages, download and verify them, and install them after a normal application exit. Automatic updates start enabled and can be turned off. [Update controls](docs/UPDATES.md)

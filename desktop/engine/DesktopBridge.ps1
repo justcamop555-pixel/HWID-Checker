@@ -164,8 +164,8 @@ try {
             if($null -eq $request){throw 'Comparison requires a request with previousPath and currentPath.'}
             $previousPath=Get-DesktopAbsolutePath $request.previousPath 'Previous snapshot'
             $currentPath=Get-DesktopAbsolutePath $request.currentPath 'Current snapshot'
-            $previous=Read-SavedReport (Resolve-ComparisonReportPath $previousPath)
-            $current=Read-SavedReport (Resolve-ComparisonReportPath $currentPath)
+            $previous=ConvertTo-DesktopInventory (Read-SavedReport (Resolve-ComparisonReportPath $previousPath))
+            $current=ConvertTo-DesktopInventory (Read-SavedReport (Resolve-ComparisonReportPath $currentPath))
             $comparison=Compare-Inventories $previous $current
             $changes=@(foreach($change in (Get-ComparisonDetails $comparison)){
                 [ordered]@{kind=$change.Kind;section=$change.Section;field=$change.Field;device=$change.Device;previous=$change.Previous;current=$change.Current;difference=$(if($change.Kind -eq 'Changed'){Get-IdentifierChangeText $change.Previous $change.Current}else{''})}

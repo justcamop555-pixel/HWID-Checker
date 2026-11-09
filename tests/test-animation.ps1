@@ -6,7 +6,7 @@ if($errors.Count){throw ($errors.Message -join '; ')}
 foreach($definition in $ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){. ([scriptblock]::Create($definition.Extent.Text))}
 $script:checks=0
 function Assert($Condition,$Description){if(-not $Condition){throw ('FAILED: '+$Description)};$script:checks++;[Console]::WriteLine('PASS: '+$Description)}
-foreach($direction in @('Next','Back','Exit')){
+foreach($direction in @('Next','Back','Exit','Restart')){
     foreach($width in @(0,8,16,27,40,99)){
         $valid=$true
         foreach($step in 0..17){$lines=@(Get-UiTransitionLines $direction $step $width 'Quick IDs');if($lines.Count -ne 3 -or @($lines | Where-Object {$_.Length -gt $width -or $_ -match '[\x00-\x1f\x7f]'}).Count){$valid=$false;break}}
