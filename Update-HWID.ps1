@@ -1,4 +1,4 @@
-# HWID_PACKAGE_VERSION = '1.4.3'
+# HWID_PACKAGE_VERSION = '1.4.4'
 [CmdletBinding()]
 param(
     [ValidateSet('Check','Prepare','Apply')][string]$Mode='Check',
@@ -326,6 +326,13 @@ function Read-UpdatePackage([string]$Archive,[string]$Payload,[string]$Version) 
         return [pscustomobject]@{Files=$items.ToArray();BatVersion=$scanner.Groups['version'].Value;DesktopVersion=$Version}
     }finally{$zip.Dispose()}
 }
+function Get-InstalledUpdateVersion([string]$Installation) {
+    $path=Join-Path $Installation 'HWID Checker.exe'
+    if(-not [IO.File]::Exists($path)){return $null}
+    $info=[Diagnostics.FileVersionInfo]::GetVersionInfo(('\\?\'+$path))
+    if([string]::IsNullOrWhiteSpace($info.FileVersion)){return $null}
+    return [version]::new($info.FileMajorPart,$info.FileMinorPart,$info.FileBuildPart)
+}
 function Assert-UpdateNewerThanInstalled([string]$Installation,[string]$Candidate,[string]$Current,[string]$Kind='Package',[string]$BatVersion='') {
     $latest=ConvertTo-UpdateVersion $Candidate
     if($latest -le (ConvertTo-UpdateVersion $Current)){throw [IO.InvalidDataException]::new('The update would not advance the current package version.')}
@@ -338,10 +345,8 @@ function Assert-UpdateNewerThanInstalled([string]$Installation,[string]$Candidat
             throw [IO.InvalidDataException]::new('The installed updater is already this version or newer.')
         }
     }
-    $executable=Join-Path $Installation 'HWID Checker.exe'
-    if([IO.File]::Exists($executable)){
-        $info=[Diagnostics.FileVersionInfo]::GetVersionInfo(('\\?\'+$executable))
-        $version=[version]::new($info.FileMajorPart,$info.FileMinorPart,$info.FileBuildPart)
+    $version=Get-InstalledUpdateVersion $Installation
+    if($null -ne $version){
         if($latest -le $version){
             if((ConvertTo-UpdateVersion $Current) -lt $version){
                 # The files on disk are newer than the running application: the
@@ -611,6 +616,12 @@ function Invoke-HwidUpdate {
     $current=ConvertTo-UpdateVersion $CurrentVersion
     $installation=ConvertTo-UpdateDirectory $InstallDirectory
     if($Mode -eq 'Apply'){return Apply-HwidUpdate $installation $current.ToString(3) $Component $StageDirectory $WaitProcessId $WaitProcessStartTicks ([bool]$Relaunch)}
+    if($Component -eq 'Package'){
+        $installed=Get-InstalledUpdateVersion $installation
+        if($null -ne $installed -and $installed -gt $current){
+            return New-UpdateResult 'restart' $current.ToString(3) $installed.ToString(3) '' ('Desktop '+$installed.ToString(3)+' is installed, and this window is running Desktop '+$current.ToString(3)+'. Close and reopen the app to use the installed version.')
+        }
+    }
     $cache=Get-UpdateCacheDirectory $installation $Component
     Assert-UpdatePlainPath $cache
     [void][IO.Directory]::CreateDirectory($cache)

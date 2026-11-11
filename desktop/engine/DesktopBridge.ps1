@@ -10,6 +10,7 @@ $InformationPreference='SilentlyContinue'
 $WarningPreference='SilentlyContinue'
 $script:bridgeResultWritten=$false
 $script:bridgeFailureCode='BRIDGE-01'
+$script:bridgeNextStep=$null
 try{[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);[Console]::InputEncoding=[Text.UTF8Encoding]::new($false)}catch{}
 
 function Send-DesktopMessage($Message) {
@@ -17,8 +18,30 @@ function Send-DesktopMessage($Message) {
     [Console]::Out.WriteLine($json)
     [Console]::Out.Flush()
 }
-function Send-DesktopProgress([string]$Name,[int]$Completed,[int]$Total,[string]$Status,[int]$Records,[string]$Message,[double]$Seconds=-1) {
-    Send-DesktopMessage ([ordered]@{type='progress';section=$Name;name=$Name;completed=$Completed;total=$Total;status=$Status;records=$Records;message=$Message;seconds=$(if($Seconds -ge 0){$Seconds}else{$null})})
+function Send-DesktopProgress([string]$Name,[int]$Completed,[int]$Total,[string]$Status,[int]$Records,[string]$Message,[double]$Seconds=-1,[string]$FailureCode,[string]$NextStep) {
+    Send-DesktopMessage ([ordered]@{type='progress';section=$Name;name=$Name;completed=$Completed;total=$Total;status=$Status;records=$Records;message=$Message;seconds=$(if($Seconds -ge 0){$Seconds}else{$null});failureCode=$(if($FailureCode){$FailureCode}else{$null});nextStep=$(if($NextStep){$NextStep}else{$null})})
+}
+function Get-DesktopReadMessage($Failure) {
+    switch([string]$Failure.FailureCode){
+        'READ-01' {return 'Windows denied access to these details.'}
+        'READ-02' {return 'Windows did not finish reading these details in time.'}
+        'READ-03' {return 'This Windows reader is unavailable on this PC.'}
+        'READ-04' {return 'Windows returned no matching records.'}
+        'READ-06' {return 'Windows returned data that could not be used.'}
+        default {return 'Windows could not read these details.'}
+    }
+}
+# Compatibility validation for older linked BAT engines that do not supply this helper.
+function Test-ScanHasReadableData($Inventory) {
+    $names=@($sectionGroups.Values | ForEach-Object {$_})+@('PnP hardware IDs')
+    foreach($timing in @($Inventory['Scan timing'])){
+        if($timing.Section -in $names -and $timing.Status -in @('READ','CHECK') -and (Test-SectionReadable $Inventory[$timing.Section])){return $true}
+    }
+    if($Inventory['Report info'].ExtendedStatus -ne 'Refreshed'){return $false}
+    try {
+        Assert-ExtendedDeviceCatalog ([pscustomobject]@{Devices=$Inventory['Extended device inventory'];Info=$Inventory['Extended scan info']})
+        return $true
+    }catch{return $false}
 }
 function Get-DesktopAbsolutePath($Value,[string]$Description) {
     if($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value) -or -not [IO.Path]::IsPathRooted($Value)){throw [IO.InvalidDataException]::new(($Description+' must be an absolute path.'))}
@@ -77,7 +100,7 @@ try {
     $ownedConsole=$false;$redirected=$true
     $display=[pscustomobject]@{Mode='Desktop companion'}
     $palette=@{Heading='Cyan';Text='White';Muted='Gray';Border='DarkGray';Good='Green';Warn='Yellow';Error='Red'}
-    $script:bridgeCurrentSection='Preparing';$script:bridgeProgressStatus='READING'
+    $script:bridgeCurrentSection='Preparing';$script:bridgeProgressStatus='READING';$script:bridgeSectionClock=$null
     $script:bridgeLastPulse=[datetime]::UtcNow
     $script:bridgeSaveError=$null;$script:bridgeSaveCompleted=$false
 
@@ -100,28 +123,46 @@ try {
         $name='Extended device inventory';$completed=$scanTotal
         if([string]$Prefix -match '\[(\d+)/(\d+)\]\s+(.+?)\s*$'){$name=$matches[3].Trim();$completed=[int]$matches[1]-1}
         $script:bridgeCurrentSection=$name;$script:bridgeProgressStatus='READING';$script:bridgeLastPulse=[datetime]::UtcNow
-        Send-DesktopProgress $name $completed ($scanTotal+1) 'READING' 0 'Reading the Windows provider.'
-        return [pscustomobject]@{Name=$name}
+        $script:bridgeSectionClock=[Diagnostics.Stopwatch]::StartNew()
+        Send-DesktopProgress $name $completed ($scanTotal+1) 'READING' 0 'Reading hardware details from Windows.'
+        return [pscustomobject]@{Name=$name;Clock=$script:bridgeSectionClock}
     }
     function Show-ScanReadResult {
         param($State,$Name,$Status,[int]$Count,$Summary,[double]$Seconds,$Color)
         $script:bridgeProgressStatus=$Status
-        Send-DesktopProgress $Name $script:scanStep ($scanTotal+1) $Status $Count ([string]$Summary) $Seconds
+        if($null -ne $State.Clock){$State.Clock.Stop()}
+        $message=[string]$Summary;$code=$null;$next=$null
+        if($Status -eq 'NOT READ'){
+            $failure=$report[$Name]
+            $message=Get-DesktopReadMessage $failure
+            $code=[string]$failure.FailureCode;$next=[string]$failure.NextStep
+        }elseif($Status -eq 'CHECK'){$next='Review explains missing IDs, generic values, and Windows device messages.'}
+        Send-DesktopProgress $Name $script:scanStep ($scanTotal+1) $Status $Count $message $Seconds $code $next
         return $null
     }
     function Complete-ScanLine {
         param($State,$Name,$Text,$Color)
-        $status='NOT READ';$count=0
-        if([string]$Text -match '^\[READ\]\s+(\d+)'){$status='READ';$count=[int]$matches[1]}
+        $status='NOT READ';$count=0;$code=$null;$next=$null
+        $seconds=-1
+        if($null -ne $State.Clock){$State.Clock.Stop();$seconds=$State.Clock.Elapsed.TotalSeconds}
+        if([string]$Text -match '^\[READ\]\s+(\d+)'){
+            $status='READ';$count=[int]$matches[1]
+            $message="$count Windows-known device records read."
+        }else{
+            $failure=$report['Extended scan info']
+            $message=Get-DesktopReadMessage $failure
+            $code=[string]$failure.FailureCode;$next=[string]$failure.NextStep
+        }
         $script:bridgeProgressStatus=$status
-        Send-DesktopProgress 'Extended device inventory' ($scanTotal+1) ($scanTotal+1) $status $count ([string]$Text)
+        Send-DesktopProgress 'Extended device inventory' ($scanTotal+1) ($scanTotal+1) $status $count $message $seconds $code $next
     }
     function Update-ScanWaiting {param($State,[double]$Seconds)}
     function Update-ScanProgress {
         param([int]$Completed=$script:scanStep)
         if($script:bridgeProgressStatus -ne 'READING' -or ([datetime]::UtcNow-$script:bridgeLastPulse).TotalSeconds -lt 1){return}
         $script:bridgeLastPulse=[datetime]::UtcNow
-        Send-DesktopProgress $script:bridgeCurrentSection $Completed ($scanTotal+1) 'READING' 0 'Waiting for the Windows provider.'
+        $seconds=if($null -ne $script:bridgeSectionClock){$script:bridgeSectionClock.Elapsed.TotalSeconds}else{-1}
+        Send-DesktopProgress $script:bridgeCurrentSection $Completed ($scanTotal+1) 'READING' 0 'Still waiting for Windows. The scan is running.' $seconds
     }
     function Show-ScanCompletion {param($Inventory,$Identifiers,[int]$Read,[int]$Total,[bool]$Complete,[string]$ExtendedNote) return $null}
     function Get-ReportLocations {
@@ -150,11 +191,16 @@ try {
                 if($request.scanNumber -is [bool] -or -not [int]::TryParse([string]$request.scanNumber,[ref]$number) -or $number -lt 1){throw 'The scan number must be a positive integer.'}
                 $scanNumber=$number
             }
-            Send-DesktopProgress 'Preparing' 0 ($scanTotal+1) 'READING' 0 'Loading the BAT hardware collector.'
+            Send-DesktopProgress 'Preparing' 0 ($scanTotal+1) 'READING' 0 'Preparing the hardware scan.'
             $snapshot=Invoke-HardwareScan $scanNumber -UseWorker $true -IncludeExtended $true
             if($null -eq $snapshot -or -not $snapshot.Completed -or $snapshot.Inventory -isnot [Collections.IDictionary] -or @($snapshot.Inventory['Scan timing']).Count -ne $scanTotal){throw 'The BAT engine did not return a completed hardware snapshot.'}
             foreach($section in @($sectionGroups.Values | ForEach-Object {$_})+@('PnP hardware IDs')){if(-not $snapshot.Inventory.Contains($section)){throw ('The BAT engine did not return the expected section: '+$section)}}
             $inventory=$snapshot.Inventory
+            if(-not (Test-ScanHasReadableData $inventory)){
+                $script:bridgeFailureCode='READ-07'
+                $script:bridgeNextStep='Try Scan again. Open the BAT console and choose [4] to review Windows read errors.'
+                throw ('Windows could not read any hardware data. '+$script:bridgeNextStep)
+            }
             $review=Get-ReviewSummary $inventory $snapshot.Identifiers $snapshot.Warnings
             $displayFields=Get-DesktopDisplayFields $inventory
             $result=[ordered]@{inventory=$inventory;identifiers=@($snapshot.Identifiers);warnings=@($snapshot.Warnings.ToArray());review=$review;version=[string]$inventory['Report info'].Version;captured=[string]$inventory['Report info'].Generated;fieldLabels=$displayFields.Labels;fieldValues=$displayFields.Values}
@@ -195,6 +241,6 @@ try {
     $message=$_.Exception.Message
     $code=$script:bridgeFailureCode
     if($message -match '\b((?:READ|STORE|SAVE|COMPAT)-\d{2})\b'){$code=$matches[1]}
-    try{Send-DesktopMessage ([ordered]@{type='error';code=$code;message=$message})}catch{try{[Console]::Error.WriteLine('The desktop collector could not return its error response.')}catch{}}
+    try{Send-DesktopMessage ([ordered]@{type='error';code=$code;message=$message;nextStep=$script:bridgeNextStep})}catch{try{[Console]::Error.WriteLine('The desktop collector could not return its error response.')}catch{}}
     exit 1
 }

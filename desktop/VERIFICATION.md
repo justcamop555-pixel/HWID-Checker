@@ -1,5 +1,25 @@
 # Desktop verification
 
+## Desktop 1.4.4 and BAT 3.89
+
+Verified on Windows build 26300 with .NET SDK 10.0.403 and self-contained .NET 10.0.14 runtime packs.
+
+| Check | Result |
+| --- | --- |
+| Desktop guidance and interactions | 47 synthetic checks passed, including compact captures before scanning, while scanning, empty/filtered Review, unchanged/one-sided/unusable comparisons and same-file selection |
+| Layout and workflow | All six default and compact pages passed; 22 legacy and 24 shared save/compare workflow checks passed; the final package passed six compact pages, 47 interactions and the shared workflow |
+| BAT and bridge scanning | 808 checks passed per PowerShell runtime, covering readable-data validation, failed rescan preservation, completion counts, watch comparison limits, progress details and existing hardware regressions |
+| Older linked scanner | The current bridge scanned the unchanged BAT 3.88 on both runtimes, including the compatibility validation path |
+| Shared updater / BAT controls | 104 updater and 49 console checks passed per runtime |
+| Desktop updater | 51 checks passed, including equivalent three/four-part versions, real newer-file restart states, stale cache rejection and drive-root paths |
+| Process transport / desktop model | 37 transport checks and seven model/catalog checks passed; read-failure guidance survives transport and unfinished states cannot inflate read coverage |
+| Packaged live scan | All 18 sections read, 176 known device records and 22 responsive UI timer ticks; diagnostics saved counts/status rather than identifier values |
+| Native BAT startup | Full scan reached its continuation and main menu with a regular font, unchanged standard-user privileges, bounded input handling and no dashboard scrolling after repeated invalid/held-Enter input |
+
+UI renders used 96 DPI and 640 × 480 compact windows. Reports in synthetic workflows use synthetic identifiers and isolated folder settings. Update-installation tests used synthetic packages. The restricted sandbox denied a test preference-file rename; the same isolated updater-client suite passed outside that filesystem restriction.
+
+The published archive SHA-256 is provided in [SHA256SUMS.txt](https://github.com/justcamop555-pixel/HWID-Checker/releases/download/desktop-v1.4.4/SHA256SUMS.txt). The archive includes a second `SHA256SUMS.txt` covering the executable and companion files.
+
 ## Desktop 1.4.3 and BAT 3.88
 
 Verified on Windows build 26300 with .NET SDK 10.0.403 and the self-contained .NET 10.0.14 runtime packs.

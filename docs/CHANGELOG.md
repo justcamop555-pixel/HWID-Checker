@@ -2,6 +2,14 @@
 
 [Back to the main README](../README.md)
 
+## Desktop 1.4.4 and BAT 3.89
+
+- Added clear Review and Compare guidance for a first scan, empty results, searches with no matches, and completed comparisons. Empty tables no longer leave the next step unexplained.
+- Fixed the update banner treating file version `1.4.3.0` as newer than package version `1.4.3`. Old update results no longer prompt downloads or restarts for a version already running.
+- Preserve the last usable capture when a rescan cannot read any inventory, and explain failed reads separately from finished checks. Partial readable results remain available for review.
+- Corrected unreadable/unfinished scan coverage counts and added battery-only captures to desktop snapshot discovery.
+- Added regression checks for version/status handling, scan publication, comparison limits and the new desktop guidance states.
+
 ## Desktop 1.4.3 and BAT 3.88
 
 - Fixed BAT restart, device-presence labels, battery provider fields and status meanings, and category counts that previously included unreadable placeholders.

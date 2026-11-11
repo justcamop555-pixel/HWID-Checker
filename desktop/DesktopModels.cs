@@ -69,7 +69,9 @@ internal sealed class DesktopSnapshot
     public List<ScanRow> Timing { get; } = [];
     public string Version => Data.Text("version");
     public int ReportedIds => Identifiers.Count(x => x.Status == "Reported");
-    public int SectionsRead => Timing.Count(x => x.Status != "NOT READ");
+    public int SectionsRead => Timing.Count(x =>
+        x.Status.Trim().Equals("READ", StringComparison.OrdinalIgnoreCase) ||
+        x.Status.Trim().Equals("CHECK", StringComparison.OrdinalIgnoreCase));
     public int DeviceCount => Inventory.Get("Extended device inventory").Rows().Length;
 
     public DesktopSnapshot(JsonElement data)
@@ -145,7 +147,7 @@ internal static class SnapshotStore
     {
         "System identity", "System hardware", "Motherboard", "BIOS", "Chassis", "CPU", "Memory modules",
         "Physical disks", "Storage identifiers", "Volumes", "Disk partitions", "Graphics adapters",
-        "Network adapters", "Monitors", "Windows", "Windows Machine GUID", "PnP hardware IDs", "Extended device inventory"
+        "Network adapters", "Monitors", "Battery", "Windows", "Windows Machine GUID", "PnP hardware IDs", "Extended device inventory"
     };
 
     public static Task<SnapshotCatalog> ReadAsync(IEnumerable<string> directories) => Task.Run(() =>

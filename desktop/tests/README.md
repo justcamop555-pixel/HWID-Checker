@@ -6,14 +6,15 @@ The BAT remains the collection/report engine. Desktop checks exercise the bridge
 
 | Suite | Coverage | Uses actual hardware? |
 | --- | --- | --- |
-| `test-desktop-bridge.ps1` | 34 checks per PowerShell runtime: complete/partial scans, progress, exact values and imported field labels, TXT/JSON pairs, old/current comparison, metadata and malformed inputs | No; synthetic engine fixture |
-| `EngineClientSmoke` | 34 checks: UTF-8/Unicode paths, literal arguments, result lifetime, stderr draining, protocol/error validation, cancellation, overlap/disposal and temporary-file cleanup | No; synthetic bridge |
+| `test-desktop-bridge.ps1` | 41 checks per PowerShell runtime: complete/partial/unreadable scans, older-BAT compatibility, progress guidance, exact values and field labels, TXT/JSON pairs, comparison and malformed inputs | No; synthetic engine fixture |
+| `EngineClientSmoke` | 37 checks: UTF-8/Unicode paths, progress failure codes/next steps, legacy progress compatibility, literal arguments, result lifetime, stderr draining, cancellation and cleanup | No; synthetic bridge |
+| `DesktopModelsSmoke` | Seven checks: only completed successful reads count as coverage, battery-only saved capture discovery, strict supported-section validation and unchanged report bytes | No |
 | `verify-desktop.ps1 -Mode Render` | Six desktop pages rendered from synthetic inventory for visual inspection | No |
 | `verify-desktop.ps1 -Mode Workflow` | 22 checks: ID filtering, hardware refresh, detail reset, RAM display, verified saves, old/new folder detection, coalesced refresh, exact ID changes, comparison invalidation and cancelled-scan restoration | Includes a cancelled read-only scan; saved captures and images use the synthetic fixture |
-| `verify-desktop.ps1 -Mode Interactions` | 21 checks: scalar/nested hardware search, interrupted navigation, keyboard focus, blank-area copy guards, manual scan scrolling, snapshot selection, fade cleanup, reduced motion and animated/interrupted close completion | No; synthetic fixture and progress events |
+| `verify-desktop.ps1 -Mode Interactions` | 47 checks: empty-state guidance and compact screenshots, unchanged/unusable/one-sided/self-comparison results, stale/cancelled progress and actionable diagnostics, scalar/nested search, navigation, copy guards, scrolling, selection, reduced motion and closing | No; synthetic fixture and progress events |
 | `verify-desktop.ps1 -Mode LiveScan` | Full 18-section scan, catalog coverage, returned UI state and responsive timer ticks | Yes; records counts/status only |
 | `test-local-sync.ps1` | Shared settings interoperability, concurrent writers, and BAT/desktop discovery of saved pairs | No |
-| `UpdaterClientSmoke` | 23 checks: updater preferences, literal helper arguments, cancellation, downgrade prevention, interrupted recovery and cached source-version binding after a manual upgrade | No |
+| `UpdaterClientSmoke` | 51 checks: equal file/package versions, stale/current result handling, genuine restart states, drive-root paths, preferences, cancellation and prepared-source binding/recovery | No |
 
 From the repository root, after building the desktop package:
 
@@ -22,6 +23,7 @@ From the repository root, after building the desktop package:
 .\desktop\tests\test-desktop-bridge.ps1 -BatPath .\hwid.bat
 
 dotnet run --project .\desktop\tests\EngineClientSmoke\EngineClientSmoke.csproj -c Release
+dotnet run --project .\desktop\tests\DesktopModelsSmoke\DesktopModelsSmoke.csproj -c Release
 dotnet run --project .\desktop\tests\UpdaterClientSmoke\UpdaterClientSmoke.csproj -c Release
 .\desktop\tests\test-local-sync.ps1
 

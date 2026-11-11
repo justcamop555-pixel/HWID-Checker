@@ -49,7 +49,7 @@ Assert ($scan.Results.Count -eq 1 -and $scan.Errors.Count -eq 0) 'A synthetic fu
 Assert (@($scan.Events | Where-Object {$_.type -notin @('progress','result','error')}).Count -eq 0) 'Every stdout line belongs to the documented NDJSON protocol'
 $progress=@($scan.Events | Where-Object type -eq 'progress')
 Assert ($progress.Count -ge 39 -and $progress[0].completed -eq 0 -and $progress[-1].completed -eq 19 -and $progress[-1].total -eq 19) 'Progress covers preparation, eighteen sections and the all-known catalog'
-foreach($event in $progress){foreach($key in @('section','name','completed','total','status','records','message')){if($null -eq $event.PSObject.Properties[$key]){throw ('Missing protocol progress key: '+$key)}}}
+foreach($event in $progress){foreach($key in @('section','name','completed','total','status','records','message','seconds','failureCode','nextStep')){if($null -eq $event.PSObject.Properties[$key]){throw ('Missing protocol progress key: '+$key)}}}
 Assert ($true) 'Every progress event includes stable section, status, count and message keys'
 Assert ($scan.Data.inventory.'Scan timing'.Count -eq 18 -and @($scan.Data.inventory.'Scan timing' | Where-Object Status -eq 'UNAVAILABLE').Count -eq 0) 'The desktop uses the BAT collector for all eighteen normal sections'
 Assert ($scan.Data.inventory.'Report info'.ExtendedStatus -eq 'Refreshed' -and $scan.Data.inventory.'Extended device inventory'.Count -eq 1) 'The desktop full scan includes the validated extended catalog'
@@ -58,6 +58,7 @@ Assert ($scan.Data.inventory.CPU[0].ProcessorId -ceq 'CPU-000123' -and $scan.Dat
 Assert ($scan.Data.fieldLabels.'Memory modules'.Speed -match 'raw' -and $scan.Data.fieldValues.'Memory modules'[0].ConfiguredClockSpeed -match 'Unknown') 'Display metadata reuses section-specific engine labels and unknown-clock formatting'
 Assert ($scan.Data.inventory.'Memory modules'[0].ConfiguredClockSpeed -eq 0 -and $scan.Data.inventory.'Memory modules'[0].Speed -eq 3200) 'Display formatting leaves raw inventory values untouched'
 Assert ($scan.Data.identifiers.Count -gt 0 -and $null -ne $scan.Data.review.Total -and $scan.Data.warnings.Count -eq 0) 'The desktop receives engine identifier quality and warning-review data'
+Assert ($scan.Data.inventory.Windows[0].SecureBoot -ceq 'Enabled') 'The scan worker honors the injected Secure Boot reader instead of bypassing it'
 if($FixtureOutput){$fixturePath=[IO.Path]::GetFullPath($FixtureOutput);[void][IO.Directory]::CreateDirectory((Split-Path -Parent $fixturePath));Save-Json $fixturePath $scan.Data}
 $inventoryPath=Join-Path $root "current & ! ' 子.json";Save-Json $inventoryPath $scan.Data.inventory
 $folder=Join-Path $root "saved & ! ' 子"
@@ -104,6 +105,31 @@ $deniedFunctions=$fakeFunctions.Replace('    [pscustomobject]@{DeviceID=',"    i
 $partial=Invoke-Bridge Scan $deniedFixture @{scanNumber=2}
 Assert ($partial.Results.Count -eq 1 -and $partial.Data.inventory.CPU.FailureCode -eq 'READ-01' -and $partial.Data.warnings.Count -eq 1) 'A partial readable scan retains the original typed CPU failure and warning'
 Assert ($partial.Data.inventory.'Report info'.ScanNumber -eq 2 -and @($partial.Data.inventory.'Scan timing' | Where-Object Status -eq 'UNAVAILABLE').Count -eq 1) 'Rescan numbering and unread coverage remain explicit in the returned snapshot'
+$failureProgress=@($partial.Events | Where-Object {$_.type -eq 'progress' -and $_.section -eq 'CPU' -and $_.status -eq 'NOT READ'})
+Assert ($failureProgress.Count -eq 1 -and $failureProgress[0].failureCode -ceq 'READ-01' -and $failureProgress[0].message -match 'Windows denied access' -and $failureProgress[0].nextStep) 'Terminal progress explains a failed read while exposing its established code and next step'
+$catalogProgress=@($scan.Events | Where-Object {$_.type -eq 'progress' -and $_.section -eq 'Extended device inventory' -and $_.status -eq 'READ'})
+Assert ($catalogProgress.Count -eq 1 -and $null -ne $catalogProgress[0].seconds -and $catalogProgress[0].seconds -ge 0) 'The completed device catalog supplies elapsed time as well as its record count'
+$deniedReaders=@(
+    'function Get-CimInstance {param($ClassName,$Namespace,$Property,$Filter,$OperationTimeoutSec) throw [UnauthorizedAccessException]::new("Synthetic all-reader denial")}',
+    'function Get-NetAdapter {param([switch]$IncludeHidden) throw [UnauthorizedAccessException]::new("Synthetic all-reader denial")}',
+    'function Get-ItemProperty {param($LiteralPath,$Name) throw [UnauthorizedAccessException]::new("Synthetic all-reader denial")}',
+    'function Get-PnpDevice {param([switch]$PresentOnly) throw [UnauthorizedAccessException]::new("Synthetic all-reader denial")}'
+) -join [Environment]::NewLine
+$catalogOnlyFixture=Join-Path $root 'catalog-only.bat'
+[IO.File]::WriteAllText($catalogOnlyFixture,($raw+[Environment]::NewLine+$fakeFunctions+[Environment]::NewLine+$deniedReaders),[Text.UTF8Encoding]::new($false))
+$catalogOnly=Invoke-Bridge Scan $catalogOnlyFixture @{scanNumber=3}
+Assert ($catalogOnly.Results.Count -eq 1 -and @($catalogOnly.Data.inventory.'Scan timing' | Where-Object Status -in @('READ','CHECK')).Count -eq 0 -and $catalogOnly.Data.inventory.'Extended device inventory'.Count -eq 1) 'A genuinely read device catalog is accepted when every ordinary hardware reader fails'
+$failedFixture=Join-Path $root 'all-readers-failed.bat'
+$denyCatalog='function Get-ExtendedDeviceInventory {throw [UnauthorizedAccessException]::new("Synthetic catalog denial")}'
+[IO.File]::WriteAllText($failedFixture,($raw+[Environment]::NewLine+$fakeFunctions+[Environment]::NewLine+$deniedReaders+[Environment]::NewLine+$denyCatalog),[Text.UTF8Encoding]::new($false))
+$failedScan=Invoke-Bridge Scan $failedFixture @{scanNumber=4} 1
+Assert ($failedScan.Results.Count -eq 0 -and $failedScan.Errors.Count -eq 1 -and $failedScan.Errors[0].code -ceq 'READ-07' -and $failedScan.Errors[0].nextStep -match 'Scan again') 'A wholly unreadable scan returns an actionable failure instead of a completed desktop snapshot'
+Assert ($failedScan.Events[-1].type -ceq 'error' -and @($failedScan.Events | Where-Object {$_.type -eq 'progress' -and $_.status -in @('READ','CHECK')}).Count -eq 0) 'Finishing all failed attempts cannot emit a false successful completion'
+$legacyFixture=Join-Path $root 'legacy-no-readability-helper.bat'
+$legacyRaw=$raw.Replace('function Test-ScanHasReadableData(','function Legacy-ScanHasReadableData(')
+[IO.File]::WriteAllText($legacyFixture,($legacyRaw+[Environment]::NewLine+$fakeFunctions),[Text.UTF8Encoding]::new($false))
+$legacyScan=Invoke-Bridge Scan $legacyFixture $null
+Assert ($legacyScan.Results.Count -eq 1 -and $legacyScan.Data.inventory.CPU[0].ProcessorId -ceq 'CPU-000123') 'Linked older BAT engines keep working through the bridge compatibility validator'
 $brokenFixture=Join-Path $root 'incomplete-scan.bat'
 [IO.File]::WriteAllText($brokenFixture,($raw+[Environment]::NewLine+$fakeFunctions+[Environment]::NewLine+'function Invoke-HardwareScan {param($ScanNumber,$UseWorker,$IncludeExtended) [pscustomobject]@{Completed=$false;Inventory=[ordered]@{}}}'),[Text.UTF8Encoding]::new($false))
 $broken=Invoke-Bridge Scan $brokenFixture $null 1

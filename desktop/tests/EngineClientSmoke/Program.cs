@@ -36,8 +36,16 @@ try
     JsonElement scan = await client.ScanAsync(new InlineProgress(updates.Add), CancellationToken.None);
     Assert(scan.GetProperty("inventory").GetProperty("CPU")[0].GetProperty("Name").GetString() == "Synthetic é 中文", "Unicode data survives the Windows PowerShell UTF8 pipe");
     Assert(updates.Count == 1 && updates[0].Name == "Synthetic é 中文" && updates[0].Completed == 1, "Progress arrives with Unicode and stage counts");
+    Assert(updates[0].FailureCode == "" && updates[0].NextStep == "", "Older bridge progress without guidance remains compatible");
     Assert(scan.GetProperty("version").GetString() == "3.83", "Result data remains valid after its JSON document closes");
     Cleaned();
+    Mode("read-guidance");
+    updates.Clear();
+    await client.ScanAsync(new InlineProgress(updates.Add), CancellationToken.None);
+    Assert(updates.Count == 1 && updates[0].Status == "NOT READ" && updates[0].FailureCode == "READ-01" &&
+        updates[0].NextStep == "Synthetic retry guidance é 中文", "Read-failure codes and next steps reach the UI without losing Unicode text");
+    Cleaned();
+    Mode("normal");
     JsonElement stillValid = await client.ScanAsync(new InlineProgress(_ => throw new InvalidOperationException("Synthetic closed view")), CancellationToken.None);
     Assert(stillValid.GetProperty("version").GetString() == "3.83", "A failed progress callback cannot discard the snapshot");
     Cleaned();

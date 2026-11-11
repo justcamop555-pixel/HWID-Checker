@@ -2,7 +2,7 @@
 
 A Windows desktop interface for the existing HWID Checker scanner. The application launches the PowerShell scanner embedded in the adjacent `hwid.bat`, then presents its results in a graphical dashboard.
 
-Desktop **1.4.3** pairs with BAT **3.88** for a shared local snapshot library and application updates. See the [changelog](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/CHANGELOG.md) for release details.
+Desktop **1.4.4** pairs with BAT **3.89** for a shared local snapshot library and application updates. See the [changelog](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/CHANGELOG.md) for release details.
 
 ## Start the application
 
@@ -14,6 +14,8 @@ Desktop **1.4.3** pairs with BAT **3.88** for a shared local snapshot library an
 The package targets **Windows x64** and includes its .NET desktop runtime. The scanner still requires **Windows PowerShell 5.1 or PowerShell 7**, FullLanguage mode, and the Windows CIM/WMI providers used by the console checker. Administrator access is optional; available fields depend on the hardware, Windows providers, drivers and current access.
 
 ## Use the dashboard
+
+For a first check, choose **Scan this PC**, wait for the results, then open **Review** to see anything that needs explanation. Choose **Save snapshot** to keep a baseline before changing hardware or drivers. Later, rescan and compare with that saved JSON file. A saved snapshot is a capture from one point in time; saving again without rescanning does not collect new readings.
 
 | Task | Behavior |
 | --- | --- |
@@ -39,6 +41,21 @@ Scrolling to earlier scan rows preserves your reading position while new progres
 Battery hardware is optional. A PC without a battery receives an explicit absence record. Battery fields reflect the properties Windows supplies; a device-instance ID is not a manufacturer serial number.
 
 Comparisons show the selected identifier fields supported by the engine. Missing/default fields, unread sections and uncertain reader coverage may be left un-compared. Windows device nodes, grouping IDs and serial numbers have different meanings; a reported difference alone does not establish physical hardware replacement.
+
+### Understand the results
+
+| What you see | What it means / next step |
+| --- | --- |
+| No scan yet | Choose **Scan this PC**. An empty table before scanning is not a clean bill of health. |
+| Scan in progress | Wait or cancel. During a rescan, the last completed capture stays available until usable new results arrive. |
+| Read / Check | Windows returned data. **Check** means a reported value or record needs explanation; it does not mean the query failed. |
+| Not read | This part of the inventory could not be collected. Read its reason in **Review**, then retry when the provider or access issue is resolved. |
+| Missing or default ID | Windows did not supply a usable value for this field. This can be normal; the app does not invent a replacement serial number. |
+| No findings | No review findings were generated for the captured data. This is not a hardware health or authenticity test. |
+| No changes in comparable IDs | The usable fields compared equally. Read the **not compared** information before concluding that all identifiers stayed the same. |
+| No matching rows | Clear the page's search or filter to see the other captured records. |
+
+Hardware IDs generally describe driver/model matching. Device-instance IDs identify Windows device nodes. Neither label automatically means a factory serial number. The [identifier guide](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/IDENTIFIERS.md) explains these differences.
 
 For the engine's field definitions, warning codes and limitations, see the [main project documentation](https://github.com/justcamop555-pixel/HWID-Checker#readme) and [usage guide](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/USAGE.md).
 

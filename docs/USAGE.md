@@ -110,7 +110,9 @@ The summary can show all normal queries read while an optional extended refresh 
 
 ## Understand unreadable results
 
-The scan's **NOT READ** label means the query did not supply usable records. **CHECK** means records were read but some fields or device records need review. The finish line counts read and not-read sections separately. When an extended catalog was requested, the same line also says **extended READ** or **extended NOT READ**. A failed extended read keeps the finish line amber even if all 18 normal queries succeeded.
+The scan's **NOT READ** label means the query did not supply usable records. **CHECK** means records were read but some fields or device records need review. The finish screen separates completed checks, readable hardware areas and the Windows-known device-list status. A failed device-list read remains explicit even if all 18 normal queries succeeded.
+
+Finished checks and readable data are separate counts. A scan can reach **19/19 checks finished** while some hardware areas remain unread. If a rescan cannot read any inventory, the last usable capture stays active; its warnings still belong to that earlier capture. Retry the rescan, or restart the checker for fresh startup diagnostics. A first scan with no readable data keeps its diagnostic details. Watch mode does not report unchanged IDs when no identifier fields can be compared.
 
 | Code | Reason | Suggested action |
 | --- | --- | --- |

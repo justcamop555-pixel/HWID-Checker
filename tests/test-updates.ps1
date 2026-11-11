@@ -143,6 +143,20 @@ try{
     Assert ((Get-UpdateCacheDirectory $InstallDirectory 'Bat') -eq (Get-UpdateCacheDirectory $InstallDirectory.ToUpperInvariant() 'Bat')) 'Installation cache identity is case insensitive'
     $fixtureCurrent=New-FixtureExecutable '1.3.0'
     $fixtureNext=New-FixtureExecutable '1.4.0'
+    $versionInstall=New-FixtureInstall 'version comparison'
+    Assert ((Get-InstalledUpdateVersion $versionInstall) -eq [version]'1.3.0') 'Native four-part executable metadata compares as its three-part package version'
+    $savedInstall=$InstallDirectory;$savedMode=$Mode
+    $InstallDirectory=$versionInstall;$Mode='Check'
+    $networkBody=(Get-Item Function:\Find-UpdateRelease).ScriptBlock
+    $script:networkChecks=0
+    function Find-UpdateRelease([version]$Current){$script:networkChecks++;return $null}
+    $sameVersion=Invoke-HwidUpdate
+    Assert ($sameVersion.state -ceq 'current' -and $script:networkChecks -eq 1) 'Equal installed and running package versions permit a normal check without restart guidance'
+    [IO.File]::Copy($fixtureNext,(Join-Path $versionInstall 'HWID Checker.exe'),$true)
+    $newerDisk=Invoke-HwidUpdate
+    Assert ($newerDisk.state -ceq 'restart' -and $newerDisk.latestVersion -ceq '1.4.0' -and $script:networkChecks -eq 1) 'A genuinely newer installed package returns restart guidance before checking or downloading'
+    Set-Item Function:\Find-UpdateRelease $networkBody
+    $InstallDirectory=$savedInstall;$Mode=$savedMode
     Assert ([Diagnostics.FileVersionInfo]::GetVersionInfo($fixtureNext).ProductVersion -ceq '1.4.0+synthetic') 'The fixture includes real Windows version metadata and a Git-style build suffix'
     $good=New-FixtureArchive 'valid'
     $payload=Join-Path $root 'validated'

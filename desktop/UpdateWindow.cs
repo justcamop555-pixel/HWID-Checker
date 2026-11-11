@@ -14,7 +14,7 @@ internal sealed class UpdateWindow : Window
     private readonly Button _check = new() { Content = "Check now" };
     private readonly Button _download = new() { Content = "Download update" };
     private readonly Button _restart = new() { Content = "Install and restart" };
-    private readonly Button _cancel = new() { Content = "Stop download" };
+    private readonly Button _cancel = new() { Content = "Stop" };
 
     internal UpdateWindow(DesktopUpdater updater, string scannerVersion, Func<bool> canInstall, Action install)
     {
@@ -35,7 +35,7 @@ internal sealed class UpdateWindow : Window
         heading.Children.Add(new TextBlock { Text = "Application updates", FontSize = 22, FontWeight = FontWeights.SemiBold });
         var versions = new TextBlock
         {
-            Text = $"Desktop {DesktopUpdater.CurrentVersion}  ·  {scannerVersion}",
+            Text = $"Running Desktop {DesktopUpdater.CurrentVersion}  ·  {scannerVersion}",
             Margin = new Thickness(0, 7, 0, 14), TextWrapping = TextWrapping.Wrap
         };
         versions.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
@@ -113,7 +113,7 @@ internal sealed class UpdateWindow : Window
             (_updater.IsReady ? "\n\nThe verified package is ready. " +
                 (_updater.AutomaticEnabled ? "It will install after the app closes." : "Choose Install and restart to apply it.") : "");
         _message.SetResourceReference(TextBlock.ForegroundProperty, status.State == "error" ? "WarningBrush" : "TextBrush");
-        _check.IsEnabled = !_updater.IsBusy && status.State != "repair";
+        _check.IsEnabled = !_updater.IsBusy && status.State is not ("repair" or "restart");
         _download.Visibility = status.State == "available" ? Visibility.Visible : Visibility.Collapsed;
         _download.IsEnabled = !_updater.IsBusy;
         _restart.Visibility = _updater.IsReady ? Visibility.Visible : Visibility.Collapsed;

@@ -920,7 +920,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.88' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.89' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -1212,6 +1212,17 @@ function Show-QuickIds {
     if (@($rows | Where-Object Quality -eq 'Conflict').Count) { Write-Host '  Clash = Windows sources disagree. Main [4] Review / Main [5] Both sources' -ForegroundColor $palette.Warn }
     if ($warnings.Count) { Write-Host '  Some sections could not be read. Main [4] Review issues' -ForegroundColor $palette.Warn }
     Write-PnpValue 'Meaning' 'OK = supplied by Windows. CPU, volume and network IDs are not factory serials.' $palette.Muted
+}
+function Test-ScanHasReadableData($Inventory) {
+    $names=@($sectionGroups.Values | ForEach-Object {$_})+@('PnP hardware IDs')
+    foreach($timing in @($Inventory['Scan timing'])){
+        if($timing.Section -in $names -and $timing.Status -in @('READ','CHECK') -and (Test-SectionReadable $Inventory[$timing.Section])){return $true}
+    }
+    if($Inventory['Report info'].ExtendedStatus -ne 'Refreshed'){return $false}
+    try {
+        Assert-ExtendedDeviceCatalog ([pscustomobject]@{Devices=$Inventory['Extended device inventory'];Info=$Inventory['Extended scan info']})
+        return $true
+    }catch{return $false}
 }
 function Get-ScanCoverage($Inventory) {
     $labels=@{'SYSTEM & FIRMWARE'='System & firmware';'CPU & MEMORY'='CPU & memory';'STORAGE'='Storage';'GRAPHICS & NETWORK'='Graphics / network / monitors';'POWER'='Power & battery';'WINDOWS'='Windows'}
@@ -1526,10 +1537,11 @@ function Show-Attention([switch]$Inline) {
     if($review.IdIssues.Count){Write-PnpValue 'Next' 'Check full values in Main [5]. Missing/default IDs can be firmware limitations; rescanning may not supply them.' $palette.Muted}
 }
 
+function Get-DeviceCategoryKey {return ($sectionGroups.Count+1)}
 function Show-Categories {
     Write-Heading 'BROWSE HARDWARE'
     $names = @($sectionGroups.Keys)
-    $pickMaximum = $names.Count + 1
+    $pickMaximum = Get-DeviceCategoryKey
     for ($index = 0; $index -lt $names.Count; $index++) {
         $records = 0
         foreach ($section in $sectionGroups[$names[$index]]) {
@@ -2531,7 +2543,7 @@ function Show-DriverHardwareIds {
     $devices=$report['PnP hardware IDs']
     if(-not (Test-SectionReadable $devices)) {
         Show-Records $devices
-        Write-Host '  Reopen [3] > [6] to retry.' -ForegroundColor $palette.Warn
+        Write-Host ('  Reopen [3] > [{0}] to retry.' -f (Get-DeviceCategoryKey)) -ForegroundColor $palette.Warn
         return
     }
     $problems=@(Get-PnpIssues $devices)
@@ -2556,7 +2568,7 @@ function Show-Help {
     Write-PnpValue 'Motion' 'Next sweeps forward, Back reverses, Exit closes inward. Set HWID_NO_ANIMATION=1 before launch to disable.' $palette.Muted
     Write-Heading 'UNDERSTAND YOUR IDs'
     Write-PnpValue 'Quick IDs [2]' 'Short serial-number table. Full values are in [5] or saved reports.' $palette.Text
-    Write-PnpValue 'Deep IDs [3] > [6]' 'All present device classes are scanned at startup. This view refreshes their names, status and IDs.' $palette.Text
+    Write-PnpValue ('Deep IDs [3] > [{0}]' -f (Get-DeviceCategoryKey)) 'All present device classes are scanned at startup. This view refreshes their names, status and IDs.' $palette.Text
     Write-PnpValue 'Hardware IDs' 'Driver-match model IDs can be shared by multiple devices.' $palette.Muted
     Write-PnpValue 'Instance IDs' 'Device nodes on this Windows system; bus location can affect them.' $palette.Muted
     Write-PnpValue 'Other IDs' 'ProcessorId is CPU signature/features; MachineGuid is Windows installation data; volume serials identify formatted volumes.' $palette.Muted
@@ -2818,7 +2830,7 @@ function New-ScanQueryWorker {
         $setup=New-Object Text.StringBuilder
         [void]$setup.AppendLine('$ErrorActionPreference="Stop"')
         # Only collection helpers run here; UI and snapshot state stay on the main thread.
-        foreach($name in @('GiB','Test-ScanScalarValue','Get-ScanUInt64Info','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Format-NetworkStatus','Get-NetworkAddressInfo','Assert-NetworkReaderRecords','Get-NetworkIdentifiers','Get-DeviceIdListInfo','Get-DeviceInstanceInfo','Get-DevicePropertyIdListInfo','Test-DeviceIdSourceConflict','Get-DeviceGuidReadings','Get-DeviceParentReadings','Get-PresentDeviceRecords','Get-DriverHardwareIds','Get-ScanFailureInfo','Get-HwidExceptionStatuses','Test-ProjectionReadFailure','Invoke-BufferedHardwareRead','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Test-ScanValuePresent','Test-DeviceDisplayText','Normalize-IdentifierText','Assert-DeviceRecords','Get-DeviceUInt32Info','Get-BatteryStatusName','Get-BatteryIdentifiers','Read-DevicePropertyBatches','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
+        foreach($name in @('GiB','Test-ScanScalarValue','Get-ScanUInt64Info','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Format-NetworkStatus','Get-NetworkAddressInfo','Assert-NetworkReaderRecords','Get-NetworkIdentifiers','Get-DeviceIdListInfo','Get-DeviceInstanceInfo','Get-DevicePropertyIdListInfo','Test-DeviceIdSourceConflict','Get-DeviceGuidReadings','Get-DeviceParentReadings','Get-PresentDeviceRecords','Get-DriverHardwareIds','Get-ScanFailureInfo','Get-HwidExceptionStatuses','Test-ProjectionReadFailure','Invoke-BufferedHardwareRead','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Test-ScanValuePresent','Test-DeviceDisplayText','Normalize-IdentifierText','Assert-DeviceRecords','Get-DeviceUInt32Info','Get-BatteryStatusName','Get-BatteryIdentifiers','Read-DevicePropertyBatches','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Confirm-SecureBootUEFI','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
             $function=Get-Item -LiteralPath ('Function:\'+$name) -ErrorAction SilentlyContinue
             if($null -ne $function -and -not $function.ModuleName){[void]$setup.AppendLine(('function '+$name+' {'+$function.Definition+'}'))}
         }
@@ -3074,12 +3086,16 @@ function Show-ScanCompletion($Inventory,$Identifiers,[int]$Read,[int]$Total,[boo
     try {
         $info=$Inventory['Report info']
         Ensure-ScanBuffer 8
-        Write-Heading $(if($Complete){'SCAN COMPLETE'}else{'SCAN FINISHED / READ GAPS'})
-        Write-PnpValue 'Finished' ("$Total/$Total finished / $Read read / $($Total-$Read) not read$ExtendedNote / $($info.ScanSeconds)s") $(if($Complete){$palette.Good}else{$palette.Warn})
+        $hasData=Test-ScanHasReadableData $Inventory
+        Write-Heading $(if($Complete){'SCAN COMPLETE'}elseif($hasData){'SCAN FINISHED / SOME DATA NOT READ'}else{'SCAN FINISHED / NO DATA READ'})
+        $checks=$Total+$(if($ExtendedNote){1}else{0})
+        Write-PnpValue 'Finished' ("$checks/$checks checks finished / $Read/$Total areas read / $($Total-$Read) not read$ExtendedNote / $($info.ScanSeconds)s") $(if($Complete){$palette.Good}else{$palette.Warn})
         $found=@($Identifiers | Where-Object Quality -eq 'Reported').Count
-        Write-PnpValue 'Selected IDs' ("$found identifier fields reported by Windows") $(if($found){$palette.Good}else{$palette.Warn})
+        Write-PnpValue 'Selected IDs' ("$found identifier fields filled by Windows") $(if($found){$palette.Good}else{$palette.Muted})
+        Write-PnpValue 'Meaning' '100% means all checks finished. ID counts measure fields and can include repeated values.' $palette.Muted
         $review=Get-ReviewSummary $Inventory $Identifiers $Inventory['Warnings']
-        Write-PnpValue 'Review' ("$($review.Total) findings -> Main [4] after Enter.") $(if($review.Total){$palette.Warn}else{$palette.Good})
+        Write-PnpValue 'Review' ("$($review.Total) items to review. Choose [4] from the main menu for explanations.") $(if($review.Total){$palette.Warn}else{$palette.Good})
+        if(-not $hasData){Write-PnpValue 'Next step' 'Try rescan [9] > [1]. Choose [4] to see the Windows read errors.' $palette.Warn}
         if($info.ProgressHeaderFallback){Write-PnpValue 'Scan progress' 'The live progress row became unavailable. Progress continued between queries.' $palette.Muted}
         if($info.CompatibleReadSections){Write-PnpValue 'Compatible reads' ("$($info.CompatibleReadSections) sections recovered through a compatible reader/query. Main [5] shows details.") $palette.Good}
         if($info.ProgressFallbackSections){Write-PnpValue 'Progress display' ("$($info.ProgressFallbackSections) sections finished after live display updates failed. Read results are shown above; Main [5] has details.") $palette.Warn}
@@ -3111,7 +3127,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-PnpLine '  Hardware identity and Windows inventory. Read-only scan.' $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.88'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.89'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-PnpLine "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" $palette.Muted
@@ -3134,8 +3150,8 @@ if($UseWorker) {
 }
 $report['Report info']['QueryMode']=if($null -ne $script:scanQueryWorker){'Live progress'}else{'Direct queries'}
 Write-Heading "SCANNING $scanTotal SECTIONS"
-Write-PnpLine '  READ = query succeeded. CHECK = review IDs/device records; [4] explains.' $palette.Muted
-Write-PnpLine '  Counts: records = Windows rows; IDs = selected identifier fields.' $palette.Muted
+Write-PnpLine '  READ = data received. CHECK = data received with items to review in [4].' $palette.Muted
+Write-PnpLine '  NOT READ = Windows could not supply usable data. Records are Windows entries; IDs count fields.' $palette.Muted
 Write-PnpLine '  Scroll during scan: wheel / Up Down / PgUp PgDn / Home End. Enter is ignored.' $palette.Muted
 Section 'System identity' {
     Get-HwidInstance -OperationTimeoutSec 20 Win32_ComputerSystemProduct -Property Vendor,Name,Version,IdentifyingNumber,UUID | Select-Object Vendor, Name, Version, IdentifyingNumber, UUID
@@ -3244,18 +3260,18 @@ $scanClock.Stop()
 $report['Report info']['ScanSeconds']=[math]::Round($scanClock.Elapsed.TotalSeconds,2)
 $report['Report info']['ScanCompleted']=(Get-Date).ToString('o')
 $report['Scan timing']=@($scanTimings.ToArray())
-$compatible=@($scanTimings | Where-Object {$_.Status -ne 'UNAVAILABLE' -and $_.Recoveries.Count -gt 0}).Count
+$compatible=@($scanTimings | Where-Object {$_.Status -in @('READ','CHECK') -and $_.Recoveries.Count -gt 0}).Count
 $report['Report info']['CompatibleReadSections']=$compatible
 $report['Report info']['ProgressFallbackSections']=@($scanTimings | Where-Object {$_.ProgressWarning}).Count
 $report['Report info']['QueryCleanupSections']=@($scanTimings | Where-Object {$_.QueryCleanupWarning}).Count
 $report['Warnings'] = @($warnings.ToArray())
-    $read=@($scanTimings | Where-Object Status -ne 'UNAVAILABLE').Count
+    $read=@($scanTimings | Where-Object {$_.Status -in @('READ','CHECK')}).Count
     $complete=($read -eq $scanTotal)
     $extendedNote=''
     if($IncludeExtended) {
         $extraRead=($report['Report info'].ExtendedStatus -eq 'Refreshed')
         $complete=$complete -and $extraRead
-        $extendedNote=if($extraRead){' / extended READ'}else{' / extended NOT READ'}
+        $extendedNote=if($extraRead){' / device list read'}else{' / device list not read'}
     }
     $rows=@(Get-IdentifierRows $report)
     $finalProgressWarning=$null
@@ -4335,6 +4351,7 @@ function Start-HardwareRescan([bool]$UseWorker=($ownedConsole -and -not $redirec
             if(-not $snapshot.Inventory.Contains($name)){throw ('The scan did not return section: '+$name)}
         }
         if($snapshot.Warnings -isnot [System.Collections.Generic.List[string]] -or $snapshot.Identifiers -isnot [array]){throw 'The scan returned inconsistent warning or identifier data.'}
+        if(-not (Test-ScanHasReadableData $snapshot.Inventory)){throw 'READ-07 / Windows could not read any hardware data. Try rescan [9] > [1]. If it keeps failing, restart the checker to collect fresh startup diagnostics.'}
         $previous=Copy-InventorySnapshot $report
         $current=Copy-InventorySnapshot $snapshot.Inventory
         # Assign all live state from the same finished snapshot.
@@ -4391,6 +4408,7 @@ function Start-ChangeWatch {
             $snapshot=Invoke-HardwareScan $next -UseWorker $true -IncludeExtended $false
             if(-not $snapshot.Completed -or $snapshot.Inventory -isnot [System.Collections.IDictionary] -or $snapshot.Inventory['Report info'].ScanNumber -ne $next -or @($snapshot.Inventory['Scan timing']).Count -ne $scanTotal){throw 'The watch scan did not return a complete snapshot.'}
             foreach($name in @($sectionGroups.Values | ForEach-Object {$_})+@('PnP hardware IDs')){if(-not $snapshot.Inventory.Contains($name)){throw ('The scan did not return section: '+$name)}}
+            if(-not (Test-ScanHasReadableData $snapshot.Inventory)){throw 'READ-07 / Windows could not read any hardware data. The last readable scan stays active. Try rescan [9] > [1], or restart the checker for fresh startup diagnostics.'}
             $previous=Copy-InventorySnapshot $report
             $current=Copy-InventorySnapshot $snapshot.Inventory
             # Publish the finished snapshot before showing the cycle result.
@@ -4405,7 +4423,9 @@ function Start-ChangeWatch {
             Reset-UiPage;Start-UiReport
             Write-Heading ('WATCH RESULT / SNAPSHOT #'+$number)
             Write-PnpValue 'Captured' (Format-ScanTime $script:report['Report info'].Generated) $palette.Text
-            if(-not $details.Count){Write-PnpValue 'Result' 'No changes in comparable identifier fields.' $palette.Good}
+            if(-not $comparison.PreviousCount -and -not $comparison.CurrentCount){
+                Write-PnpValue 'IDs not compared' 'No matching, supplied ID fields were readable in both scans. Choose [4] for explanations.' $palette.Warn
+            }elseif(-not $details.Count){Write-PnpValue 'Result' 'No changes in comparable identifier fields.' $(if($comparison.SkippedSections.Count -or $comparison.SkippedFields){$palette.Warn}else{$palette.Good})}
             else {
                 $changed=@($details | Where-Object Kind -eq 'Changed').Count
                 $added=@($details | Where-Object Kind -eq 'Current only').Count
@@ -4416,7 +4436,7 @@ function Start-ChangeWatch {
                     if($null -ne $item.Previous){Write-PnpValue 'Previous ID' $item.Previous $palette.Muted}
                     if($null -ne $item.Current){Write-PnpValue 'Current ID' $item.Current $palette.Text}
                 }
-                Write-PnpValue 'Keep' 'Main [6] saves this scan before the next cycle replaces it. Main [3] shows the previous rescan comparison.' $palette.Muted
+                Write-PnpValue 'Keep' 'Main [6] saves this scan before the next cycle replaces it. Main [9] > [3] shows the previous rescan comparison.' $palette.Muted
             }
             $coverage=@(Get-ScanCoverage $script:report)
             $read=($coverage | Measure-Object Read -Sum).Sum
@@ -4432,7 +4452,7 @@ function Start-ChangeWatch {
         $script:checkerPhase='Main menu'
     }
 }
-function Get-CheckerPackageVersion {return '1.4.3'}
+function Get-CheckerPackageVersion {return '1.4.4'}
 function Get-CheckerUpdatePaths([string]$ScriptPath=$env:HWID_SCRIPT,[string]$LocalRoot=$env:LOCALAPPDATA) {
     $install=[IO.Path]::GetFullPath((Split-Path -Parent ([IO.Path]::GetFullPath($ScriptPath))))
     if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}
@@ -4694,7 +4714,7 @@ function Show-CheckerUpdates {
         Write-Heading 'UPDATES / BAT & DESKTOP PACKAGE'
         $paths=Get-CheckerUpdatePaths
         $preferences=Get-CheckerUpdatePreferences $paths
-        Write-PnpValue 'Installed' ('Scanner 3.88 / package '+(Get-CheckerPackageVersion)) $palette.Text
+        Write-PnpValue 'Installed' ('Scanner 3.89 / package '+(Get-CheckerPackageVersion)) $palette.Text
         Write-PnpValue 'Automatic updates' $(if($preferences.Enabled){'On. Standalone-launcher sessions prepare updates and install after normal Exit.'}else{'Off. Enable this setting to install a prepared update after normal Exit.'}) $palette.Muted
         if($preferences.Warning){Write-PnpValue 'Preferences' $preferences.Warning $palette.Warn}
         $result=Read-CheckerUpdateResult $paths

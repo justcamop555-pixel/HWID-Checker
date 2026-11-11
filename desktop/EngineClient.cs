@@ -12,7 +12,8 @@ using System.Threading.Tasks;
 namespace HwidDesktop;
 
 internal sealed record BridgeProgress(string Section, string Name, int Completed, int Total,
-    string Status, int Records, string Message, double? Seconds = null);
+    string Status, int Records, string Message, double? Seconds = null,
+    string FailureCode = "", string NextStep = "");
 
 internal sealed class EngineException : Exception
 {
@@ -175,7 +176,8 @@ internal sealed class EngineClient : IDisposable
                             Math.Clamp(Number(root, "completed"), 0, total), total,
                             Text(root, "status"), Math.Max(0, Number(root, "records")), Text(root, "message"),
                             root.TryGetProperty("seconds", out var elapsed) && elapsed.ValueKind == JsonValueKind.Number && elapsed.TryGetDouble(out var duration) &&
-                                double.IsFinite(duration) && duration >= 0 ? duration : null);
+                                double.IsFinite(duration) && duration >= 0 ? duration : null,
+                            Text(root, "failureCode"), Text(root, "nextStep"));
                         // A closed UI or failed display callback must not discard a valid scan.
                         try { progress?.Report(update); } catch (Exception) { }
                         break;

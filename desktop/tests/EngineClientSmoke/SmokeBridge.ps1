@@ -22,7 +22,9 @@ if($Action -eq 'Export'){
     Emit @{type='result';data=@{textPath=$textPath;jsonPath=$jsonPath;folder=$request.folder}}
     exit 0
 }
-Emit @{type='progress';section='CPU';name='Synthetic é 中文';completed=1;total=18;status='READ';records=1;message='Synthetic only'}
+if($mode -eq 'read-guidance'){
+    Emit @{type='progress';section='CPU';name='Synthetic é 中文';completed=1;total=18;status='NOT READ';records=0;message='Windows denied access';failureCode='READ-01';nextStep='Synthetic retry guidance é 中文'}
+}else{Emit @{type='progress';section='CPU';name='Synthetic é 中文';completed=1;total=18;status='READ';records=1;message='Synthetic only'}}
 if($mode -eq 'slow'){Start-Sleep -Seconds 15}
 if($mode -eq 'error'){Emit @{type='error';code='READ-02';message='Synthetic localized é 中文 failure'};exit 1}
 if($mode -eq 'bad-json'){[Console]::Out.WriteLine('invalid protocol');exit 0}

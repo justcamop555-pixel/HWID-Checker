@@ -18,10 +18,26 @@ internal sealed record UpdateStatus(
 
 internal sealed class DesktopUpdater : IDisposable
 {
-    // Derived from the assembly so the reported version can never drift from
-    // the built binary (a stale constant made the 1.4.0 app report 1.3.0).
+    // Package releases use major.minor.patch. File metadata can add a revision.
     internal static readonly string CurrentVersion =
-        ((Assembly.GetEntryAssembly()?.GetName().Version) ?? new Version(1, 0, 0)).ToString(3);
+        NormalizePackageVersion(Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(1, 0, 0)).ToString(3);
+
+    internal static Version NormalizePackageVersion(Version value) =>
+        new(value.Major, value.Minor, Math.Max(0, value.Build));
+
+    internal static bool IsNewerPackageVersion(Version candidate, Version current) =>
+        NormalizePackageVersion(candidate) > NormalizePackageVersion(current);
+
+    internal static Version? ReadInstalledPackageVersion(string executablePath)
+    {
+        var fullPath = Path.GetFullPath(executablePath);
+        if (!File.Exists(fullPath)) return null;
+        var nativePath = fullPath.StartsWith(@"\\?\", StringComparison.Ordinal) ? fullPath :
+            fullPath.StartsWith(@"\\", StringComparison.Ordinal) ? @"\\?\UNC\" + fullPath[2..] : @"\\?\" + fullPath;
+        var info = FileVersionInfo.GetVersionInfo(nativePath);
+        return string.IsNullOrWhiteSpace(info.FileVersion) ? null :
+            new Version(info.FileMajorPart, info.FileMinorPart, info.FileBuildPart);
+    }
     private readonly string _directory;
     private readonly string _script;
     private readonly string _resultPath;
@@ -59,20 +75,21 @@ internal sealed class DesktopUpdater : IDisposable
 
     public DesktopUpdater(string directory, string? updatesRoot = null)
     {
-        _directory = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar);
+        _directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
         _script = Path.Combine(_directory, "Update-HWID.ps1");
         var root = updatesRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HWID Checker", "Updates");
-        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(_directory.ToUpperInvariant())))[..16].ToLowerInvariant();
+        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(_directory.TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant())))[..16].ToLowerInvariant();
         _resultPath = Path.Combine(root, key + "-package", "result.json");
         _preferences = Path.Combine(root, "preferences.json");
         AutomaticEnabled = ReadAutomaticPreference();
         ReadCachedStatus();
+        RefreshInstalledVersion();
     }
 
     public async Task PrepareAutomaticallyAsync()
     {
         if (!AutomaticEnabled || _disposed) return;
-        if (Status.State == "repair") return;
+        if (Status.State == "repair" || RefreshInstalledVersion()) return;
         if (File.Exists(_resultPath))
         {
             var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(_resultPath);
@@ -134,16 +151,7 @@ internal sealed class DesktopUpdater : IDisposable
             var result = document.RootElement;
             if (!result.Text("installDirectory").Equals(_directory, StringComparison.OrdinalIgnoreCase) ||
                 !result.Text("component").Equals("Package", StringComparison.OrdinalIgnoreCase)) return;
-            var status = ParseResult(result);
-            if (status.State == "ready" && (!TryPackageVersion(status.LatestVersion, out var version) ||
-                version <= Version.Parse(CurrentVersion)))
-            {
-                if (version == Version.Parse(CurrentVersion) && HasInterruptedTransaction(status.LatestVersion))
-                    status = status with { State = "repair", Message = "An interrupted update is ready to finish after the app closes." };
-                else return;
-            }
-            if (status.State is "ready" or "repair" && !CanApply(status)) return;
-            Status = status;
+            Status = NormalizeStatus(ParseResult(result), cached: true);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { }
     }
@@ -152,6 +160,7 @@ internal sealed class DesktopUpdater : IDisposable
     {
         if (_disposed || IsBusy) return;
         if (Status.State == "repair") return;
+        if (RefreshInstalledVersion()) { Notify(); return; }
         if (!File.Exists(_script))
         {
             Status = new("error", "The updater is missing. Restore Update-HWID.ps1 from the complete package.");
@@ -187,9 +196,13 @@ internal sealed class DesktopUpdater : IDisposable
             await stderr;
             if (text.Length > 64 * 1024) throw new InvalidDataException("The updater returned too much output.");
             using var document = JsonDocument.Parse(text);
-            Status = ParseResult(document.RootElement);
-            if (process.ExitCode != 0 && Status.State != "error")
+            if (!document.RootElement.Text("installDirectory").Equals(_directory, StringComparison.OrdinalIgnoreCase) ||
+                !document.RootElement.Text("component").Equals("Package", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The updater returned a result for another application folder.");
+            Status = NormalizeStatus(ParseResult(document.RootElement), cached: false);
+            if (process.ExitCode != 0 && Status.State is not ("error" or "busy"))
                 Status = new("error", "The update action did not finish. Try again from this window.");
+            RefreshInstalledVersion();
         }
         catch (OperationCanceledException) { Status = new("idle", "Update preparation stopped. You can try again later."); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or System.ComponentModel.Win32Exception)
@@ -207,6 +220,59 @@ internal sealed class DesktopUpdater : IDisposable
     private static UpdateStatus ParseResult(JsonElement result) => new(
         result.Text("state"), result.Text("message"), result.Text("latestVersion"),
         result.Text("releaseUrl"), result.Text("stageDirectory"), result.Text("batVersion"), result.Text("currentVersion"));
+
+    private static UpdateStatus RunningStatus() =>
+        new("idle", "Desktop " + CurrentVersion + " is running. Choose Check now to look for newer releases.",
+            CurrentVersion, SourceVersion: CurrentVersion);
+
+    private UpdateStatus NormalizeStatus(UpdateStatus status, bool cached)
+    {
+        var current = Version.Parse(CurrentVersion);
+        if (status.State == "ready")
+        {
+            if (!TryPackageVersion(status.LatestVersion, out var next)) return RunningStatus();
+            if (next == current && HasInterruptedTransaction(status.LatestVersion))
+                status = status with { State = "repair", Message = "An interrupted update is ready to finish after the app closes." };
+            return CanApply(status) ? status : RunningStatus();
+        }
+        if (!TryPackageVersion(status.SourceVersion, out var source) || source != current)
+            return RunningStatus();
+        if (status.State is "available" or "current" or "updated" or "restart")
+        {
+            if (!Version.TryParse(status.LatestVersion, out var next) || next.Build < 0)
+                return RunningStatus();
+            var normalized = NormalizePackageVersion(next);
+            if (status.State == "available" && normalized > current)
+                return status with { LatestVersion = normalized.ToString(3) };
+            if (status.State == "current" && normalized <= current)
+                return status with { LatestVersion = normalized.ToString(3) };
+            if (!cached && normalized <= current)
+                return new("current", "Desktop " + CurrentVersion + " is running. This result contains no newer package.",
+                    CurrentVersion, SourceVersion: CurrentVersion);
+            return RunningStatus();
+        }
+        return status.State is "error" or "busy" ? status : RunningStatus();
+    }
+
+    private bool RefreshInstalledVersion()
+    {
+        try
+        {
+            var installed = ReadInstalledPackageVersion(Path.Combine(_directory, "HWID Checker.exe"));
+            if (installed == null || !IsNewerPackageVersion(installed, Version.Parse(CurrentVersion)))
+            {
+                if (Status.State == "restart") Status = RunningStatus();
+                return false;
+            }
+            if (HasInterruptedTransaction(installed.ToString(3)) && IsReady) return false;
+            Status = new("restart", "Desktop " + installed.ToString(3) +
+                " is installed, and this window is running Desktop " + CurrentVersion +
+                ". Close and reopen the app to use the installed version.",
+                installed.ToString(3), SourceVersion: CurrentVersion);
+            return true;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException) { return false; }
+    }
 
     private bool HasInterruptedTransaction(string version)
     {

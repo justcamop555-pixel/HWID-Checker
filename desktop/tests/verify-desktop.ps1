@@ -77,7 +77,7 @@ foreach($page in $pages){
         $checks=$workflow.checks
     }elseif($Mode -eq 'Interactions'){
         $interaction=Get-Content -LiteralPath (Join-Path $OutputDirectory 'ui-result.json') -Raw | ConvertFrom-Json
-        if(-not $interaction.success -or $interaction.checks -ne 21 -or -not $interaction.syntheticOnly){throw 'Synthetic desktop interactions failed.'}
+        if(-not $interaction.success -or $interaction.checks -ne 47 -or -not $interaction.syntheticOnly){throw 'Synthetic desktop interactions failed.'}
         $checks=$interaction.checks
     }else{$checks++}
     [Console]::WriteLine('PASS: '+$Mode+' / '+$page)

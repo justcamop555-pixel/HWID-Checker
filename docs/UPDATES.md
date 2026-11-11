@@ -19,6 +19,12 @@ Both interfaces use the same automatic-update preference for the current Windows
 
 The desktop package updates its adjacent scanner and runtime files. A BAT connected from another folder keeps that separate installation. Open that BAT's own update controls to update it.
 
+### Understand version messages
+
+The app compares the package's **major.minor.patch** version. Windows may display a fourth file-version component: `1.4.3.0` and package `1.4.3` are the same package version. They do not require a restart just because one has an extra zero. Microsoft's [Version comparison documentation](https://learn.microsoft.com/en-us/dotnet/api/system.version.compareto) explains why an unspecified component otherwise compares differently.
+
+**Restart to use the update** is shown only when a genuinely newer executable is already installed than the one running in the open window. Save a scan if needed, then close and reopen the app. Results cached by an older running version do not by themselves establish that the current app needs another update or restart.
+
 ## Verification and recovery
 
 The updater checks published stable release tags and Windows x64 asset names, verifies the ZIP's SHA-256 digest from GitHub, and verifies its file checksums and versions before preparing it.
