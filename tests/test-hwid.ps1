@@ -1086,7 +1086,7 @@ try {
     $fullWithExtended=Invoke-HardwareScan 7 -IncludeExtended $true
     Assert ($fullWithExtended.Inventory['Extended device inventory'][0].DeviceInstanceId -eq 'USB\FRESH' -and $fullWithExtended.Inventory['Report info'].ExtendedStatus -eq 'Refreshed') 'Full rescans refresh the optional extended catalog instead of silently dropping it'
     Assert ($fullWithExtended.Inventory['Scan timing'].Count -eq 18 -and $scanStep -eq 18) 'Refreshing an extended catalog does not corrupt normal eighteen-query timing and progress'
-    Assert (@($script:rendered | Where-Object {$_.Text -match '^\s+Finished:.*extended READ'}).Count -eq 1) 'The scan finish line explicitly confirms a requested extended read'
+    Assert (@($script:rendered | Where-Object {$_.Text -match '^\s+Finished:.*device list read'}).Count -eq 1) 'The scan finish line explicitly confirms a requested extended read'
     function Get-ExtendedDeviceInventory {throw 'Simulated extended refresh failure'}
     $completionCim=(Get-Item Function:Get-CimInstance).ScriptBlock
     function Get-CimInstance {param($ClassName,$Filter,$OperationTimeoutSec,$Property,$Namespace) [pscustomobject]@{Name='Completion fixture';Caption='Windows fixture';InstanceName='MONITOR1';DiskNumber=0;PartitionNumber=1;DeviceID='MOCK';PNPDeviceID='USB\COMPLETE';UUID='MOCK';SerialNumber='MOCK';TotalPhysicalMemory=8GB}}
@@ -1094,7 +1094,7 @@ try {
     try {$fullPartial=Invoke-HardwareScan 8 -IncludeExtended $true}finally {Set-Item Function:Get-CimInstance -Value $completionCim}
     Assert ($fullPartial.Completed -and -not $fullPartial.Inventory.Contains('Extended device inventory') -and $fullPartial.Inventory['Report info'].ExtendedStatus -eq 'Unavailable') 'A failed extended refresh keeps new normal data and cannot attach stale extended records'
     Assert ($fullPartial.Inventory['Extended scan info'].Error -and @($fullPartial.Warnings | Where-Object {$_ -match '^Extended device inventory:'}).Count -eq 1) 'Failed extended refresh diagnostics are captured once with the new snapshot'
-    Assert (@($script:rendered | Where-Object {$_.Text -match '^\s+Finished:.*extended NOT READ' -and $_.Color -eq $palette.Warn}).Count -eq 1) 'A failed optional scan ends with an amber extended NOT READ completion line'
+    Assert (@($script:rendered | Where-Object {$_.Text -match '^\s+Finished:.*device list not read' -and $_.Color -eq $palette.Warn}).Count -eq 1) 'A failed optional scan ends with an amber device-list-not-read completion line'
     Assert (@($fullPartial.Inventory['Scan timing'] | Where-Object Status -ne 'UNAVAILABLE').Count -eq 18 -and $fullPartial.Warnings.Count -eq 1) 'Extended failure stays visible even when every normal section was read successfully'
     $report=$fullPartial.Inventory;$warnings=$fullPartial.Warnings
     $script:rendered.Clear()

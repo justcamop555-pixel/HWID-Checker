@@ -407,7 +407,7 @@ public static class HwidConsoleDisplay {
         if (!IsWindowVisible(GetConsoleWindow())) return false;
         var info = new FontInfo(); info.Size = (uint)Marshal.SizeOf(typeof(FontInfo));
         if (!GetCurrentConsoleFontEx(GetStdHandle(-11), false, ref info)) return false;
-        info.Face = "Consolas"; info.Cell.X = 0; info.Cell.Y = 16; info.Weight = 400; info.Family = 54;
+        info.Face = "Consolas"; info.Cell.X = 0; info.Cell.Y = (short)Math.Max(18, (int)info.Cell.Y); info.Weight = 400; info.Family = 54;
         return SetCurrentConsoleFontEx(GetStdHandle(-11), false, ref info);
     }
     public static FontInfo ReadFont() {
@@ -920,7 +920,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.89' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.90' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -960,6 +960,15 @@ function Test-SectionReadable($Records) {
     return $items.Count -gt 0 -and @($items | Where-Object {Test-UnavailableRecord $_}).Count -eq 0
 }
 function Get-FieldLabel($Name,$SectionName='') {
+    if($SectionName -eq 'Report info'){
+        $metadata=@{
+            Generated='Captured at';Computer='PC name';Administrator='Access level';Version='Scanner version'
+            Display='Interface';QueryMode='Progress mode';ScanNumber='Scan number';ScanCompleted='Finished at'
+            ExtendedStatus='Device-list read status';ExtendedAttempted='Device-list last attempted at'
+        }
+        if($metadata.ContainsKey($Name)){return $metadata[$Name]}
+    }
+    if($SectionName -eq 'Extended scan info' -and $Name -eq 'Captured'){return 'Captured at'}
     if($SectionName -eq 'Network adapters' -and $Name -eq 'Speed'){return 'Reported network bandwidth (bits/s)'}
     if($SectionName -eq 'Memory modules' -and $Name -eq 'Speed'){return 'Memory speed (Windows-reported raw)'}
     $labels = @{
@@ -1037,7 +1046,7 @@ function Get-StatusLabel($Quality) {
 }
 function Format-FieldValue($Value) {
     if ($null -eq $Value) { return '(not provided)' }
-    if ($Value -is [datetime]) { return $Value.ToString('yyyy-MM-dd HH:mm:ss zzz') }
+    if ($Value -is [datetime]) { return $Value.ToString('yyyy-MM-dd HH:mm:ss zzz',[cultureinfo]::InvariantCulture) }
     if ($Value -is [bool]) { if ($Value) { return 'Yes' }; return 'No' }
     if ($Value -is [array]) {
         if(-not $Value.Count){return '(none reported)'}
@@ -1047,6 +1056,24 @@ function Format-FieldValue($Value) {
     return [string]$Value
 }
 function Format-RecordFieldValue($Name,$Value,$SectionName='') {
+    if($SectionName -eq 'Report info'){
+        if($Name -eq 'Administrator' -and $Value -is [bool]){return $(if($Value){'Administrator'}else{'Standard user'})}
+        if($Name -eq 'Display' -and $Value -is [string]){
+            switch($Value){'Desktop companion'{return 'Desktop dashboard'} 'Classic console'{return 'BAT console'} 'Current window'{return 'Existing console window'}}
+        }
+        if($Name -eq 'QueryMode' -and $Value -is [string]){
+            switch($Value){'Live progress'{return 'Live progress available'} 'Direct queries'{return 'Basic progress'}}
+        }
+        if($Name -eq 'ExtendedStatus' -and $Value -is [string]){
+            switch($Value){'Refreshed'{return 'Device list read'} 'Unavailable'{return 'Device list could not be read'}}
+        }
+    }
+    $metadataDate=($SectionName -eq 'Report info' -and $Name -in @('Generated','SavedAt','ScanCompleted','ExtendedAttempted')) -or
+        ($SectionName -eq 'Extended scan info' -and $Name -eq 'Captured')
+    if($metadataDate -and ($Value -is [datetime] -or $Value -is [datetimeoffset] -or
+        ($Value -is [string] -and $Value -match '^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}' -and $Value -match '(Z|[+-]\d{2}:\d{2})$'))){
+        return (Format-ScanTime $Value)
+    }
     if($SectionName -eq 'Memory modules' -and $Name -eq 'ConfiguredClockSpeed'){
         $clock=Get-DeviceUInt32Info $Value
         if($clock.Valid -and $clock.Value -eq 0){return 'Unknown (Windows reports 0)'}
@@ -1241,10 +1268,10 @@ function Get-ScanCoverage($Inventory) {
     [pscustomobject]@{Area='All present device classes';Read=$read;Total=1;Status=$(if($read){'OK'}else{'NOT READ'})}
 }
 function Format-ScanTime($Value) {
-    if($Value -is [datetimeoffset]){return $Value.ToString('yyyy-MM-dd HH:mm:ss zzz')}
-    if($Value -is [datetime]){return ([datetimeoffset]$Value).ToString('yyyy-MM-dd HH:mm:ss zzz')}
+    if($Value -is [datetimeoffset]){return $Value.ToString('yyyy-MM-dd HH:mm:ss zzz',[cultureinfo]::InvariantCulture)}
+    if($Value -is [datetime]){return ([datetimeoffset]$Value).ToString('yyyy-MM-dd HH:mm:ss zzz',[cultureinfo]::InvariantCulture)}
     $parsed=[datetimeoffset]::MinValue
-    if([datetimeoffset]::TryParse([string]$Value,[ref]$parsed)){return $parsed.ToString('yyyy-MM-dd HH:mm:ss zzz')}
+    if([datetimeoffset]::TryParse([string]$Value,[cultureinfo]::InvariantCulture,[Globalization.DateTimeStyles]::AllowWhiteSpaces,[ref]$parsed)){return $parsed.ToString('yyyy-MM-dd HH:mm:ss zzz',[cultureinfo]::InvariantCulture)}
     return (Format-FieldValue $Value)
 }
 function Get-OverviewSummary($Inventory,$IdRows,$QueryWarnings) {
@@ -1360,7 +1387,7 @@ function Show-FullReport {
     Write-PnpValue 'About this report' 'Windows-reported inventory; missing values can be normal. Main [6] saves TXT + JSON.' $palette.Muted
     Add-ReportBookmark '1'
     Write-Heading 'REPORT INFORMATION'
-    Show-Records $report['Report info']
+    Show-Records $report['Report info'] 'Report info'
     if($report.Contains('Compatibility')){Write-Heading 'RUNTIME & AVAILABLE COMMANDS';Show-Records $report['Compatibility']}
     $groupNumber=1
     foreach ($group in $sectionGroups.Keys) {
@@ -1381,7 +1408,7 @@ function Show-FullReport {
     }else{Show-Records $null}
     if($report.Contains('Extended scan info')) {
         Write-Heading 'EXTENDED DEVICE CATALOG / SEPARATE CAPTURE'
-        Show-Records $report['Extended scan info']
+        Show-Records $report['Extended scan info'] 'Extended scan info'
         Show-PnpRecords $report['Extended device inventory'] -Full -Extended
     }
     Add-ReportBookmark '9'
@@ -3127,7 +3154,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-PnpLine '  Hardware identity and Windows inventory. Read-only scan.' $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.89'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.90'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-PnpLine "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" $palette.Muted
@@ -4452,7 +4479,7 @@ function Start-ChangeWatch {
         $script:checkerPhase='Main menu'
     }
 }
-function Get-CheckerPackageVersion {return '1.4.4'}
+function Get-CheckerPackageVersion {return '1.4.5'}
 function Get-CheckerUpdatePaths([string]$ScriptPath=$env:HWID_SCRIPT,[string]$LocalRoot=$env:LOCALAPPDATA) {
     $install=[IO.Path]::GetFullPath((Split-Path -Parent ([IO.Path]::GetFullPath($ScriptPath))))
     if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}
@@ -4714,7 +4741,7 @@ function Show-CheckerUpdates {
         Write-Heading 'UPDATES / BAT & DESKTOP PACKAGE'
         $paths=Get-CheckerUpdatePaths
         $preferences=Get-CheckerUpdatePreferences $paths
-        Write-PnpValue 'Installed' ('Scanner 3.89 / package '+(Get-CheckerPackageVersion)) $palette.Text
+        Write-PnpValue 'Installed' ('Scanner 3.90 / package '+(Get-CheckerPackageVersion)) $palette.Text
         Write-PnpValue 'Automatic updates' $(if($preferences.Enabled){'On. Standalone-launcher sessions prepare updates and install after normal Exit.'}else{'Off. Enable this setting to install a prepared update after normal Exit.'}) $palette.Muted
         if($preferences.Warning){Write-PnpValue 'Preferences' $preferences.Warning $palette.Warn}
         $result=Read-CheckerUpdateResult $paths
@@ -4807,7 +4834,7 @@ function Save-Reports {
         $lines = @(
             'HWID CHECKER - HARDWARE REPORT'
             '========== Report info =========='
-            (Get-PlainRecords $report['Report info'])
+            (Get-PlainRecords $report['Report info'] 'Report info')
             if($report.Contains('Compatibility')){'========== Runtime compatibility ==========';Get-PlainRecords $report['Compatibility']}
             foreach ($group in $sectionGroups.Keys) {
                 "`n========== $group =========="
@@ -4824,7 +4851,7 @@ function Save-Reports {
             }
             if($report.Contains('Extended scan info')) {
                 '========== Extended scan / separate capture =========='
-                Get-PlainRecords $report['Extended scan info']
+                Get-PlainRecords $report['Extended scan info'] 'Extended scan info'
                 Get-PlainRecords $report['Extended device inventory']
             }
             if($report.Contains('Scan timing')){'========== Scan timing / seconds ==========';Get-PlainRecords $report['Scan timing']}

@@ -1,5 +1,24 @@
 # Desktop verification
 
+## Desktop 1.4.5 and BAT 3.90
+
+The build uses the self-contained .NET 10 Windows x64 runtime.
+
+| Check | Result |
+| --- | --- |
+| Desktop type and hardware view | 14 readability checks passed for regular 14-DIP body text, full section names/counts, hardware-first selection, readable metadata and original-value detail/copy |
+| Desktop interactions and workflow | 47 interactions and 22/24 legacy/shared workflows passed; all six pages passed default, 640 × 480 and 840 × 560 stress renders |
+| Desktop display models | 27 checks passed, including descriptive RAM slot titles, access-level fallbacks, accurate counts, readable timestamps and unchanged raw identifiers/JSON |
+| Scanner process transport | 42 checks passed, including bounded streamed lines, Unicode/CRLF/EOF handling, prompt reported-error handling, cancellation and exact temporary-file cleanup |
+| BAT and bridge | 878 numbered checks passed per runtime on Windows PowerShell 5.1 and PowerShell 7, including metadata/TXT entry points, absolute paths and existing scanner regressions |
+| Classic console | Native checks passed on both runtimes: minimum 18px regular Consolas, preservation of a larger 24px font, scrolling, rescans, animations and input/cursor restoration |
+| Version/update controls | 104 shared updater and 49 console-update checks passed per runtime after the version bump |
+| Final packaged app | 14 readability, 47 interaction and 24 shared-workflow checks passed; a live scan read 18/18 sections, returned 178 known device records and recorded 26 responsive UI ticks |
+
+The reduced-space layouts use the current OS DPI; they do not switch Windows display scaling. Synthetic report tests use synthetic identifiers. Native console font changes are confined to the owned checker window, and no global console settings are changed.
+
+The published archive SHA-256 is provided in [SHA256SUMS.txt](https://github.com/justcamop555-pixel/HWID-Checker/releases/download/desktop-v1.4.5/SHA256SUMS.txt). The archive includes a second `SHA256SUMS.txt` covering the executable and companion files.
+
 ## Desktop 1.4.4 and BAT 3.89
 
 Verified on Windows build 26300 with .NET SDK 10.0.403 and self-contained .NET 10.0.14 runtime packs.

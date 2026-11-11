@@ -2,6 +2,14 @@
 
 [Back to the main README](../README.md)
 
+## Desktop 1.4.5 and BAT 3.90
+
+- Increased the default desktop body font and reduced small or overly bold text. Hardware navigation and controls leave more room for readable section names and values.
+- Hardware opens on PC details, with clearer section names, record titles, metadata labels and readable timestamps. Technical scan information remains available, and raw identifiers/JSON stay unchanged.
+- Improved the owned BAT console's regular font size without changing global console preferences.
+- Fixed the desktop waiting for a scanner process after that process has already reported an error. Oversized unterminated responses are now rejected while reading instead of after allocating the entire line.
+- Tightened desktop bridge path validation so drive-relative and current-drive-relative paths cannot masquerade as absolute snapshot paths.
+
 ## Desktop 1.4.4 and BAT 3.89
 
 - Added clear Review and Compare guidance for a first scan, empty results, searches with no matches, and completed comparisons. Empty tables no longer leave the next step unexplained.

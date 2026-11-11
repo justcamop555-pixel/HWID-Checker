@@ -30,6 +30,27 @@ async Task ExpectEngine(string code, Func<Task> action)
 
 try
 {
+    using (var bytes = new MemoryStream(Encoding.UTF8.GetBytes("é\r\n\r中文\nlast")))
+    using (var reader = new StreamReader(bytes, Encoding.UTF8))
+    {
+        var protocol = new EngineProtocolReader(reader, 32);
+        var lines = new List<string?>();
+        for (int index = 0; index < 5; index++) lines.Add(await protocol.ReadLineAsync(CancellationToken.None));
+        Assert(lines.SequenceEqual(new string?[] { "é", "", "中文", "last", null }), "Bounded protocol reading preserves Unicode, CR/LF and the last line without a terminator");
+    }
+    using (var bytes = new MemoryStream(Encoding.UTF8.GetBytes("1234\r\nnext")))
+    using (var reader = new StreamReader(bytes, Encoding.UTF8))
+    {
+        var protocol = new EngineProtocolReader(reader, 4);
+        Assert(await protocol.ReadLineAsync(CancellationToken.None) == "1234" && await protocol.ReadLineAsync(CancellationToken.None) == "next", "The exact line-size boundary remains valid across consecutive messages");
+    }
+    using (var bytes = new RepeatingInputStream())
+    using (var reader = new StreamReader(bytes, Encoding.UTF8))
+    {
+        var protocol = new EngineProtocolReader(reader, 128);
+        try { await protocol.ReadLineAsync(CancellationToken.None); throw new Exception("Expected oversized protocol failure"); }
+        catch (EngineException ex) { Assert(ex.Code == "ENGINE-PROTOCOL" && bytes.BytesRead <= 32768, "An oversized unterminated response is rejected before consuming the rest of the stream"); }
+    }
     Mode("normal");
     using EngineClient client = new(bat);
     List<BridgeProgress> updates = new();
@@ -58,6 +79,11 @@ try
     Mode("error");
     try { await client.ScanAsync(null, CancellationToken.None); throw new Exception("Expected synthetic failure"); }
     catch (EngineException ex) { Assert(ex.Code == "READ-02" && ex.Message.Contains("é 中文"), "Reported error retains its code and Unicode detail"); }
+    Cleaned();
+    Mode("error-hang");
+    clock.Restart();
+    try { await client.ScanAsync(null, CancellationToken.None); throw new Exception("Expected immediate failure"); }
+    catch (EngineException ex) { Assert(ex.Code == "READ-02" && ex.Message.Contains("é 中文") && clock.Elapsed < TimeSpan.FromSeconds(8), "A reported scan error ends the owned process promptly even when its shutdown hangs"); }
     Cleaned();
     foreach ((string mode, string code) in new[] { ("bad-json", "ENGINE-PROTOCOL"), ("duplicate", "ENGINE-PROTOCOL"), ("no-result", "ENGINE-PROTOCOL"), ("incomplete", "ENGINE-PROTOCOL"), ("bad-exit", "ENGINE-04") })
     {
@@ -126,4 +152,25 @@ finally
 sealed class InlineProgress(Action<BridgeProgress> handler) : IProgress<BridgeProgress>
 {
     public void Report(BridgeProgress value) => handler(value);
+}
+
+sealed class RepeatingInputStream : Stream
+{
+    public long BytesRead { get; private set; }
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => 1_000_000;
+    public override long Position { get => BytesRead; set => throw new NotSupportedException(); }
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        int read = (int)Math.Min(count, Length - BytesRead);
+        Array.Fill(buffer, (byte)'A', offset, read);
+        BytesRead += read;
+        return read;
+    }
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }

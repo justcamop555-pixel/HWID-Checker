@@ -2,7 +2,7 @@
 
 A Windows desktop interface for the existing HWID Checker scanner. The application launches the PowerShell scanner embedded in the adjacent `hwid.bat`, then presents its results in a graphical dashboard.
 
-Desktop **1.4.4** pairs with BAT **3.89** for a shared local snapshot library and application updates. See the [changelog](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/CHANGELOG.md) for release details.
+Desktop **1.4.5** pairs with BAT **3.90** for a shared local snapshot library and application updates. See the [changelog](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/CHANGELOG.md) for release details.
 
 ## Start the application
 
@@ -32,7 +32,9 @@ For a first check, choose **Scan this PC**, wait for the results, then open **Re
 | Theme and restart | Switch between **Midnight** and **Daylight**, or use **Restart app** in the sidebar. |
 | Updates | Check newer packages, download a verified update, and install it after closing or with **Install and restart**. |
 
-The square layout keeps table headers aligned with their card borders. In a narrow window, the scan buttons move below the page title, PC details stack vertically, and **Hardware** uses a section dropdown. While scanning, the activity table uses the overview space. Hover over truncated text for the full value, or select a table row to read and copy its details.
+The square layout keeps table headers aligned with their card borders. Body text uses regular Segoe UI with a larger default size. In a narrow window, the scan buttons move below the page title, PC details stack vertically, and **Hardware** uses a section dropdown. While scanning, the activity table uses the overview space. Hover over shortened text for the full value, or select a table row to read and copy its details.
+
+**Hardware** starts with PC details rather than internal report metadata. Names such as **Memory (RAM)** and **Graphics (GPU)** describe the captured sections; scan information and diagnostics remain available further down the list. Capture times and access level use readable labels. Identifier text and saved JSON retain the Windows-reported values.
 
 You can cancel a running scan. The last completed scan remains available until a replacement finishes successfully. A scan can finish with unread sections; those results remain explicitly marked and should be reviewed before interpreting a comparison.
 

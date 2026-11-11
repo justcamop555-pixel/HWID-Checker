@@ -57,6 +57,9 @@ Assert ($scan.Data.version -eq $scan.Data.inventory.'Report info'.Version -and $
 Assert ($scan.Data.inventory.CPU[0].ProcessorId -ceq 'CPU-000123' -and $scan.Data.inventory.'Memory modules'[0].SerialNumber -ceq '000123' -and $scan.Data.inventory.'Report info'.Computer -ceq 'SYNTHETIC-PC') 'Synthetic scan results preserve exact identifiers without querying actual hardware IDs'
 Assert ($scan.Data.fieldLabels.'Memory modules'.Speed -match 'raw' -and $scan.Data.fieldValues.'Memory modules'[0].ConfiguredClockSpeed -match 'Unknown') 'Display metadata reuses section-specific engine labels and unknown-clock formatting'
 Assert ($scan.Data.inventory.'Memory modules'[0].ConfiguredClockSpeed -eq 0 -and $scan.Data.inventory.'Memory modules'[0].Speed -eq 3200) 'Display formatting leaves raw inventory values untouched'
+Assert ($scan.Data.fieldLabels.'Report info'.Generated -ceq 'Captured at' -and $scan.Data.fieldLabels.'Report info'.Computer -ceq 'PC name' -and $scan.Data.fieldLabels.'Report info'.Administrator -ceq 'Access level' -and $scan.Data.fieldLabels.'Report info'.Version -ceq 'Scanner version') 'Report information exposes clear section-specific metadata labels'
+Assert ($scan.Data.fieldValues.'Report info'[0].Generated -match '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{2}:\d{2}$' -and $scan.Data.fieldValues.'Report info'[0].Administrator -in @('Standard user','Administrator') -and $scan.Data.fieldValues.'Report info'[0].ExtendedStatus -ceq 'Device list read') 'Desktop metadata values use readable dates, access levels and read status'
+Assert ([string]$scan.Data.inventory.'Report info'.Generated -ceq [string]$scan.Data.captured -and $scan.Data.inventory.'Report info'.Administrator -is [bool] -and $scan.Data.fieldValues.'Report info'[0].Generated -cne [string]$scan.Data.captured) 'Friendly desktop metadata leaves raw timestamps and boolean types intact'
 Assert ($scan.Data.identifiers.Count -gt 0 -and $null -ne $scan.Data.review.Total -and $scan.Data.warnings.Count -eq 0) 'The desktop receives engine identifier quality and warning-review data'
 Assert ($scan.Data.inventory.Windows[0].SecureBoot -ceq 'Enabled') 'The scan worker honors the injected Secure Boot reader instead of bypassing it'
 if($FixtureOutput){$fixturePath=[IO.Path]::GetFullPath($FixtureOutput);[void][IO.Directory]::CreateDirectory((Split-Path -Parent $fixturePath));Save-Json $fixturePath $scan.Data}
@@ -92,6 +95,10 @@ $invalid=Invoke-Bridge Scan $badFixture $null 1
 Assert ($invalid.Results.Count -eq 0 -and $invalid.Errors.Count -eq 1 -and $invalid.Errors[0].code -eq 'BRIDGE-01') 'An incomplete companion BAT produces one actionable bootstrap error'
 $missing=Invoke-Bridge Scan (Join-Path $root 'missing.bat') $null 1
 Assert ($missing.Results.Count -eq 0 -and $missing.Errors.Count -eq 1 -and $missing.Errors[0].message -match 'not found') 'A missing BAT cannot appear as a completed scan'
+$driveRelative=Invoke-Bridge Scan 'C:relative-engine.bat' $null 1
+Assert ($driveRelative.Results.Count -eq 0 -and $driveRelative.Errors.Count -eq 1 -and $driveRelative.Errors[0].code -ceq 'BRIDGE-01' -and $driveRelative.Errors[0].message -match 'must be an absolute path') 'Drive-relative engine paths are rejected rather than resolved against hidden working state'
+$rootRelative=Invoke-Bridge Compare $fixture @{previousPath='\relative-snapshot.json';currentPath=$inventoryPath} 1
+Assert ($rootRelative.Results.Count -eq 0 -and $rootRelative.Errors.Count -eq 1 -and $rootRelative.Errors[0].code -ceq 'BRIDGE-03' -and $rootRelative.Errors[0].message -match 'must be an absolute path') 'Current-drive-relative snapshot paths are rejected before any report is opened'
 $malformed=Invoke-Bridge Export $fixture @('not','an','object') 1
 Assert ($malformed.Results.Count -eq 0 -and $malformed.Errors.Count -eq 1 -and $malformed.Errors[0].code -eq 'BRIDGE-03') 'Array-shaped desktop requests are rejected before writing files'
 $absentRequest=Invoke-Bridge Compare $fixture $null 1

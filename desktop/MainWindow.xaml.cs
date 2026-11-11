@@ -74,7 +74,7 @@ public partial class MainWindow : Window
     private bool _comparisonHasFields, _comparisonHasGaps, _comparisonSameFile;
     private int _scanGeneration, _scanCompletedStages, _scanTotalStages = ScanSectionNames.Length;
     private bool IsVerification => _args.Any(argument => argument.Split('=', 2)[0].ToLowerInvariant() is
-        "--fixture" or "--render" or "--scan-test" or "--workflow-test" or "--ui-test");
+        "--fixture" or "--render" or "--scan-test" or "--workflow-test" or "--ui-test" or "--readability-test");
     private int _ticks, _responsiveTicks;
     private string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HWID Checker", "Desktop", "settings.json");
     private string DefaultReportsFolder => Path.Combine(Path.GetDirectoryName(_engine?.BatPath) ?? AppContext.BaseDirectory, "HWID-Reports");
@@ -143,6 +143,7 @@ public partial class MainWindow : Window
         var workflow = Argument("--workflow-test");
         if (workflow != null) await VerifyWorkflowAsync(workflow);
         if (Argument("--ui-test") is { } uiTest) await VerifyUiRegressionAsync(uiTest);
+        if (Argument("--readability-test") is { } readabilityTest) await VerifyReadabilityAsync(readabilityTest);
         var scanTest = Argument("--scan-test");
         if (scanTest != null)
         {
@@ -219,24 +220,24 @@ public partial class MainWindow : Window
             button.Padding = shortWindow ? new Thickness(9, 8, 9, 8) : new Thickness(12, 10, 12, 10);
             button.Margin = shortWindow ? new Thickness(0, 1, 0, 1) : new Thickness(0, 2, 0, 2);
         }
-        Workspace.Margin = new Thickness(inset, shortWindow ? 12 : 20, inset, shortWindow ? 8 : 12);
+        Workspace.Margin = new Thickness(inset, shortWindow ? 10 : 20, inset, shortWindow ? 8 : 12);
         PageTitle.FontSize = stackedHeader ? 24 : 28;
         PageSubtitle.Visibility = shortWindow ? Visibility.Collapsed : Visibility.Visible;
-        HeaderPanel.Margin = new Thickness(0, 0, 0, shortWindow ? 8 : 12);
+        HeaderPanel.Margin = new Thickness(0, 0, 0, shortWindow ? 6 : 12);
         StatusPanel.Padding = shortWindow ? new Thickness(10, 6, 10, 6) : new Thickness(11, 8, 11, 8);
-        StatusPanel.Margin = new Thickness(0, 0, 0, shortWindow ? 8 : 13);
-        FooterPanel.Margin = new Thickness(0, shortWindow ? 6 : 9, 0, 0);
+        StatusPanel.Margin = new Thickness(0, 0, 0, shortWindow ? 6 : 13);
+        FooterPanel.Margin = new Thickness(0, shortWindow ? 4 : 9, 0, 0);
         foreach (var button in HeaderActions.Children.OfType<Button>())
         {
             button.Padding = shortWindow ? new Thickness(9, 5, 9, 5) : new Thickness(15, 10, 15, 10);
-            button.FontSize = shortWindow || button == ConnectButton ? 12 : 13;
+            button.FontSize = shortWindow ? 13 : 14;
         }
         HeaderText.Margin = stackedHeader ? new Thickness(0) : new Thickness(0, 0, 14, 0);
         Grid.SetColumnSpan(HeaderText, stackedHeader ? 2 : 1);
         Grid.SetRow(HeaderActions, stackedHeader ? 1 : 0);
         Grid.SetColumn(HeaderActions, stackedHeader ? 0 : 1);
         Grid.SetColumnSpan(HeaderActions, stackedHeader ? 2 : 1);
-        HeaderActions.Margin = stackedHeader ? new Thickness(0, 8, 0, 0) : new Thickness(0);
+        HeaderActions.Margin = stackedHeader ? new Thickness(0, shortWindow ? 6 : 8, 0, 0) : new Thickness(0);
         var stackedComparison = workspace < 735;
         Grid.SetRow(CompareActions, stackedComparison ? 1 : 0);
         Grid.SetColumn(CompareActions, stackedComparison ? 0 : 1);
@@ -257,15 +258,16 @@ public partial class MainWindow : Window
         Grid.SetColumn(WindowsSummary, stackedComputer ? 0 : 2);
         ComputerSummary.Margin = stackedComputer ? new Thickness(0, 0, 0, 10) : new Thickness(0, 0, 14, 0);
         CpuSummary.Margin = stackedComputer ? new Thickness(0, 0, 0, 10) : new Thickness(0, 0, 14, 0);
-        HardwareSectionsColumn.Width = new GridLength(compactHardware ? 0 : 174);
+        HardwareSectionsColumn.Width = new GridLength(compactHardware ? 0 : 210);
         HardwareSectionsPanel.Visibility = compactHardware ? Visibility.Collapsed : Visibility.Visible;
         HardwareSectionPicker.Visibility = compactHardware ? Visibility.Visible : Visibility.Collapsed;
         HardwareSectionTitle.Visibility = compactHardware ? Visibility.Collapsed : Visibility.Visible;
         Grid.SetColumn(HardwareRecord, compactHardware ? 1 : 0);
         Grid.SetColumnSpan(HardwareRecord, compactHardware ? 1 : 2);
         HardwareSearch.Padding = shortWindow ? new Thickness(8, 5, 8, 5) : new Thickness(12, 9, 12, 9);
-        HardwareSearchHost.Margin = new Thickness(0, 0, 0, shortWindow ? 5 : 8);
-        HardwareDetailRow.MinHeight = shortWindow ? 54 : 66;
+        HardwareSearchHost.Margin = new Thickness(0, 0, 0, shortWindow ? 4 : 8);
+        HardwareDetailRow.MinHeight = shortWindow ? 52 : 70;
+        CompareDetailRow.MinHeight = CompareDetailPanel.Visibility == Visibility.Visible ? shortWindow ? 66 : 76 : 0;
         foreach (var picker in new[] { HardwareSectionPicker, HardwareRecord })
         {
             picker.MinHeight = shortWindow ? 30 : 38;
@@ -274,8 +276,8 @@ public partial class MainWindow : Window
         CopyHardwareButton.Padding = shortWindow ? new Thickness(9, 5, 9, 5) : new Thickness(15, 10, 15, 10);
         foreach (var table in new[] { ScanGrid, IdentifiersGrid, HardwareFields, ReviewGrid, SnapshotsGrid, CompareGrid })
         {
-            table.RowHeight = shortWindow ? 32 : 40;
-            table.ColumnHeaderHeight = shortWindow ? 32 : 39;
+            table.RowHeight = shortWindow ? 34 : 42;
+            table.ColumnHeaderHeight = shortWindow ? 36 : 40;
         }
     }
     private string? FindEngine()
@@ -638,7 +640,7 @@ public partial class MainWindow : Window
         CompareEmptyState.Visibility = hasChanges ? Visibility.Collapsed : Visibility.Visible;
         CompareDetailPanel.Visibility = hasComparison || hasChanges ? Visibility.Visible : Visibility.Collapsed;
         CompareSkippedText.Visibility = hasChanges ? Visibility.Visible : Visibility.Collapsed;
-        CompareDetailRow.MinHeight = hasComparison || hasChanges ? 72 : 0;
+        CompareDetailRow.MinHeight = hasComparison || hasChanges ? Dashboard.ActualHeight < 600 ? 66 : 76 : 0;
         CompareDetailRow.Height = new GridLength(hasComparison || hasChanges ? 0.5 : 0, GridUnitType.Star);
         if (comparing)
             CompareSummaryText.Text = hasComparison ? "Comparing… previous results remain below." : "Comparing the selected captures…";
@@ -772,6 +774,7 @@ public partial class MainWindow : Window
     }
     private void ApplySnapshot(DesktopSnapshot snapshot)
     {
+        var previousSection = (HardwareSections.SelectedItem as HardwareSection)?.Name;
         _snapshot = snapshot;
         IdsCount.Text = snapshot.ReportedIds.ToString("N0"); SectionsCount.Text = snapshot.SectionsRead + " / 18";
         ReviewCount.Text = snapshot.Findings.Count.ToString("N0"); DevicesCount.Text = snapshot.DeviceCount.ToString("N0");
@@ -801,8 +804,15 @@ public partial class MainWindow : Window
         CompareExportButton.IsEnabled = false;
         CompareDetail.Clear();
         HardwareSections.SelectedIndex = -1;
-        HardwareSections.ItemsSource = snapshot.Inventory.EnumerateObject().Select(x => new HardwareSection(x.Name, x.Value.Rows().Length)).ToArray();
-        HardwareSections.SelectedIndex = 0;
+        var sections = snapshot.Sections.OrderBy(section => section.Name == "System hardware" ? 0 :
+            section.Name is "Report info" or "Compatibility" or "Scan timing" or "Warnings" or "Extended scan info" ? 2 : 1).ToArray();
+        HardwareSections.ItemsSource = sections;
+        HardwareSections.SelectedItem = sections.FirstOrDefault(section => section.Name == previousSection) ??
+            sections.FirstOrDefault(section => section.Name == "System hardware" && section.Count > 0) ??
+            sections.FirstOrDefault(section => section.Name == "CPU" && section.Count > 0) ??
+            sections.FirstOrDefault(section => section.Count > 0 && ScanSectionNames.Contains(section.Name)) ??
+            sections.FirstOrDefault(section => section.Name == "Extended device inventory" && section.Count > 0) ??
+            sections.FirstOrDefault();
         UpdateButtons();
     }
     private void PopulateScanRows(DesktopSnapshot snapshot)
@@ -881,12 +891,17 @@ public partial class MainWindow : Window
         if (_snapshot == null || HardwareSections.SelectedItem is not HardwareSection section)
         {
             HardwareSectionTitle.Text = "Hardware fields";
+            SetSummary(HardwareCountText, "No records");
+            HardwareSectionPicker.ToolTip = null;
             HardwareRecord.ItemsSource = null;
             HardwareFields.ItemsSource = null;
             HardwareDetail.Clear();
             return;
         }
-        HardwareSectionTitle.Text = section.Name;
+        SetSummary(HardwareSectionTitle, section.FriendlyName, section.Display);
+        SetSummary(HardwareCountText, section.CountText, section.Display);
+        HardwareSectionPicker.ToolTip = section.Display;
+        HardwareSearch.ToolTip = "Search records in this section. " + DesktopSnapshot.SectionDescription(section.Name);
         PopulateHardwareRecords(section);
     }
     private void PopulateHardwareRecords(HardwareSection section)
@@ -897,7 +912,7 @@ public partial class MainWindow : Window
             .Select((value, index) => (value, index, title: new[] { "FriendlyName", "Name", "Model", "DeviceLocator", "DeviceID", "Section" }.Select(name => value.Text(name)).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))))
             .Where(entry => needle.Length == 0 || entry.title?.Contains(needle, StringComparison.OrdinalIgnoreCase) == true ||
                 HardwareValueMatches(entry.value, needle))
-            .Select((entry, position) => new HardwareRecord($"{position + 1}. " + (entry.title ?? "Record"), entry.value, entry.index))
+            .Select(entry => new HardwareRecord(_snapshot.RecordTitle(section.Name, entry.value, entry.index), entry.value, entry.index))
             .ToArray();
         HardwareRecord.SelectedIndex = HardwareRecord.Items.Count > 0 ? 0 : -1;
         if (HardwareRecord.Items.Count == 0) { HardwareFields.ItemsSource = Array.Empty<FieldRow>(); HardwareDetail.Text = needle.Length == 0 ? "No records captured for this section." : "No records in this section match the search."; }
@@ -920,16 +935,19 @@ public partial class MainWindow : Window
             HardwareDetail.Clear();
             return;
         }
-        HardwareFields.ItemsSource = record.Data.ValueKind == JsonValueKind.Object ? record.Data.EnumerateObject().Select(x => new FieldRow(_snapshot.Label(section.Name, x.Name), _snapshot.FieldValue(section.Name, record.Index, x.Name, x.Value))).ToArray() : [new FieldRow("Value", record.Data.Display())];
-        HardwareDetail.Text = "Select a field to read or copy its full value.";
+        HardwareFields.ItemsSource = record.Data.ValueKind == JsonValueKind.Object ? record.Data.EnumerateObject().Select(field =>
+            new FieldRow(_snapshot.Label(section.Name, field.Name), _snapshot.FieldValue(section.Name, record.Index, field.Name, field.Value),
+                field.Value.ValueKind is JsonValueKind.Array or JsonValueKind.Object ? field.Value.GetRawText() : field.Value.Text())).ToArray() :
+            [new FieldRow("Value", record.Data.Display(), record.Data.ValueKind is JsonValueKind.Array or JsonValueKind.Object ? record.Data.GetRawText() : record.Data.Text())];
+        HardwareDetail.Text = "Select a field for the full value.";
     }
     private void OnHardwareFieldSelected(object sender, SelectionChangedEventArgs e)
     {
         HardwareDetail.Text = HardwareFields.SelectedItem is FieldRow field
-            ? field.Field + "\n" + field.Value
-            : "Select a field to read or copy its full value.";
+            ? field.Field + "\n" + field.Value + (field.RawValue != null && field.RawValue != field.Value ? "\n\nOriginal value\n" + field.RawValue : "")
+            : "Select a field for the full value.";
     }
-    private void OnCopyField(object sender, RoutedEventArgs e) { if (HardwareFields.SelectedItem is FieldRow field) Copy(field.Value); }
+    private void OnCopyField(object sender, RoutedEventArgs e) { if (HardwareFields.SelectedItem is FieldRow field) Copy(field.RawValue ?? field.Value); }
     private void OnReviewSelected(object sender, SelectionChangedEventArgs e) { ReviewDetail.Text = ReviewGrid.SelectedItem is ReviewRow row ? row.Message + "\n\n" + row.Detail : ""; }
 
     private SnapshotLibrarySettings ReadSharedLibrary() =>
@@ -1567,6 +1585,128 @@ public partial class MainWindow : Window
         layoutStress = _args.Contains("--layout-stress", StringComparer.OrdinalIgnoreCase)
     }, new JsonSerializerOptions { WriteIndented = true }));
 
+    private async Task VerifyReadabilityAsync(string resultPath)
+    {
+        if (!IsVerification || _snapshot == null) throw new InvalidOperationException("A synthetic fixture is required.");
+        var original = _snapshot;
+        var originalSection = (HardwareSections.SelectedItem as HardwareSection)?.Name;
+        var originalWidth = Width;
+        var originalHeight = Height;
+        var originalPage = _page;
+        var checks = new List<string>();
+        void Check(bool condition, string name)
+        {
+            if (!condition) throw new InvalidOperationException("Dashboard layout: readability: " + name);
+            checks.Add(name);
+        }
+        async Task SettleAsync()
+        {
+            await Task.Delay(180);
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            UpdateLayout();
+        }
+        async Task CaptureAsync(string name)
+        {
+            await SettleAsync();
+            var surface = (FrameworkElement)Content;
+            var image = new RenderTargetBitmap((int)Math.Ceiling(surface.ActualWidth), (int)Math.Ceiling(surface.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+            image.Render(surface);
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(image));
+            using var stream = File.Create(Path.Combine(Path.GetDirectoryName(resultPath)!, name + ".png"));
+            encoder.Save(stream);
+        }
+        HardwareSection Section(string name) => HardwareSections.Items.Cast<HardwareSection>().First(section => section.Name == name);
+        try
+        {
+            Check(FontFamily.Source == "Segoe UI" && FontSize == 14 &&
+                TextOptions.GetTextFormattingMode(this) == TextFormattingMode.Display, "the default body uses readable Segoe UI at 14 DIPs");
+            var header = new System.Windows.Controls.Primitives.DataGridColumnHeader { Style = (Style)FindResource(typeof(System.Windows.Controls.Primitives.DataGridColumnHeader)) };
+            var cell = new TextBlock { Style = (Style)FindResource("CellText") };
+            Check(cell.FontSize == 14 && cell.FontWeight == FontWeights.Normal && header.FontSize >= 13 &&
+                header.FontWeight == FontWeights.Normal, "table values and headers avoid tiny or bold text");
+            Check(HardwareSections.SelectedItem is HardwareSection selected && selected.Name == "System hardware" &&
+                HardwareRecord.SelectedItem is HardwareRecord selectedRecord && selectedRecord.Data.Text("Model").Length > 0,
+                "the initial hardware view opens captured PC hardware");
+            Check(Section("System hardware").CountText == "1 record" && HardwareCountText.Text == "1 record" &&
+                Section("Report info").Display.Contains("entry"),
+                "section counts include clear singular units");
+            Width = Math.Min(1260, SystemParameters.WorkArea.Width - 16);
+            Height = Math.Min(850, SystemParameters.WorkArea.Height - 16);
+            Navigate("Hardware");
+            await SettleAsync();
+            var sectionTemplate = (StackPanel)HardwareSections.ItemTemplate.LoadContent();
+            Check(sectionTemplate.Children.OfType<TextBlock>().First().TextWrapping == TextWrapping.Wrap &&
+                sectionTemplate.Children.OfType<TextBlock>().Count() == 2, "wide section names wrap with a separate readable count");
+            Check(HardwareRecord.SelectedItem is HardwareRecord named && named.Title != "Record" && named.Title != "Record 1",
+                "the selected hardware record has a descriptive title");
+            await CaptureAsync("hardware-default");
+
+            HardwareSections.SelectedItem = Section("Report info");
+            var rawDate = original.Info.Text("Generated");
+            var captured = HardwareFields.Items.Cast<FieldRow>().First(field => field.RawValue == rawDate);
+            HardwareFields.SelectedItem = captured;
+            Check(captured.Field == "Captured at" && captured.Value != rawDate &&
+                HardwareRecord.SelectedItem is HardwareRecord metadata && metadata.Title == "Snapshot details",
+                "advanced capture details use readable labels and timestamps");
+            var access = HardwareFields.Items.Cast<FieldRow>().First(field => field.Field == "Access level");
+            Check(access.Value == (original.Info.Flag("Administrator") ? "Administrator" : "Standard user") &&
+                access.RawValue == original.Info.Text("Administrator"), "access level explains legacy boolean metadata and preserves the original");
+            Check(HardwareDetail.Text.Contains("Original value") && HardwareDetail.Text.Contains(rawDate),
+                "formatted metadata retains the full original value in details");
+            await CaptureAsync("hardware-capture-details");
+            HardwareSections.SelectedItem = Section("CPU");
+            var rawId = original.First("CPU", "ProcessorId");
+            var identifier = HardwareFields.Items.Cast<FieldRow>().First(field => field.RawValue == rawId);
+            HardwareFields.SelectedItem = identifier;
+            Check(identifier.Value == rawId && HardwareDetail.Text.Contains(rawId) &&
+                HardwareDetail.FontFamily.Source == "Consolas", "exact identifiers remain available in a monospaced detail view");
+            ApplySnapshot(new DesktopSnapshot(original.Data));
+            Check(HardwareSections.SelectedItem is HardwareSection retained && retained.Name == "CPU",
+                "a refreshed snapshot retains an explicitly selected hardware section");
+
+            var catalog = System.Text.Json.Nodes.JsonNode.Parse(original.Data.GetRawText())!;
+            foreach (var section in ScanSectionNames.Where(name => name != "All-known device catalog"))
+                catalog["inventory"]![section] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject { ["Unavailable"] = "Synthetic unavailable section" });
+            catalog["inventory"]!["Extended device inventory"] = new System.Text.Json.Nodes.JsonArray(
+                new System.Text.Json.Nodes.JsonObject { ["Name"] = "Synthetic readable device", ["DeviceInstanceId"] = "ROOT\\SYNTHETIC" });
+            HardwareSections.SelectedIndex = -1;
+            using (var document = JsonDocument.Parse(catalog.ToJsonString()))
+                ApplySnapshot(new DesktopSnapshot(document.RootElement));
+            Check(HardwareSections.SelectedItem is HardwareSection available && available.Name == "Extended device inventory",
+                "catalog-only captures default to readable device data");
+            ApplySnapshot(original);
+            HardwareSections.SelectedItem = Section("System hardware");
+            Width = 640;
+            Height = 480;
+            await SettleAsync();
+            VerifyLayoutStress();
+            Check(HardwareSectionPicker.IsVisible && HardwareFields.ActualHeight >= 80 && HardwareFields.FontSize == 14,
+                "compact hardware keeps readable values and working section controls");
+            await CaptureAsync("hardware-compact");
+            Width = 840;
+            Height = 560;
+            await SettleAsync();
+            VerifyLayoutStress();
+            Check(HardwareFields.ActualHeight >= 80 && HardwareFields.FontSize == 14,
+                "reduced logical space retains the body size and visible table");
+            await CaptureAsync("hardware-reduced-space");
+            await File.WriteAllTextAsync(resultPath, JsonSerializer.Serialize(new
+            {
+                success = true, checks = checks.Count, names = checks, syntheticOnly = true, hardwareIdentifiersSaved = false
+            }, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        finally
+        {
+            Width = originalWidth;
+            Height = originalHeight;
+            ApplySnapshot(original);
+            HardwareSections.SelectedItem = HardwareSections.Items.Cast<HardwareSection>().FirstOrDefault(section => section.Name == originalSection);
+            Navigate(originalPage);
+            await SettleAsync();
+        }
+    }
+
     private async Task VerifyUiRegressionAsync(string resultPath)
     {
         if (!IsVerification || _snapshot == null) throw new InvalidOperationException("A synthetic fixture is required.");
@@ -1856,6 +1996,7 @@ public partial class MainWindow : Window
         ApplySnapshot(new DesktopSnapshot(original.Data));
         Check(ReviewGrid.SelectedIndex == -1 && IdentifiersGrid.SelectedIndex == -1 && ReviewDetail.Text.Length == 0 && IdDetail.Text.Length == 0,
             "new snapshot clears stale finding and ID selections and details");
+        HardwareSections.SelectedItem = HardwareSections.Items.Cast<HardwareSection>().First(section => section.Name == "Report info");
         var rescanned = System.Text.Json.Nodes.JsonNode.Parse(original.Data.GetRawText())!;
         rescanned["inventory"]!["Report info"]!["Computer"] = "SYNTHETIC-RESCAN";
         using (var data = JsonDocument.Parse(rescanned.ToJsonString()))

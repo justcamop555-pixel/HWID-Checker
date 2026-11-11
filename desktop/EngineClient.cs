@@ -23,6 +23,44 @@ internal sealed class EngineException : Exception
         : base(message, inner) => Code = code;
 }
 
+internal sealed class EngineProtocolReader(StreamReader reader, int maximumLineLength)
+{
+    private readonly char[] buffer = new char[8192];
+    private int position, available;
+    private bool skipLf;
+
+    public async Task<string?> ReadLineAsync(CancellationToken token)
+    {
+        StringBuilder line = new();
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            if (position == available)
+            {
+                available = await reader.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false);
+                position = 0;
+                if (available == 0) return line.Length == 0 ? null : line.ToString();
+            }
+            if (skipLf)
+            {
+                skipLf = false;
+                if (buffer[position] == '\n') { position++; continue; }
+            }
+            int start = position;
+            while (position < available && buffer[position] is not ('\r' or '\n')) position++;
+            int length = position - start;
+            if (length > maximumLineLength - line.Length)
+                throw new EngineException("The engine response exceeded the supported size.", "ENGINE-PROTOCOL");
+            line.Append(buffer, start, length);
+            if (position < available)
+            {
+                skipLf = buffer[position++] == '\r';
+                return line.ToString();
+            }
+        }
+    }
+}
+
 /// <summary>Runs the BAT's existing scanner through the embedded PowerShell bridge.</summary>
 internal sealed class EngineClient : IDisposable
 {
@@ -154,11 +192,11 @@ internal sealed class EngineClient : IDisposable
             lock (sync) activeProcess = process;
             using CancellationTokenRegistration registration = token.Register(() => StopOwnedProcess(process));
             stderrTask = DrainErrorAsync(process.StandardError, token);
+            EngineProtocolReader protocol = new(process.StandardOutput, MaximumProtocolLine);
             JsonElement? result = null;
-            EngineException? reportedError = null;
             while (true)
             {
-                string? line = await process.StandardOutput.ReadLineAsync(token).ConfigureAwait(false);
+                string? line = await protocol.ReadLineAsync(token).ConfigureAwait(false);
                 if (line is null) break;
                 line = line.TrimStart('\uFEFF');
                 if (string.IsNullOrWhiteSpace(line)) continue;
@@ -188,10 +226,9 @@ internal sealed class EngineClient : IDisposable
                         result = data.Clone();
                         break;
                     case "error":
-                        reportedError ??= new EngineException(
+                        throw new EngineException(
                             Diagnostic(Text(root, "message"), "The hardware engine could not finish this action."),
                             Diagnostic(Text(root, "code"), "ENGINE-03"));
-                        break;
                     default:
                         throw ProtocolFailure("The engine returned an unsupported response.");
                 }
@@ -199,7 +236,6 @@ internal sealed class EngineClient : IDisposable
             await process.WaitForExitAsync(token).ConfigureAwait(false);
             string stderr = await stderrTask.ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
-            if (reportedError is not null) throw reportedError;
             if (process.ExitCode != 0)
                 throw new EngineException(Diagnostic(stderr,
                     "The hardware engine closed before finishing. Check that PowerShell can run the linked BAT checker."), "ENGINE-04");

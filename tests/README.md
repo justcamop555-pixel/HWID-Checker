@@ -20,6 +20,7 @@ Tests are optional for users. Run them from the repository root in a Windows Pow
 | `test-updates.ps1` | Package version selection, archive and checksum validation, process waiting, installation and rollback | No |
 | `test-console-updates.ps1` | BAT background update scheduling, shared preferences and normal-exit controls | No |
 | `test-scan-readable-data.ps1` | 24 checks: wholly unreadable rescan/watch rejection, last-capture preservation, valid partial/catalog-only reads, honest comparison limits, worker helper consistency and device-ID menu routes | No |
+| `test-report-metadata.ps1` | 19 checks: section-aware metadata names/dates/access labels, real console/TXT entry points, unchanged raw JSON/identifiers, unknown values and alternate calendars | No |
 | `test-battery-scan.ps1` | 19 checks: supported provider fields, exact device IDs, optional absence, stable multi-battery comparison, contextual presence labels and unread-category counts | No |
 | `test-restart.ps1` | 11 checks: native fresh-window startup through the real BAT prelude, punctuation/Unicode directories, preference inheritance, startup acknowledgement and recoverable launch failures | No; opens a temporary console |
 | `test-animation.ps1` | 47 checks: bounded frames, directional timing, input interruption and resize/failure cleanup | No |

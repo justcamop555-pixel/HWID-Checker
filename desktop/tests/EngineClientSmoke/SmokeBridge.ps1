@@ -27,6 +27,7 @@ if($mode -eq 'read-guidance'){
 }else{Emit @{type='progress';section='CPU';name='Synthetic é 中文';completed=1;total=18;status='READ';records=1;message='Synthetic only'}}
 if($mode -eq 'slow'){Start-Sleep -Seconds 15}
 if($mode -eq 'error'){Emit @{type='error';code='READ-02';message='Synthetic localized é 中文 failure'};exit 1}
+if($mode -eq 'error-hang'){Emit @{type='error';code='READ-02';message='Synthetic localized é 中文 failure'};Start-Sleep -Seconds 15;exit 1}
 if($mode -eq 'bad-json'){[Console]::Out.WriteLine('invalid protocol');exit 0}
 if($mode -eq 'no-result'){exit 0}
 if($mode -eq 'incomplete'){Emit @{type='result';data=@{inventory=@{}}};exit 0}

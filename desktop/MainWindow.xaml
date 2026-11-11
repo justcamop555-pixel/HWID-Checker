@@ -31,17 +31,17 @@
                     <Button x:Name="CompareNav" Style="{StaticResource NavButton}" Tag="Compare" Click="OnNavigate" Content="Compare IDs"/>
                     <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,18,0,0" Padding="0,12,0,0">
                         <StackPanel>
-                            <Button Content="Open BAT console" Click="OnOpenConsole" FontSize="11" HorizontalContentAlignment="Left" Padding="8,8" Margin="0,0,0,9"/>
-                            <TextBlock x:Name="EngineConnectionText" Text="Connecting to BAT…" FontSize="11" FontWeight="SemiBold"
+                            <Button Content="Open BAT console" Click="OnOpenConsole" FontSize="13" Style="{StaticResource SidebarActionButton}" HorizontalContentAlignment="Left" Padding="8,8" Margin="0,0,0,9"/>
+                            <TextBlock x:Name="EngineConnectionText" Text="Connecting to BAT…" FontSize="13" FontWeight="SemiBold"
                                        Foreground="{DynamicResource AccentBrush}" Style="{StaticResource TrimmedText}"/>
-                            <TextBlock x:Name="EngineVersionText" Text="Existing PowerShell scanner" FontSize="10" Foreground="{DynamicResource MutedBrush}"
+                            <TextBlock x:Name="EngineVersionText" Text="Existing PowerShell scanner" FontSize="13" Foreground="{DynamicResource MutedBrush}"
                                        Style="{StaticResource TrimmedText}" Margin="0,3,0,0"/>
-                            <TextBlock x:Name="SideVersionText" Text="Desktop" FontSize="10" Foreground="{DynamicResource MutedBrush}" Margin="0,9,0,0"/>
-                            <Button x:Name="ThemeButton" Content="Theme: Midnight" Click="OnToggleTheme" FontSize="11"
+                            <TextBlock x:Name="SideVersionText" Text="Desktop" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,9,0,0"/>
+                            <Button x:Name="ThemeButton" Content="Theme: Midnight" Click="OnToggleTheme" FontSize="13" Style="{StaticResource SidebarActionButton}"
                                     HorizontalContentAlignment="Left" Padding="8,6" Margin="0,6,0,0"/>
-                            <Button x:Name="RestartButton" Content="Restart app" Click="OnRestartApp" FontSize="11"
+                            <Button x:Name="RestartButton" Content="Restart app" Click="OnRestartApp" FontSize="13" Style="{StaticResource SidebarActionButton}"
                                     HorizontalContentAlignment="Left" Padding="8,6" Margin="0,6,0,0"/>
-                            <Button x:Name="UpdatesButton" Content="Updates…" Click="OnOpenUpdates" FontSize="11"
+                            <Button x:Name="UpdatesButton" Content="Updates…" Click="OnOpenUpdates" FontSize="13" Style="{StaticResource SidebarActionButton}"
                                     HorizontalContentAlignment="Left" Padding="8,6" Margin="0,6,0,0"/>
                         </StackPanel>
                     </Border>
@@ -74,7 +74,7 @@
                     <Button x:Name="ScanButton" Content="Scan this PC" Style="{StaticResource PrimaryButton}" Click="OnScan" MinWidth="108" Margin="0,0,8,0"/>
                     <Button x:Name="SaveButton" Content="Save snapshot" Click="OnSave" Margin="0,0,8,0" IsEnabled="False"/>
                     <Button x:Name="ExportButton" Content="Export CSV / HTML…" Click="OnExportSnapshot" Margin="0,0,8,0" IsEnabled="False"/>
-                    <Button x:Name="ConnectButton" Content="Connect BAT…" Click="OnChooseBat" FontSize="12"/>
+                    <Button x:Name="ConnectButton" Content="Connect BAT…" Click="OnChooseBat" FontSize="13"/>
                 </WrapPanel>
             </Grid>
             <Border x:Name="StatusPanel" Grid.Row="1" Background="{DynamicResource StatusBrush}" BorderBrush="{DynamicResource StatusBorderBrush}"
@@ -98,7 +98,7 @@
                 <ScrollViewer x:Name="OverviewPage" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
                         <TextBlock x:Name="SnapshotContextText" Text="No completed snapshot" Style="{StaticResource TrimmedText}"
-                                   Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,0,8,7"/>
+                                   Foreground="{DynamicResource MutedBrush}" FontSize="13" Margin="0,0,8,7"/>
                         <Border x:Name="OverviewComputerCard" Style="{StaticResource Card}" Margin="0,0,8,12" Padding="12,10">
                             <Grid x:Name="OverviewComputerGrid">
                                 <Grid.ColumnDefinitions>
@@ -114,18 +114,18 @@
                                 <StackPanel x:Name="ComputerSummary" Grid.Column="0" Margin="0,0,14,0">
                                     <TextBlock Text="PC NAME" Style="{StaticResource Eyebrow}"/>
                                     <TextBlock x:Name="ComputerText" Text="No snapshot yet" FontWeight="SemiBold" Margin="0,4,0,0" Style="{StaticResource TrimmedText}"/>
-                                    <TextBlock x:Name="PcModelText" Text="Model · no scan yet" Foreground="{DynamicResource MutedBrush}" FontSize="11" Style="{StaticResource TrimmedText}"/>
-                                    <TextBlock x:Name="CapturedText" Text="Scan to capture this PC" Foreground="{DynamicResource MutedBrush}" FontSize="11" Style="{StaticResource TrimmedText}"/>
+                                    <TextBlock x:Name="PcModelText" Text="Model · no scan yet" Foreground="{DynamicResource MutedBrush}" FontSize="13" Style="{StaticResource TrimmedText}"/>
+                                    <TextBlock x:Name="CapturedText" Text="Scan to capture this PC" Foreground="{DynamicResource MutedBrush}" FontSize="13" Style="{StaticResource TrimmedText}"/>
                                 </StackPanel>
                                 <StackPanel x:Name="CpuSummary" Grid.Column="1" Margin="0,0,14,0">
                                     <TextBlock Text="PROCESSOR" Style="{StaticResource Eyebrow}"/>
                                     <TextBlock x:Name="CpuText" Text="—" Margin="0,4,0,0" Style="{StaticResource TrimmedText}"/>
-                                    <TextBlock x:Name="MemoryText" Text="Memory —" Foreground="{DynamicResource MutedBrush}" FontSize="11" Style="{StaticResource TrimmedText}"/>
+                                    <TextBlock x:Name="MemoryText" Text="Memory —" Foreground="{DynamicResource MutedBrush}" FontSize="13" Style="{StaticResource TrimmedText}"/>
                                 </StackPanel>
                                 <StackPanel x:Name="WindowsSummary" Grid.Column="2">
                                     <TextBlock Text="WINDOWS" Style="{StaticResource Eyebrow}"/>
                                     <TextBlock x:Name="WindowsText" Text="—" Margin="0,4,0,0" Style="{StaticResource TrimmedText}"/>
-                                    <TextBlock x:Name="CatalogText" Text="Catalog waiting for a scan" Foreground="{DynamicResource MutedBrush}" FontSize="11" Style="{StaticResource TrimmedText}"/>
+                                    <TextBlock x:Name="CatalogText" Text="Catalog waiting for a scan" Foreground="{DynamicResource MutedBrush}" FontSize="13" Style="{StaticResource TrimmedText}"/>
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -134,28 +134,28 @@
                                 <StackPanel>
                                     <TextBlock Text="IDENTIFIER FIELDS" Style="{StaticResource Eyebrow}"/>
                                     <TextBlock x:Name="IdsCount" Text="—" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}"/>
-                                    <TextBlock Text="Reported by Windows" Foreground="{DynamicResource MutedBrush}" FontSize="11" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Reported by Windows" Foreground="{DynamicResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                             <Border Style="{StaticResource Card}" Margin="0,0,8,8" Padding="12,9">
                                 <StackPanel>
                                     <TextBlock Text="SECTIONS READ" Style="{StaticResource Eyebrow}"/>
                                     <TextBlock x:Name="SectionsCount" Text="— / 18" FontSize="26" FontWeight="SemiBold"/>
-                                    <TextBlock Text="Hardware and system" Foreground="{DynamicResource MutedBrush}" FontSize="11" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Hardware and system" Foreground="{DynamicResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                             <Border Style="{StaticResource Card}" Margin="0,0,8,8" Padding="12,9">
                                 <StackPanel>
                                     <TextBlock Text="REVIEW FINDINGS" Style="{StaticResource Eyebrow}"/>
                                     <TextBlock x:Name="ReviewCount" Text="—" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource WarningBrush}"/>
-                                    <TextBlock Text="Missing IDs and conflicts" Foreground="{DynamicResource MutedBrush}" FontSize="11" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Missing IDs and conflicts" Foreground="{DynamicResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                             <Border Style="{StaticResource Card}" Margin="0,0,8,8" Padding="12,9">
                                 <StackPanel>
                                     <TextBlock Text="DEVICE RECORDS" Style="{StaticResource Eyebrow}"/>
                                     <TextBlock x:Name="DevicesCount" Text="—" FontSize="26" FontWeight="SemiBold"/>
-                                    <TextBlock Text="Windows device catalog" Foreground="{DynamicResource MutedBrush}" FontSize="11" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Windows device catalog" Foreground="{DynamicResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                         </UniformGrid>
@@ -165,7 +165,7 @@
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                     <TextBlock Text="Scan activity" FontSize="16" FontWeight="SemiBold"/>
                                     <TextBlock x:Name="ScanElapsedText" Grid.Column="1" Text="18 sections + device catalog"
-                                               Foreground="{DynamicResource MutedBrush}" FontSize="11" TextAlignment="Right"
+                                               Foreground="{DynamicResource MutedBrush}" FontSize="13" TextAlignment="Right"
                                                VerticalAlignment="Center" Style="{StaticResource TrimmedText}"/>
                                 </Grid>
                                 <DataGrid x:Name="ScanGrid" ItemsSource="{Binding ScanRows}" Style="{StaticResource PageGrid}"
@@ -229,9 +229,25 @@
                 </Grid>
 
                 <Grid x:Name="HardwarePage" Visibility="Collapsed">
-                    <Grid.ColumnDefinitions><ColumnDefinition x:Name="HardwareSectionsColumn" Width="174"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition x:Name="HardwareSectionsColumn" Width="210"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <Border x:Name="HardwareSectionsPanel" Style="{StaticResource Card}" Padding="4" Margin="0,0,10,0">
-                        <ListBox x:Name="HardwareSections" SelectionChanged="OnHardwareSectionSelected" DisplayMemberPath="Display" AutomationProperties.Name="Hardware section"/>
+                        <ListBox x:Name="HardwareSections" SelectionChanged="OnHardwareSectionSelected" AutomationProperties.Name="Hardware section">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                    <Setter Property="Padding" Value="8,7"/>
+                                    <Setter Property="AutomationProperties.Name" Value="{Binding Display}"/>
+                                    <Setter Property="ToolTip" Value="{Binding Display}"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding FriendlyName}" TextWrapping="Wrap" LineHeight="19" FontSize="14"/>
+                                        <TextBlock Text="{Binding CountText}" Foreground="{DynamicResource MutedBrush}" FontSize="13" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                     </Border>
                     <Grid Grid.Column="1">
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition x:Name="HardwareDetailRow" Height="0.42*" MinHeight="66" MaxHeight="136"/></Grid.RowDefinitions>
@@ -241,6 +257,8 @@
                             <TextBlock x:Name="HardwareSectionTitle" Grid.ColumnSpan="3" Text="Hardware fields" FontSize="17" FontWeight="SemiBold"
                                        Margin="0,0,0,6" Style="{StaticResource TrimmedText}"/>
                             <Grid x:Name="HardwareSearchHost" Grid.Row="1" Grid.ColumnSpan="3" Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <Grid>
                                 <TextBox x:Name="HardwareSearch" TextChanged="OnHardwareFilterChanged" AutomationProperties.Name="Search hardware records"
                                          VerticalContentAlignment="Center" ToolTip="Filter records in this section by any field"/>
                                 <TextBlock Text="Search records…" IsHitTestVisible="False" Margin="10,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}">
@@ -255,13 +273,17 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
+                                </Grid>
+                                <TextBlock x:Name="HardwareCountText" Grid.Column="1" Text="No records" Style="{StaticResource TrimmedText}"
+                                           Foreground="{DynamicResource MutedBrush}" FontSize="13" Margin="10,0,0,0" VerticalAlignment="Center"/>
                             </Grid>
                             <ComboBox x:Name="HardwareSectionPicker" Grid.Row="2" Visibility="Collapsed" Margin="0,0,8,0"
-                                      DisplayMemberPath="Display" ItemsSource="{Binding ItemsSource,ElementName=HardwareSections}"
+                                      DisplayMemberPath="FriendlyName" ItemsSource="{Binding ItemsSource,ElementName=HardwareSections}"
                                       SelectedItem="{Binding SelectedItem,ElementName=HardwareSections,Mode=TwoWay}" AutomationProperties.Name="Hardware section"/>
                             <ComboBox x:Name="HardwareRecord" Grid.Row="2" Grid.ColumnSpan="2" DisplayMemberPath="Title"
                                       SelectionChanged="OnHardwareRecordSelected" AutomationProperties.Name="Hardware record"/>
-                            <Button x:Name="CopyHardwareButton" Grid.Row="2" Grid.Column="2" Content="Copy value" Click="OnCopyField" Margin="8,0,0,0"/>
+                            <Button x:Name="CopyHardwareButton" Grid.Row="2" Grid.Column="2" Content="Copy value" Click="OnCopyField" Margin="8,0,0,0"
+                                    ToolTip="Copy the original value supplied by Windows, including the full identifier or timestamp."/>
                         </Grid>
                         <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0">
                             <DataGrid x:Name="HardwareFields" Style="{StaticResource PageGrid}" SelectionChanged="OnHardwareFieldSelected">
@@ -332,7 +354,7 @@
                         <Button Grid.Column="2" Content="Refresh list" Click="OnRefreshSnapshots"/>
                     </Grid>
                     <TextBlock x:Name="SnapshotFoldersText" Grid.Row="1" Style="{StaticResource TrimmedText}"
-                               Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,8,0,10"/>
+                               Foreground="{DynamicResource MutedBrush}" FontSize="13" Margin="0,8,0,10"/>
                     <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0">
                         <DataGrid x:Name="SnapshotsGrid" Style="{StaticResource PageGrid}" SelectionChanged="OnSnapshotSelected" MouseDoubleClick="OnSnapshotDoubleClick">
                             <DataGrid.Columns>
@@ -365,7 +387,7 @@
                         <StackPanel x:Name="CompareHeaderText" VerticalAlignment="Center" Margin="0,0,8,0">
                             <TextBlock x:Name="CompareSummaryText" Text="Choose a current scan or two saved captures." Style="{StaticResource TrimmedText}"/>
                             <TextBlock x:Name="CompareBaselineText" Text="Baseline not selected" Foreground="{DynamicResource MutedBrush}"
-                                       FontSize="11" Style="{StaticResource TrimmedText}" Margin="0,3,0,0"/>
+                                       FontSize="13" Style="{StaticResource TrimmedText}" Margin="0,3,0,0"/>
                         </StackPanel>
                         <WrapPanel x:Name="CompareActions" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
                             <Button x:Name="CompareFilesButton" Content="Two saved files…" Click="OnChooseTwoFileComparison" Margin="0,0,8,0"
@@ -397,7 +419,7 @@
                     </Border>
                     <DockPanel x:Name="CompareDetailPanel" Grid.Row="2" Margin="0,8,0,0">
                         <TextBlock x:Name="CompareSkippedText" DockPanel.Dock="Top" Style="{StaticResource TrimmedText}"
-                                   FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,4"/>
+                                   FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,4"/>
                         <TextBox x:Name="CompareDetail" Style="{StaticResource DetailBox}" FontFamily="Consolas" AutomationProperties.Name="Exact identifier difference"/>
                     </DockPanel>
                 </Grid>
@@ -406,8 +428,8 @@
             <Grid x:Name="FooterPanel" Grid.Row="3" Margin="0,9,0,0">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="FooterText" Text="Windows-reported inventory" Style="{StaticResource TrimmedText}"
-                           Foreground="{DynamicResource MutedBrush}" FontSize="10" Margin="0,0,8,0"/>
-                <TextBlock Grid.Column="1" Text="Local scan · exports contain device IDs" Foreground="{DynamicResource MutedBrush}" FontSize="10"/>
+                           Foreground="{DynamicResource MutedBrush}" FontSize="13" Margin="0,0,8,0"/>
+                <TextBlock Grid.Column="1" Text="Local scan · exports contain device IDs" Foreground="{DynamicResource MutedBrush}" FontSize="13"/>
             </Grid>
         </Grid>
     </Grid>

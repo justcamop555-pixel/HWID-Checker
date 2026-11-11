@@ -45,6 +45,8 @@ function Test-ScanHasReadableData($Inventory) {
 }
 function Get-DesktopAbsolutePath($Value,[string]$Description) {
     if($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value) -or -not [IO.Path]::IsPathRooted($Value)){throw [IO.InvalidDataException]::new(($Description+' must be an absolute path.'))}
+    $root=[IO.Path]::GetPathRoot($Value)
+    if($root -in @('\','/') -or $root -match '^[A-Za-z]:$'){throw [IO.InvalidDataException]::new(($Description+' must be an absolute path.'))}
     return [IO.Path]::GetFullPath($Value)
 }
 function ConvertTo-DesktopInventory($Inventory) {

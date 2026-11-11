@@ -4,8 +4,8 @@
 
 **Inspect Windows hardware identifiers, save snapshots, and see what changed.**
 
-[![Version: 3.89](https://img.shields.io/badge/version-3.89-2563eb?style=flat-square)](docs/CHANGELOG.md)
-[![Desktop: 1.4.4](https://img.shields.io/badge/desktop-1.4.4-238579?style=flat-square)](desktop/README.md)
+[![Version: 3.90](https://img.shields.io/badge/version-3.90-2563eb?style=flat-square)](docs/CHANGELOG.md)
+[![Desktop: 1.4.5](https://img.shields.io/badge/desktop-1.4.5-238579?style=flat-square)](desktop/README.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square)](#compatibility)
 [![Language: PowerShell + Batch](https://img.shields.io/badge/language-PowerShell%20%2B%20Batch-5391fe?style=flat-square)](hwid.bat)
 [![Desktop: C# + WPF](https://img.shields.io/badge/desktop-C%23%20%2B%20WPF-5965b0?style=flat-square)](desktop/HwidDesktop.csproj)
@@ -34,7 +34,7 @@
 
 HWID Checker is a local, read-only Windows hardware inventory tool with a desktop interface and a PowerShell/Batch console. Both interfaces use the scanning and report functions in `hwid.bat`. They bring hardware information and identifiers from Windows providers into one inventory, then let you save it and compare selected ID fields with an earlier capture.
 
-**Desktop 1.4.4** and **BAT 3.89** share a local snapshot library and a package updater. The desktop overview presents the PC name, model and capture time, and uses square controls with a responsive layout. [Desktop guide and source build](desktop/README.md)
+**Desktop 1.4.5** and **BAT 3.90** share a local snapshot library and a package updater. The desktop overview presents the PC name, model and capture time, and uses square controls with a responsive layout. [Desktop guide and source build](desktop/README.md)
 
 It is intended for PC owners, support technicians, and developers troubleshooting missing identifiers, documenting a system, or checking changes after hardware or Windows updates. It reports what Windows exposes; it does not certify hardware health, authenticity, or identifier uniqueness.
 

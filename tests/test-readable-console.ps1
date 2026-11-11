@@ -1,3 +1,4 @@
+param([string]$Engine=(Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'))
 $ErrorActionPreference = 'Stop'
 $source = Join-Path $PSScriptRoot '..\hwid.bat'
 $resultPath = Join-Path $PSScriptRoot 'display-test-result.json'
@@ -16,6 +17,19 @@ try {
     $idAssignment=$ast.FindAll({param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$identifierPattern'},$false) | Select-Object -First 1
     . ([scriptblock]::Create($idAssignment.Extent.Text))
     $result=Initialize-ReadableConsole $true $false
+    # A user-selected larger font belongs to this native console session and must not be shrunk.
+    $initialFont=[HwidConsoleDisplay]::ReadFont()
+    $nativeFlags=[Reflection.BindingFlags]'NonPublic,Static'
+    $outputHandle=[HwidConsoleDisplay].GetMethod('GetStdHandle',$nativeFlags).Invoke($null,@(-11))
+    $setFont=[HwidConsoleDisplay].GetMethod('SetCurrentConsoleFontEx',$nativeFlags)
+    try {
+        $largerFont=[HwidConsoleDisplay]::ReadFont();$largerCell=$largerFont.Cell;$largerCell.X=0;$largerCell.Y=24;$largerFont.Cell=$largerCell
+        if(-not $setFont.Invoke($null,@($outputHandle,$false,$largerFont))){throw 'Could not prepare the larger-font console regression.'}
+        if(-not [HwidConsoleDisplay]::ApplyFont() -or [HwidConsoleDisplay]::ReadFont().Cell.Y -lt 24){throw 'Readable font setup shrank a larger inherited font.'}
+        $result | Add-Member NoteProperty LargerFontPreserved $true
+    } finally {
+        if(-not $setFont.Invoke($null,@($outputHandle,$false,$initialFont))){throw 'Could not restore the native test console font.'}
+    }
     if(-not $result.ContextMenuDisabled -or [HwidConsoleDisplay]::ReadEditPopupItems() -ne 0 -or -not [HwidConsoleDisplay]::HasWindowCloseCommand()){throw 'Edit popup was not emptied or window Close was removed.'}
     foreach ($mode in @(0,64,128,192,511,1023)) {
         $newMode=[HwidConsoleDisplay]::WithoutQuickEdit([uint32]$mode)
@@ -539,7 +553,7 @@ $diagnostic = $diagnostic.Replace('__SOURCE__',$sourceLiteral).Replace('__OUTPUT
 $diagnosticPath=Join-Path $PSScriptRoot ('display-diagnostic-'+[guid]::NewGuid().ToString('N')+'.ps1')
 [IO.File]::WriteAllText($diagnosticPath,$diagnostic,(New-Object Text.UTF8Encoding($true)))
 [IO.File]::Delete($resultPath)
-$powerShellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$powerShellPath = $Engine
 $arguments = '-ForceNoHandoff -- "' + $powerShellPath + '" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "' + $diagnosticPath + '"'
 $process = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\conhost.exe') -ArgumentList $arguments -PassThru
 if (-not $process.WaitForExit(60000)) { throw 'Display test did not complete in 60 seconds.' }
@@ -550,7 +564,7 @@ if (-not $result.QuickEditDisabled -or ($result.InputModeAfter -band 64) -ne 0 -
 if (-not $result.MouseInputDisabled -or ($result.InputModeAfter -band 16) -ne 0) { throw 'Mouse input is still captured instead of left to host scrolling.' }
 if (($result.InputModeBefore -band 0xFFFFFF2F) -ne ($result.InputModeAfter -band 0xFFFFFF2F)) { throw 'Unrelated keyboard input flags changed.' }
 if ($result.BufferRows -ne $result.Rows) { throw 'Dashboard inherited an oversized history buffer.' }
-if (-not $result.FontApplied -or $result.FontName -ne 'Consolas' -or $result.FontHeight -ne 16 -or $result.FontWeight -ne 400) { throw 'The readable regular font was not applied.' }
+if (-not $result.FontApplied -or $result.FontName -ne 'Consolas' -or $result.FontHeight -lt 18 -or $result.FontWeight -ne 400) { throw 'The readable regular font was not applied.' }
 if ($result.Columns -le 0 -or $result.Columns -gt 100 -or $result.Rows -le 0 -or $result.Rows -gt 34) { throw 'Window dimensions are invalid.' }
 $parentAdmin=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if ($result.Administrator -ne $parentAdmin) { throw 'Privilege level changed.' }

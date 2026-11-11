@@ -2,14 +2,14 @@
 param(
     [Parameter(Mandatory=$true)][string]$ExePath,
     [string]$BatPath=(Join-Path $PSScriptRoot '..\..\hwid.bat'),
-    [ValidateSet('Render','Workflow','Interactions','LiveScan')][string]$Mode='Render',
+    [ValidateSet('Render','Workflow','Interactions','Readability','LiveScan')][string]$Mode='Render',
     [string]$OutputDirectory=(Join-Path $PSScriptRoot ('test-output-ui-'+[guid]::NewGuid().ToString('N'))),
     [ValidatePattern('^[1-9][0-9]{2,3}[xX][1-9][0-9]{2,3}$')][string]$Size,
     [switch]$LayoutStress,
     [switch]$TestSharedLibrary
 )
 $ErrorActionPreference='Stop'
-if($Size -and $Mode -eq 'LiveScan'){throw 'Choose Render, Workflow or Interactions mode to request a window size.'}
+if($Size -and $Mode -eq 'LiveScan'){throw 'Choose Render, Workflow, Interactions or Readability mode to request a window size.'}
 if($LayoutStress -and $Mode -ne 'Render'){throw 'Choose Render mode to exercise the layout stress states.'}
 if($TestSharedLibrary -and $Mode -ne 'Workflow'){throw 'Choose Workflow mode to exercise the shared snapshot library.'}
 if($Size){
@@ -38,6 +38,7 @@ foreach($page in $pages){
         $arguments+=@('--fixture',(Join-Path $PSScriptRoot 'fixtures\desktop-scan.json'),'--page',$page,'--render',(Join-Path $OutputDirectory ($page.ToLowerInvariant()+'.png')),'--verify',$resultPath)
         if($Mode -eq 'Workflow'){$arguments+=@('--workflow-test',(Join-Path $OutputDirectory 'workflow-result.json'))}
         if($Mode -eq 'Interactions'){$arguments+=@('--ui-test',(Join-Path $OutputDirectory 'ui-result.json'))}
+        if($Mode -eq 'Readability'){$arguments+=@('--readability-test',(Join-Path $OutputDirectory 'readability-result.json'))}
         if($TestSharedLibrary){$arguments+=@('--shared-settings',(Join-Path $OutputDirectory ('shared-'+[guid]::NewGuid().ToString('N')+'\snapshot-library.json')))}
     }
     foreach($argument in $arguments){$start.ArgumentList.Add($argument)}
@@ -79,6 +80,10 @@ foreach($page in $pages){
         $interaction=Get-Content -LiteralPath (Join-Path $OutputDirectory 'ui-result.json') -Raw | ConvertFrom-Json
         if(-not $interaction.success -or $interaction.checks -ne 47 -or -not $interaction.syntheticOnly){throw 'Synthetic desktop interactions failed.'}
         $checks=$interaction.checks
+    }elseif($Mode -eq 'Readability'){
+        $readability=Get-Content -LiteralPath (Join-Path $OutputDirectory 'readability-result.json') -Raw | ConvertFrom-Json
+        if(-not $readability.success -or $readability.checks -ne 14 -or -not $readability.syntheticOnly){throw 'Synthetic desktop readability checks failed.'}
+        $checks=$readability.checks
     }else{$checks++}
     [Console]::WriteLine('PASS: '+$Mode+' / '+$page)
 }

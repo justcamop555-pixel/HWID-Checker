@@ -47,14 +47,58 @@ internal static class J
     };
     public static string Date(string input) => DateTimeOffset.TryParse(input, CultureInfo.InvariantCulture,
         DateTimeStyles.AllowWhiteSpaces, out var date) ? date.ToLocalTime().ToString("MMM d, yyyy  HH:mm") : input;
+    public static string SectionName(string name) => name switch
+    {
+        "Report info" => "Scan information", "Compatibility" => "Windows reader support",
+        "System identity" => "System IDs", "System hardware" => "PC hardware",
+        "CPU" => "Processor (CPU)", "BIOS" => "BIOS / firmware", "Chassis" => "Case / chassis",
+        "Memory modules" => "Memory (RAM)", "Storage identifiers" => "Storage IDs",
+        "Volumes" => "Volumes / drive letters", "Graphics adapters" => "Graphics (GPU)",
+        "Windows Machine GUID" => "Windows installation ID", "PnP hardware IDs" => "Plug and Play devices",
+        "Extended device inventory" => "Extended device list", "Extended scan info" => "Extended device scan",
+        "Scan timing" => "Read results / timing", "Warnings" => "Scan warnings",
+        _ => name
+    };
+    public static bool IsCapturedRecord(JsonElement value) =>
+        value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null) &&
+        (value.ValueKind != JsonValueKind.Object || value.EnumerateObject().Any() &&
+            value.Get("Unavailable").ValueKind == JsonValueKind.Undefined);
+    public static string Timestamp(string input)
+    {
+        if (!Regex.IsMatch(input, @"\A\d{4}-\d{2}-\d{2}(?:[Tt ].+)?\z") ||
+            !DateTimeOffset.TryParse(input, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var date))
+            return input;
+        if (input.Length == 10) return date.ToString("MMM d, yyyy", CultureInfo.CurrentCulture);
+        var hasOffset = Regex.IsMatch(input, @"(?:[Zz]|[+-]\d{2}:\d{2})\z");
+        return date.ToString(hasOffset ? "MMM d, yyyy  HH:mm:ss zzz" : "MMM d, yyyy  HH:mm:ss", CultureInfo.CurrentCulture);
+    }
 }
 
 public sealed record ScanRow(string Name, string Status, string Records, string Detail, string Time);
 internal sealed record IdentifierRow(string Section, string Field, string Value, string Status, string Device);
-internal sealed record FieldRow(string Field, string Value);
+internal sealed record FieldRow(string Field, string Value, string? RawValue = null);
 internal sealed record ReviewRow(string Kind, string Section, string Message, string Detail);
 internal sealed record ChangeRow(string Kind, string Label, string Previous, string Current, string Detail);
-internal sealed record HardwareSection(string Name, int Count) { public string Display => Name + "  ·  " + Count; }
+internal sealed record HardwareSection(string Name, int Count)
+{
+    public string RawName => Name;
+    public string FriendlyName => J.SectionName(Name);
+    public string CountText
+    {
+        get
+        {
+            var unit = Name switch
+            {
+                "Scan timing" => Count == 1 ? "check" : "checks",
+                "Warnings" => Count == 1 ? "message" : "messages",
+                "Report info" or "Compatibility" or "Extended scan info" or "Windows Machine GUID" => Count == 1 ? "entry" : "entries",
+                _ => Count == 1 ? "record" : "records"
+            };
+            return Count + " " + unit;
+        }
+    }
+    public string Display => FriendlyName + "  ·  " + CountText;
+}
 internal sealed record HardwareRecord(string Title, JsonElement Data, int Index);
 internal sealed record SnapshotEntry(string Path, string Name, string Computer, string Captured, string Version, string Size, DateTimeOffset SortTime);
 internal sealed record SnapshotCatalog(IReadOnlyList<SnapshotEntry> Entries, int Skipped, string[] Folders);
@@ -67,17 +111,22 @@ internal sealed class DesktopSnapshot
     public List<IdentifierRow> Identifiers { get; } = [];
     public List<ReviewRow> Findings { get; } = [];
     public List<ScanRow> Timing { get; } = [];
+    public IReadOnlyList<HardwareSection> Sections { get; }
     public string Version => Data.Text("version");
     public int ReportedIds => Identifiers.Count(x => x.Status == "Reported");
-    public int SectionsRead => Timing.Count(x =>
+    public int SectionsRead => Timing.Where(x =>
         x.Status.Trim().Equals("READ", StringComparison.OrdinalIgnoreCase) ||
-        x.Status.Trim().Equals("CHECK", StringComparison.OrdinalIgnoreCase));
-    public int DeviceCount => Inventory.Get("Extended device inventory").Rows().Length;
+        x.Status.Trim().Equals("CHECK", StringComparison.OrdinalIgnoreCase))
+        .Select(x => x.Name.Trim()).Where(name => name.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+    public int DeviceCount => Inventory.Get("Extended device inventory").Rows()
+        .Count(row => row.ValueKind == JsonValueKind.Object && J.IsCapturedRecord(row));
 
     public DesktopSnapshot(JsonElement data)
     {
         if (data.Get("inventory").ValueKind != JsonValueKind.Object) throw new InvalidDataException("The scanner returned no inventory.");
         Data = data.Clone();
+        Sections = Inventory.EnumerateObject()
+            .Select(section => new HardwareSection(section.Name, section.Value.Rows().Count(J.IsCapturedRecord))).ToArray();
         foreach (var row in Data.Get("identifiers").Rows())
         {
             var section = row.Text("Section"); var rawField = row.Text("Field");
@@ -118,15 +167,110 @@ internal sealed class DesktopSnapshot
     public string Label(string section, string field)
     {
         var label = Data.Get("fieldLabels").Get(section).Text(field);
-        return label.Length > 0 ? label : J.Humanize(field);
+        var fallback = MetadataLabel(section, field);
+        if (fallback != null && (label.Length == 0 || label.Equals(field, StringComparison.OrdinalIgnoreCase) ||
+            label.Equals(J.Humanize(field), StringComparison.OrdinalIgnoreCase))) return fallback;
+        return label.Length > 0 ? label : fallback ?? J.Humanize(field);
     }
     public string FieldValue(string section, int recordIndex, string field, JsonElement value)
     {
         if (value.ValueKind is JsonValueKind.Array or JsonValueKind.Object) return value.Display();
+        if (Regex.IsMatch(field, @"\A(?:SerialNumber|IdentifyingNumber|UUID|ProcessorId|MachineGuid|VolumeSerialNumber|UniqueId|Guid|MacAddress|PermanentAddress|InterfaceGuid|PNPDeviceID|DeviceInstanceId|SMBIOSAssetTag)\z", RegexOptions.IgnoreCase) &&
+            value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) && value.Text().Length > 0)
+            return value.Text();
         var records = Data.Get("fieldValues").Get(section).Rows();
-        var display = recordIndex < records.Length ? records[recordIndex].Text(field) : "";
-        return string.IsNullOrWhiteSpace(display) ? value.Display() : display;
+        var display = recordIndex >= 0 && recordIndex < records.Length ? records[recordIndex].Text(field) : "";
+        if (section == "Report info" && field == "Administrator" &&
+            value.ValueKind is JsonValueKind.True or JsonValueKind.False &&
+            display.Trim().ToUpperInvariant() is "" or "YES" or "NO" or "TRUE" or "FALSE")
+            return value.GetBoolean() ? "Administrator" : "Standard user";
+        if (!string.IsNullOrWhiteSpace(display) && display != value.Text()) return display;
+        if (field is "Generated" or "SavedAt" or "ScanCompleted" or "ExtendedAttempted" or "Captured" or "InstallDate" or "LastBootUpTime" or "ReleaseDate" or "DriverDate")
+        {
+            var formatted = J.Timestamp(value.Text());
+            if (formatted != value.Text()) return formatted;
+        }
+        if (section == "Report info")
+        {
+            if (field == "Administrator" && value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                return value.GetBoolean() ? "Administrator" : "Standard user";
+            var friendly = (field, value.Text()) switch
+            {
+                ("Display", "Desktop companion") => "Desktop dashboard",
+                ("Display", "Classic console") => "BAT console",
+                ("Display", "Current window") => "Existing console window",
+                ("QueryMode", "Live progress") => "Live progress available",
+                ("QueryMode", "Direct queries") => "Basic progress",
+                ("ExtendedStatus", "Refreshed") => "Device list read",
+                ("ExtendedStatus", "Unavailable") => "Device list could not be read",
+                _ => null
+            };
+            if (friendly != null) return friendly;
+        }
+        if (section == "Scan timing" && field == "Section") return J.SectionName(value.Text());
+        if (section == "Scan timing" && field == "Status")
+            return value.Text().Trim().ToUpperInvariant() switch
+            {
+                "READ" => "Read", "CHECK" => "Read with items to review",
+                "UNAVAILABLE" or "NOT READ" => "Not read", "READING" => "Reading",
+                "WAITING" => "Waiting", "STOPPED" => "Stopped", _ => value.Display()
+            };
+        return value.Display();
     }
+    public string RecordTitle(string section, JsonElement record, int recordIndex)
+    {
+        if (record.Get("Unavailable").ValueKind != JsonValueKind.Undefined) return "Read unavailable";
+        var title = section switch
+        {
+            "Report info" => "Snapshot details", "Compatibility" => "Windows / PowerShell support",
+            "Extended scan info" => "Device-list read details", "Windows Machine GUID" => "Windows installation",
+            "Scan timing" => J.SectionName(record.Text("Section")),
+            _ => ""
+        };
+        if (title.Length > 0) return title;
+        if (record.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var field in new[] { "FriendlyName", "Name", "Model", "Product", "Caption", "DeviceLocator", "BankLabel", "PartNumber", "DeviceID", "InstanceName", "DeviceInstanceId", "PNPDeviceID" })
+                if (!string.IsNullOrWhiteSpace(record.Text(field))) return record.Text(field);
+            return "Record " + (recordIndex + 1);
+        }
+        return record.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? "Record " + (recordIndex + 1) : record.Display();
+    }
+    public static string SectionDescription(string section) => section switch
+    {
+        "Report info" => "Capture time and settings used for this snapshot.",
+        "Compatibility" => "Windows, PowerShell and reader availability reported by the scanner.",
+        "Scan timing" => "Read results for the normal scan sections. A read can succeed while some identifiers are missing.",
+        "Extended scan info" => "Capture time, reader and query counts for the extended device list.",
+        "Extended device inventory" => "Records returned by the extended Windows reader. Entries can represent physical or virtual devices.",
+        "PnP hardware IDs" => "Windows device records and the identifiers Windows exposes for them.",
+        "Windows Machine GUID" => "The identifier reported for this Windows installation.",
+        "Warnings" => "Messages captured while reading this snapshot.",
+        _ => "Hardware records reported by Windows in this snapshot."
+    };
+    private static string? MetadataLabel(string section, string field) => (section, field) switch
+    {
+        ("Report info", "Generated") => "Captured at", ("Report info", "Computer") => "PC name",
+        ("Report info", "Administrator") => "Access level", ("Report info", "Version") => "Scanner version",
+        ("Report info", "Display") => "Interface", ("Report info", "QueryMode") => "Progress mode",
+        ("Report info", "ExtendedStatus") => "Device-list read status",
+        ("Report info", "ScanSeconds") => "Scan duration (seconds)",
+        ("Report info", "ScanCompleted") => "Scan finished at",
+        ("Report info", "ExtendedAttempted") => "Last device-list read attempt",
+        ("Report info", "CompatibleReadSections") => "Sections read with a fallback",
+        ("Report info", "ProgressFallbackSections") => "Sections using basic progress",
+        ("Report info", "QueryCleanupSections") => "Sections with cleanup warnings",
+        ("Extended scan info", "Captured") => "Device list captured at",
+        ("Extended scan info", "Source") => "Read method",
+        ("Extended scan info", "Records") => "Device records",
+        ("Extended scan info", "PropertyNodesRequested") => "Device nodes queried for properties",
+        ("Extended scan info", "PropertyNodesReturned") => "Device nodes returning properties",
+        ("Extended scan info", "PropertyNodesWithoutRows") => "Device nodes without property results",
+        ("Scan timing", "Section") => "Checked section", ("Scan timing", "Status") => "Read result",
+        ("Scan timing", "Results") => "Records returned", ("Scan timing", "Seconds") => "Read time (seconds)",
+        ("Scan timing", "Summary") => "Read summary", ("Scan timing", "Recoveries") => "Fallback read attempts",
+        _ => null
+    };
     public string First(string section, string field) => Inventory.Get(section).Rows().FirstOrDefault().Text(field);
 }
 
