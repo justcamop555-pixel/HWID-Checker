@@ -1,5 +1,141 @@
 # Desktop verification
 
+## Desktop 1.4.6 and BAT 3.91
+
+The checks below cover the changes in [Desktop 1.4.6 / BAT 3.91](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.4.6). Executable hashes recorded in each follow-up identify its tested development build. The release asset has its own attached SHA-256 manifest.
+
+### Smoothness and conflict follow-up — November 12
+
+- ID and Review filters retain column sorting and matching selections. Hidden rows clear the corresponding copy/detail target. Unchanged immutable grid sources are reused.
+- Hardware record rows and scalar search values are prepared with the snapshot. The optional value cache is capped at 1,048,576 characters and 16,384 scalar values; uncached records keep exact recursive JSON search. Nested values, leading zeros, scalar records, null slots and original record indexes remain covered. Saved-snapshot and comparison searches avoid concatenating every row for ordinary queries while retaining cross-field phrase matches.
+- Automatic library polling pauses while minimized, welcoming or connecting. A timer poll cannot keep queuing another read behind an active refresh, and it does not erase an explicit pending manual refresh.
+- BAT rendering retains one wrapped layout per display entry. Exact text, console width and indentation changes invalidate it. The existing native repaint/resize repair cadence is retained.
+
+The model/search/export suite passed **140 checks**. In a synthetic 2,000-record, 50-query steady-state search benchmark, the cached hardware search took **11 ms / 176,040 allocated bytes**, versus **292 ms / 130,389,664 bytes** for the former recursive approach. These measurements exclude preparation and are not a claim about overall UI frame rate or every PC. Reproduce with `dotnet run --project .\desktop\tests\DesktopModelsSmoke -- --benchmark-hardware` from the repository root.
+
+On each of Windows PowerShell 5.1 and PowerShell 7, **917 checks** passed: 603 core, 46 bridge, 13 display cache, 61 completion, 53 reading, 45 grouped flow, 60 native resize and 36 scrolling. Cache tests cover exact Unicode/case changes, resize round trips, indentation, controls, blank rows, legacy callers and unchanged long values. The optional synthetic wrapping benchmark has no timing threshold.
+
+The final package passed **55 library/filter/refresh checks**, 80 interaction, 22 scan UI, 31 scrolling, 14 readability, 26 theme, 50 welcome and 24 shared save/compare checks, plus compact dark/light stress renders of all six pages. A one-core startup probe painted loading content in 718 ms in one local run. Packaged restart passed, and two real read-only scans finished at scan number 2 with 18 sections read, 178 known device records and 44 responsive timer ticks. Live diagnostics contain counts/status; saved screenshot/export fixtures remain synthetic.
+
+The build completed with warning **NU1900** because NuGet's vulnerability service could not be reached, including on a separate restore retry. The online package vulnerability audit was **not completed**. Dependency versions were not changed by this update. Filesystem cancellation remains cooperative between Windows calls.
+
+Tested executable SHA-256: `9CD0A1968B46A203D41B1001453A573ED6F526B03ABD3BC19576AEB21BE71574`.
+
+### Startup responsiveness follow-up — November 12
+
+Normal launches paint a small loading window before preferences are read or the dashboard is constructed. Preference reading is bounded to 256 KB on the open file handle and accepts existing UTF-8/UTF-16 BOM settings. Scanner path probes and BAT validation run on a worker, and a close during connection preserves the remembered BAT path. Verification and restart handoffs keep their existing direct-window flow.
+
+The startup settings suite passed 15 checks covering missing, malformed, oversized, locked and cancelled reads, exact preferences and unchanged source bytes. The packaged app passed normal startup, a synthetic three-second preparation delay and a normal Close request during a five-second preparation delay. Closing stopped before the dashboard was created.
+
+Three final package launches, each constrained to one CPU core with BelowNormal priority and a fresh bundle-extraction folder, painted the loading content in **1,007 / 906 / 955 ms** from process launch. These use the app's ContentRendered timestamp and the shared monotonic clock; a native window handle can appear earlier. The synthetic checks then exited in 1,665 / 1,618 / 1,682 ms. No launch-time guarantee is inferred for other hardware: OS file caches were not flushed, Windows security checks were not bypassed, and an actual low-end PC was not available.
+
+The package still extracts five native files (about 7.8 MB) when its .NET bundle cache is empty. Microsoft documents this [single-file extraction behavior](https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/overview). The existing compatible package format is retained. A controlled ReadyToRun variant measured slower here and was not selected; compression and compilation settings are now explicit.
+
+Reproduce from the repository root using PowerShell 7 and an extracted desktop package:
+
+```powershell
+dotnet run --project .\desktop\tests\StartupSmoke
+.\desktop\tests\test-startup.ps1 -Exe "C:\Path\To\HWID Checker.exe" -StartupFlow -OneCore
+.\desktop\tests\test-startup.ps1 -Exe "C:\Path\To\HWID Checker.exe" -StartupFlow -DelayMs 3000 -OneCore
+.\desktop\tests\test-startup.ps1 -Exe "C:\Path\To\HWID Checker.exe" -StartupFlow -DelayMs 5000 -CancelStartup -OneCore
+```
+
+Each measurement owns an isolated extraction folder and uses synthetic verification data without loading user preferences or scanning hardware. The timing JSON distinguishes the first window handle from rendered loading content. These tests leave the normal user's .NET extraction cache alone.
+
+The final package also passed 50 welcome, 45 library/comparison, 80 interaction, 22 scan UI, 31 scrolling, 14 readability, 26 theme and 24 shared save/compare checks, plus all six pages in compact dark/light stress layouts. The model suite passed 82 checks.
+
+Tested executable SHA-256: `78011BA19BD8C9832EFEC85F427ABED721A0491F7A6B725AB8B145B29F131CE5`.
+
+### Privacy, loading and layout follow-up — November 12
+
+- Welcome: 50 synthetic checks passed across both themes at 620×590, 500×420 and the 360×360 minimum. The notice retains a usable scroll viewport and separate visible actions. The welcome is offered before saved-file discovery; the app explains full-value exports, GitHub update requests and cloud-synced folders.
+- Snapshots/comparison: 45 packaged library checks passed, including cancellation retaining the previous complete comparison, exact old/new row preparation, a separate refresh state and reduced-motion comparison progress. The model suite passed 82 checks, including cancellation before and during folder enumeration and unchanged source files after preview.
+- Packaged UI: 80 interaction, 22 scan UI, 31 scrolling, 14 readability, 26 theme and 24 shared save/compare checks passed, plus compact dark/light stress renders of all six pages. These checks exercise reduced available layout space; they do not establish compatibility with every monitor DPI or graphics driver.
+- BAT: on each of PowerShell 5.1 and 7, 603 core, 61 completion, 60 native-resize, 45 grouped-flow, 36 scroll and 46 bridge checks passed (851 per runtime). Completion explicitly distinguishes present and all-known device records, failed reads and omitted catalog collection.
+- The packaged restart restored its synthetic session. Two real read-only scans finished at scan number 2 with all 18 sections read, 178 known device records and 41 responsive timer ticks. Live diagnostics contain counts/status, not identifier values; all saved screenshot/export fixtures are synthetic.
+
+Catalog cancellation is cooperative between filesystem reads. An unavailable filesystem can still block inside a Windows call. Comparison preparation runs on a worker; cancellation publishes no partial replacement. Saving, exports and clipboard copies remain full-value operations without automatic redaction.
+
+Tested executable SHA-256: `9AA58A1AC6C40110AB941E05D7EDF803BAF7AC967B8CDBBA4F5E1F5B25CFD9D5`.
+
+| Check | Result |
+| --- | --- |
+| Desktop models, search and extra report exports | 80 checks passed, including exact indexed-search equivalence, immutable capture rows, new-capture isolation, older-capture coverage, catalog states and staged export failures |
+| Desktop interactions | 80 checks passed, including labeled semantic states, normal-text status contrast on dark/light panels, restart input locking, truthful hardware counts, selection retention, copy guards and empty-state guidance |
+| Desktop restart | 20 real-process handoff checks passed for launch failure, early exit, cancellation, timeout, commit/abort, exact values and bounded protocol messages. A separate packaged-EXE restart restored a synthetic capture, filters, theme, selected comparison and page, then waited for the original process to exit |
+| Native theme matching | 26 checks passed while switching dark/light/dark across the main, Updates, Folder settings and Welcome windows. Windows accepted caption colors; native resize/title-bar controls remained in place and opening the dialogs did not change library settings |
+| BAT/Desktop theme parity | 38 native checks passed on PowerShell 5.1 and 7: both palettes match Desktop colors, preferences/overrides are read safely, malformed/null/oversized settings fall back, caption colors are accepted, and current-window/redirected hosts remain unchanged |
+| Desktop scrolling | 31 event-based checks passed at 640 × 480 and 840 × 560: wheel routing on all six tabs, Overview keyboard navigation, independent detail scrolling and native scrollbar dragging/bindings. Mouse-wheel movement, Home and scrollbar dragging were also observed in a visible synthetic test window |
+| Readability and save/compare | 14 readability and 24 shared-library workflow checks passed |
+| Layout | All six pages passed 640 × 480 and 840 × 560 stress renders, plus 1280 × 820 renders |
+| BAT resize and display fallback | 60 native checks passed on each of Windows PowerShell 5.1 and PowerShell 7, including idle menu resizing with typed input/error retention, isolated progress-row painting, cursor/history preservation, host reflow, output-mode restoration and full redraw/fallback recovery |
+| Existing BAT and bridge behavior | Menu/core, completion, display fallback, scrolling, native console, 104 updater, 49 console-update and 46 desktop-bridge checks passed on each runtime |
+| Live desktop scan | Latest audited package: 18 sections read, 178 known device records and 49 responsive UI ticks; evidence records counts/status rather than identifier values |
+| Build | The audited rebuild produced the exact executable and engine hashes used by the UI checks |
+
+The CSV/HTML exporter stages both reports before publishing; handled failures clean up its temporary files. It does not claim a two-file transaction across a power loss or process termination. TXT/JSON snapshots retain the BAT engine's existing format and validation.
+
+The November 11 visual/behavior audit also passed 42 engine-transport, 80 model/search/export and 51 updater-client checks. BAT coverage included 603 core checks on each runtime, plus scan recovery, readable-data publication, metadata, warning review, comparison identity, snapshot storage/discovery/sync, scan completion, scrolling and both animation suites on PowerShell 7. Native rendering was inspected at compact and wide sizes; these local checks do not establish compatibility with every display, driver or Windows configuration.
+
+The menu uses a short idle wait with [`Console.KeyAvailable`](https://learn.microsoft.com/en-us/dotnet/api/system.console.keyavailable), allowing prompt layout to recover before calling the blocking key reader. Held Enter still follows the existing no-output path.
+
+The startup-recovery fixture now supplies the exit-update stub used by the real menu loop; without it, the isolated fixture retried a missing command until its timeout. All 35 recovery, 14 startup-delay and 27 handoff checks passed after this test-only correction.
+
+The subsequent restart/color update passed 603 core, 14 console-restart, 49 console-update, 53 scan-reading, 42 completion, 60 native-resize and 46 desktop-bridge checks on each PowerShell runtime. It also passed 31 scrolling, 14 readability and 24 shared save/compare checks, six compact dark stress renders, six reduced-space Daylight stress renders and six wide renders.
+
+Restart data uses an in-memory named pipe with [`PipeOptions.CurrentUserOnly`](https://learn.microsoft.com/en-us/dotnet/api/system.io.pipes.pipeoptions), bounded frames and an explicit ready/commit exchange. The receiver checks the original process start time before waiting for it to exit. No temporary snapshot is created. Restricted test tokens denied the pipe connection; the same-user Windows runs passed without weakening pipe permissions. Prepared-update installation remains a separate save-before-install workflow.
+
+Theme matching uses documented [DWM window attributes](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute). Caption/frame color attributes are documented for Windows 11 build 22000 and later; unsupported calls leave the supported system frame in place. High-contrast mode resets Desktop frame overrides to the system defaults. The native color setter succeeded on this PC; color readback was unavailable, so the theme check records acceptance rather than claiming a pixel comparison. Windows-managed dialogs retain their system appearance.
+
+The Desktop-only welcome/privacy notice passed 28 synthetic checks covering first launch, optional repeat launches, restart suppression, primary/Not now actions, keyboard focus, compact scrolling, dark/light contrast, and preference persistence. The notice explains read-only scanning, sensitive report contents and that saving a snapshot does not redact its identifiers. An older asynchronous settings write cannot replace a newer choice or the synchronous close-path save. Verification uses isolated preferences; normal app settings and saved snapshots are not test fixtures.
+
+The packaged candidate also passed 80 interaction, 31 scrolling, 14 readability and 24 shared-library workflow checks, plus all six pages in compact dark/light stress layouts. A normal-user packaged restart restored its synthetic session with the welcome preferences retained; the live read-only scan read all 18 inventory sections and 178 known device records while the UI timer continued (49 ticks). BAT changes in this pass shorten the three startup-stage labels; they add no welcome dialog. All 603 core, 35 startup-recovery, 14 startup-delay and 27 startup-handoff checks passed on Windows PowerShell 5.1 and PowerShell 7.
+### Snapshot library, comparison and offline recovery
+
+The November 11 local candidate passed 29 synthetic library/compare UI checks, 19 offline recovery checks on each of Windows PowerShell 5.1 and PowerShell 7, 80 existing interaction checks, 24 shared-library workflow checks, 31 scrolling checks, 14 readability checks, 26 theme checks and 28 welcome checks. The library checks include exact comparison searches, meaningful category filters, no-match versus no-change guidance, selection state, source labels, complete export retention and usable tables at 640 × 480 in both themes. All six pages passed compact dark and reduced-space Daylight stress renders.
+
+The packaged restart preserved the new comparison/library filters and selected change. The packaged live scan read all 18 sections and 178 known device records, with 23 responsive UI ticks. Live diagnostics record counts/status; report exports and screenshots use synthetic captures.
+
+Offline recovery is tested with isolated files: embedded/package byte equality, deleted/corrupt managed copies, concurrent restoration, missing or syntactically invalid companions, unchanged custom files, renamed paths, runtime fallback and cancellation. Preparation parses source without executing it. Launching a console can retry an early nonzero loader exit once; these checks do not establish that every driver, provider, runtime policy or later console failure can be repaired. No scanner download or system-policy change is part of recovery.
+
+Audited executable SHA-256: `9260F505384AC4194D00E081663F6004BFB41688E3F8F763CB5587E734DAD4E6`.
+### General bug audit
+
+A subsequent November 11 audit reproduced an incorrect fallback: a custom source valid under PowerShell 7 was replaced after the first Windows PowerShell 5.1 parser failure. Recovery now checks every installed runtime first. Renamed sources also ignore sibling loaders they do not use; standard hwid.bat still validates its required launcher.
+
+The packaged candidate passed 38 library/connection regressions, including bounded reads of oversized/truncated BAT files, clearing stale connection labels, sorting across filters and preserving old report discovery with configured shared settings. It also passed 80 interaction, 24 shared-library workflow, 31 scrolling, 14 readability, 26 theme and 28 welcome checks, plus all six pages at 640 × 480 in both themes. Recovery passed 21 standard checks on each PowerShell runtime and a mixed-runtime parser regression. A normal-user restart restored the synthetic session; the packaged live scan read 18 sections and 178 known device records with 19 responsive UI ticks.
+
+The BAT audit passed 1,438 synthetic checks across 23 suites on PowerShell 7.6.9, covering the core menu, snapshot sync/catalog, identity and reader-scope comparison, PnP/network fallbacks, scan completion/recovery/metadata, query failures, battery, graphics/network labels, device IDs/status, hidden records, aliases, completeness, parent relationships, scan readability, warnings and startup recovery. The BAT engine bytes and hardware query logic are unchanged in this pass. These targeted checks do not establish that every device, driver or Windows configuration is free of bugs.
+
+Audited executable SHA-256: `E4E72803D914FADC03ED9F909F1AA996413F7D9EC2F3559098A674C92805467E`.
+### Scan progress follow-up
+
+The scan-progress update passed 22 synthetic Desktop checks for counters, delayed/obsolete feedback, full error guidance, working finalization, preserving the prior capture, cancellation, first-attempt failure and compact dark/light text space. Successful Desktop scans now send their explicit sequence number through the engine request; cancelled or failed attempts continue from the last completed capture.
+
+The process transport passed 47 checks, including first/rescan number forwarding, cancellation/disposal, bounded protocol reading, error handling, transient file-lock cleanup and rejecting cleanup paths outside the owned operation folder. Cleanup retries are bounded and never recursively remove unexpected contents; persistent access failures can still prevent removal.
+
+On each of Windows PowerShell 5.1 and PowerShell 7, the update passed 603 core, 56 completion, 53 scan-reading, 45 grouped-flow, 36 scrolling, 12 display-fallback, 34 recovery, 51 query-failure-state, 24 readable-data, 41 metadata, 35 reader-coverage comparison, 46 Desktop-bridge and 60 native-resize checks. These total 1,096 checks per runtime.
+
+The packaged UI also passed 80 interactions, 38 library/connection, 24 shared save/compare, 31 scrolling, 14 readability, 26 theme and 28 welcome checks, plus all six pages in compact dark/light stress layouts. A normal-user packaged restart restored the synthetic session. Two real read-only scans ended at scan number 2 with all 18 sections read, 178 known device records and 41 responsive timer ticks. Live diagnostics retain counts/status; screenshots and export fixtures are synthetic.
+
+The BAT progress row includes read/not-read counts when timing metadata is available. Narrow layouts use shorter text; callers without timing metadata retain the original formatter. CHECK is counted as data read and the catalog contributes one check. Collection and identifier values retain the existing providers and normalization rules.
+
+Audited executable SHA-256: `6270F78E12ECD2302D74D1308D3FF18380B121CB5FB4978671B8E5A2978B0CDE`.
+### Performance check
+
+Local synthetic measurements on November 11, 2026:
+
+| Workload | Previous path | Optimized path |
+| --- | --- | --- |
+| 32 ID searches over 20,000 synthetic fields | 27.95 ms; 81.09 MB allocated | 14.57 ms; 3.59 MB allocated |
+| 32 Review searches over 2,000 synthetic findings | 5.64 ms; 12.55 MB allocated | 1.14 ms; about 1 KB allocated |
+| 40 progress updates with 81 retained console entries, Windows PowerShell 5.1 | 1,266 ms | 24.7 ms |
+| Same console workload, PowerShell 7 | 1,455 ms | 26.8 ms |
+
+Search figures compare both paths in one process; console figures are sequential runs using the same synthetic workload. Results are local medians, not end-to-end hardware-scan guarantees. A normal fast-path progress update lays out one entry instead of all 81. Full redraws still run for resizing, wrapping changes and periodic repair. Search text uses memory for the active capture and is replaced with each new capture.
+
+The performance build also passed 31 scrolling, 52 interaction, 14 readability and 24 shared save/compare checks, plus all six compact stress renders. Its live scan read 18 sections and 178 known device records while recording 22 responsive UI ticks. Windows provider queries, coverage and timeout limits were retained.
+
 ## Desktop 1.4.5 and BAT 3.90
 
 The build uses the self-contained .NET 10 Windows x64 runtime.

@@ -37,6 +37,7 @@ public partial class MainWindow : Window
         ["CanvasBrush"] = "#0D1521", ["SidebarBrush"] = "#101B29", ["PanelBrush"] = "#152131",
         ["BorderBrush"] = "#304258", ["TextBrush"] = "#EEF5FA", ["MutedBrush"] = "#A7B9CC",
         ["AccentBrush"] = "#66E1CE", ["WarningBrush"] = "#F3C785", ["NavActiveBrush"] = "#214642",
+        ["SuccessBrush"] = "#83DFA9", ["WorkingBrush"] = "#A6CFFF", ["ErrorBrush"] = "#FFB4AC",
         ["StatusBrush"] = "#173235", ["StatusBorderBrush"] = "#36535D", ["ControlBrush"] = "#1C2B3F",
         ["ControlBorderBrush"] = "#405673", ["ControlHoverBrush"] = "#2B4055", ["DisabledControlBrush"] = "#202B38",
         ["DisabledTextBrush"] = "#9AA9BA", ["FocusBrush"] = "#BAF6E9", ["PrimaryForegroundBrush"] = "#082A2A",
@@ -49,6 +50,7 @@ public partial class MainWindow : Window
         ["CanvasBrush"] = "#EEF2F7", ["SidebarBrush"] = "#F8FAFC", ["PanelBrush"] = "#FFFFFF",
         ["BorderBrush"] = "#C6D2DE", ["TextBrush"] = "#17222E", ["MutedBrush"] = "#5B6B7C",
         ["AccentBrush"] = "#0F766E", ["WarningBrush"] = "#8A5A00", ["NavActiveBrush"] = "#D7EEE9",
+        ["SuccessBrush"] = "#176C40", ["WorkingBrush"] = "#175EA8", ["ErrorBrush"] = "#B42318",
         ["StatusBrush"] = "#E1F1ED", ["StatusBorderBrush"] = "#A7CFC6", ["ControlBrush"] = "#FFFFFF",
         ["ControlBorderBrush"] = "#B9C7D4", ["ControlHoverBrush"] = "#E9F0F6", ["DisabledControlBrush"] = "#E7ECF1",
         ["DisabledTextBrush"] = "#97A4B1", ["FocusBrush"] = "#0F766E", ["PrimaryForegroundBrush"] = "#FFFFFF",
@@ -59,7 +61,12 @@ public partial class MainWindow : Window
     private DesktopSnapshot? _snapshot;
     private CancellationTokenSource? _operationCancellation;
     private bool _busy, _initialized, _closing, _closeRequested, _refreshAgain;
+    private bool _snapshotCatalogLoaded;
+    private int _snapshotCatalogSkipped;
+    private string? _snapshotCatalogError;
     private Task? _snapshotRefreshTask;
+    private readonly CancellationTokenSource _catalogCancellation = new();
+    private bool _snapshotCatalogRefreshing;
     private TaskCompletionSource<bool>? _operationFinished;
     private string _page = "Overview", _operation = "", _lastSaveFolder = "";
     private string? _rememberedBat;
@@ -73,8 +80,9 @@ public partial class MainWindow : Window
     private string _lastComparisonSummary = "", _lastComparisonNotes = "", _lastComparisonBaseline = "", _lastComparisonCurrent = "";
     private bool _comparisonHasFields, _comparisonHasGaps, _comparisonSameFile;
     private int _scanGeneration, _scanCompletedStages, _scanTotalStages = ScanSectionNames.Length;
-    private bool IsVerification => _args.Any(argument => argument.Split('=', 2)[0].ToLowerInvariant() is
-        "--fixture" or "--render" or "--scan-test" or "--workflow-test" or "--ui-test" or "--readability-test");
+    private bool IsVerification => IsVerificationLaunch(_args);
+    internal static bool IsVerificationLaunch(string[] args) => args.Any(argument => argument.Split('=', 2)[0].ToLowerInvariant() is
+        "--fixture" or "--render" or "--scan-test" or "--workflow-test" or "--ui-test" or "--readability-test" or "--scroll-test" or "--restart-test" or "--restart-result" or "--theme-test" or "--welcome-test" or "--library-test" or "--scan-ui-test" or "--startup-test");
     private int _ticks, _responsiveTicks;
     private string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HWID Checker", "Desktop", "settings.json");
     private string DefaultReportsFolder => Path.Combine(Path.GetDirectoryName(_engine?.BatPath) ?? AppContext.BaseDirectory, "HWID-Reports");
@@ -82,11 +90,15 @@ public partial class MainWindow : Window
     private string? VerificationSharedSettingsPath =>
         IsVerification && Argument("--shared-settings") is { } path && !string.IsNullOrWhiteSpace(path) ? path : null;
 
-    public MainWindow(string[] args)
+    public MainWindow(string[] args, JsonElement? startupPreferences = null)
     {
         _args = args;
-        if (!IsVerification) LoadPreferences();
+        _restartReceiving = Argument("--restart-pipe") != null;
+        if (startupPreferences.HasValue) ApplyPreferences(startupPreferences.Value);
+        else if (!IsVerification) LoadPreferences();
         InitializeComponent();
+        PreviewMouseWheel += OnPageMouseWheel;
+        PreviewKeyDown += OnPageScrollKey;
         var work = SystemParameters.WorkArea;
         var availableWidth = Math.Max(1, work.Width - 16);
         var availableHeight = Math.Max(1, work.Height - 16);
@@ -99,19 +111,28 @@ public partial class MainWindow : Window
             var dimensions = size.Split('x');
             if (dimensions.Length == 2 && double.TryParse(dimensions[0], out var width) && double.TryParse(dimensions[1], out var height)) { Width = width; Height = height; }
         }
-        Dashboard.SizeChanged += (_, _) => FitLayout();
+        Dashboard.SizeChanged += (_, _) =>
+        {
+            foreach (var page in new FrameworkElement[] { OverviewPage, IdentifiersPage, HardwarePage, ReviewPage, SnapshotsPage, ComparePage }) ResetPageMotion(page);
+            StopFade(Dashboard);
+            FitLayout();
+        };
+        Closed += (_, _) => { _catalogCancellation.Cancel(); _catalogCancellation.Dispose(); };
         DataContext = this;
         SideVersionText.Text = "Desktop " + DesktopUpdater.CurrentVersion;
         _initialized = true;
+        FilterIds();
         UpdateEmptyStates();
+        if (IsVerification && Argument("--theme") == "daylight") _darkTheme = false;
         ApplyTheme(_darkTheme);
         FitLayout();
         _timer.Tick += async (_, _) =>
         {
             _responsiveTicks++;
+            if (WindowState == WindowState.Minimized || !IsVisible) return;
             if (_busy && _operation == "Scan")
-                ScanElapsedText.Text = $"{_scanCompletedStages} of {_scanTotalStages} checks finished  ·  {_scanClock.Elapsed:mm\\:ss}";
-            if (++_ticks % 15 == 0 && _page == "Snapshots" && !_busy && !IsVerification) await RefreshSnapshotsAsync();
+                UpdateScanActivityText();
+            if (++_ticks % 15 == 0 && _page == "Snapshots" && !_busy && !IsVerification) await RefreshSnapshotsAsync(automatic: true);
         };
         _timer.Start();
         InputBindings.Add(new KeyBinding(new UiCommand(async () => await RunScanAsync(), () => !_busy && _engine != null), Key.R, ModifierKeys.Control));
@@ -124,14 +145,32 @@ public partial class MainWindow : Window
     {
         Navigate("Overview");
         if (!IsVerification && _pendingPage.Length > 0) Navigate(_pendingPage);
-        ConnectEngine(FindEngine());
+        ShowStatus("Preparing HWID Checker", "Connecting the local scanner…", kind: UiStatusKind.Working);
+        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+        if (_closing || _closeRequested) return;
+        await ConnectEngineAtStartupAsync();
+        if (_closing || _closeRequested) return;
+        if (Argument("--startup-test") is { } startupTest)
+        {
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+            await ((App)Application.Current).WriteStartupResultAsync(startupTest, _engine != null);
+            Close(); return;
+        }
+        if (_restartReceiving && !await RestoreDesktopRestartAsync()) return;
+        if (ShouldShowWelcome(IsVerification, _restartReceiving, _welcomeSeen, _showWelcomeOnStartup))
+            await ShowWelcomeAsync();
+        if (_closing || _closeRequested) return;
         if (Argument("--render") == null || Argument("--workflow-test") != null)
             await RefreshSnapshotsAsync();
         else
         {
             SnapshotCountText.Text = "No saved snapshots in this preview.";
+            _snapshotCatalogLoaded = true;
             ShowSnapshotFolders(ReadSharedLibrary());
         }
+        if (_closing || _closeRequested) return;
+        if (_restartSelectedSnapshotPath is { Length: > 0 } restoredPath)
+            SnapshotsGrid.SelectedItem = SnapshotsGrid.Items.Cast<SnapshotEntry>().FirstOrDefault(entry => entry.Path.Equals(restoredPath, StringComparison.OrdinalIgnoreCase));
         var fixture = Argument("--fixture");
         if (fixture != null)
         {
@@ -144,10 +183,23 @@ public partial class MainWindow : Window
         if (workflow != null) await VerifyWorkflowAsync(workflow);
         if (Argument("--ui-test") is { } uiTest) await VerifyUiRegressionAsync(uiTest);
         if (Argument("--readability-test") is { } readabilityTest) await VerifyReadabilityAsync(readabilityTest);
+        if (Argument("--theme-test") is { } themeTest) await VerifyNativeThemeAsync(themeTest);
+        if (Argument("--welcome-test") is { } welcomeTest) await VerifyWelcomeAsync(welcomeTest);
+        if (Argument("--library-test") is { } libraryTest) await VerifyLibraryAsync(libraryTest);
+        if (Argument("--scan-ui-test") is { } scanUiTest) await VerifyScanUiAsync(scanUiTest);
+        if (Argument("--scroll-test") is { } scrollTest) { await VerifyScrollingAsync(scrollTest); Close(); return; }
+        if (Argument("--restart-test") is { } restartTest) { await VerifyRestartAsync(restartTest); return; }
         var scanTest = Argument("--scan-test");
         if (scanTest != null)
         {
             var success = await RunScanAsync();
+            if (success && _args.Contains("--rescan-test", StringComparer.OrdinalIgnoreCase))
+            {
+                var expected = NextScanNumber(_snapshot);
+                success = await RunScanAsync();
+                if (success && _snapshot?.Info.Number("ScanNumber") != expected)
+                    throw new InvalidOperationException("Dashboard layout: live rescan did not publish the requested scan number.");
+            }
             await WriteTestResultAsync(scanTest, success);
             Close();
             return;
@@ -188,6 +240,7 @@ public partial class MainWindow : Window
             _updater = new DesktopUpdater(AppContext.BaseDirectory);
             _updater.Changed += (_, _) => UpdateUpdateButton();
             UpdateUpdateButton();
+            if (_closing || _closeRequested) return;
             await _updater.PrepareAutomaticallyAsync();
         }
     }
@@ -227,26 +280,71 @@ public partial class MainWindow : Window
         StatusPanel.Padding = shortWindow ? new Thickness(10, 6, 10, 6) : new Thickness(11, 8, 11, 8);
         StatusPanel.Margin = new Thickness(0, 0, 0, shortWindow ? 6 : 13);
         FooterPanel.Margin = new Thickness(0, shortWindow ? 4 : 9, 0, 0);
+        FooterText.Visibility = workspace < 675 ? Visibility.Collapsed : Visibility.Visible;
+        Grid.SetColumn(PrivacyFooterText, workspace < 675 ? 0 : 1);
+        Grid.SetColumnSpan(PrivacyFooterText, workspace < 675 ? 2 : 1);
+        PrivacyFooterText.Text = workspace < 675 ? "Private IDs · review before sharing" : "Local scan · review IDs before sharing";
         foreach (var button in HeaderActions.Children.OfType<Button>())
         {
             button.Padding = shortWindow ? new Thickness(9, 5, 9, 5) : new Thickness(15, 10, 15, 10);
             button.FontSize = shortWindow ? 13 : 14;
         }
+        ExportButton.Content = workspace < 550 ? "Export…" : "Export CSV / HTML…";
+        ExportButton.ToolTip = "Export the current snapshot as CSV and HTML";
         HeaderText.Margin = stackedHeader ? new Thickness(0) : new Thickness(0, 0, 14, 0);
         Grid.SetColumnSpan(HeaderText, stackedHeader ? 2 : 1);
         Grid.SetRow(HeaderActions, stackedHeader ? 1 : 0);
         Grid.SetColumn(HeaderActions, stackedHeader ? 0 : 1);
         Grid.SetColumnSpan(HeaderActions, stackedHeader ? 2 : 1);
         HeaderActions.Margin = stackedHeader ? new Thickness(0, shortWindow ? 6 : 8, 0, 0) : new Thickness(0);
+        var stackedIds = workspace < 650;
+        IdDeviceColumn.Visibility = workspace < 620 ? Visibility.Collapsed : Visibility.Visible;
+        var idActionTop = stackedIds ? shortWindow ? 4 : 8 : 0;
+        Grid.SetColumnSpan(IdSearchPanel, stackedIds ? 4 : 1);
+        Grid.SetRow(IdFilter, stackedIds ? 1 : 0);
+        Grid.SetColumn(IdFilter, stackedIds ? 0 : 1);
+        IdFilter.HorizontalAlignment = stackedIds ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
+        IdFilter.Margin = stackedIds ? new Thickness(0, idActionTop, 8, 0) : new Thickness(8, 0, 8, 0);
+        Grid.SetRow(CopyIdButton, stackedIds ? 1 : 0);
+        Grid.SetRow(CopyIdsButton, stackedIds ? 1 : 0);
+        CopyIdButton.Margin = new Thickness(0, idActionTop, 0, 0);
+        CopyIdsButton.Margin = new Thickness(8, idActionTop, 0, 0);
+        CopyIdsButton.Content = stackedIds ? "Copy list" : "Copy listed rows";
+        IdToolsPanel.Margin = new Thickness(0, 0, 0, shortWindow ? 6 : 10);
+        IdSearch.Padding = shortWindow ? new Thickness(8, 5, 8, 5) : new Thickness(12, 9, 12, 9);
+        IdFilter.MinHeight = shortWindow ? 30 : 38;
+        IdFilter.Padding = shortWindow ? new Thickness(8, 5, 27, 5) : new Thickness(12, 8, 33, 8);
+        foreach (var button in new[] { CopyIdButton, CopyIdsButton })
+            button.Padding = shortWindow ? new Thickness(9, 5, 9, 5) : new Thickness(15, 10, 15, 10);
+        IdDetailRow.MinHeight = shortWindow ? 52 : 70;
+        IdDetailRow.MaxHeight = shortWindow ? 76 : 126;
+        IdDetailLabel.Visibility = shortWindow ? Visibility.Collapsed : Visibility.Visible;
         var stackedComparison = workspace < 735;
         Grid.SetRow(CompareActions, stackedComparison ? 1 : 0);
         Grid.SetColumn(CompareActions, stackedComparison ? 0 : 1);
         Grid.SetColumnSpan(CompareActions, stackedComparison ? 2 : 1);
         Grid.SetColumnSpan(CompareHeaderText, stackedComparison ? 2 : 1);
         CompareActions.HorizontalAlignment = stackedComparison ? HorizontalAlignment.Left : HorizontalAlignment.Right;
-        CompareActions.Margin = stackedComparison ? new Thickness(0, 6, 0, 0) : new Thickness(0);
+        CompareActions.Margin = stackedComparison ? new Thickness(0, shortWindow ? 2 : 6, 0, 0) : new Thickness(0);
+        CompareBaselineText.Margin = CompareCurrentText.Margin = new Thickness(0, shortWindow ? 0 : 3, 0, 0);
+        CompareHeader.Margin = new Thickness(0, 0, 0, shortWindow ? 5 : 10);
+        foreach (var button in SnapshotToolsPanel.Children.OfType<Button>().Concat(SnapshotFooterActions.Children.OfType<Button>()))
+            button.Padding = shortWindow ? new Thickness(8, 5, 8, 5) : new Thickness(15, 10, 15, 10);
+        SnapshotFoldersText.Visibility = shortWindow ? Visibility.Collapsed : Visibility.Visible;
+        SnapshotSelectedPath.Visibility = shortWindow ? Visibility.Collapsed : Visibility.Visible;
+        foreach (var search in new[] { SnapshotSearch, CompareSearch })
+            search.Padding = shortWindow ? new Thickness(8, 5, 8, 5) : new Thickness(12, 9, 12, 9);
+        CompareFilter.Padding = shortWindow ? new Thickness(8, 5, 27, 5) : new Thickness(12, 8, 33, 8);
+        CompareFilter.MinHeight = shortWindow ? 30 : 38;
+        CompareDetailRow.MaxHeight = shortWindow ? 76 : 155;
         foreach (var button in CompareActions.Children.OfType<Button>())
             button.Padding = shortWindow ? new Thickness(8, 5, 8, 5) : new Thickness(15, 10, 15, 10);
+        var stackedActivity = workspace < 850;
+        Grid.SetRow(ScanElapsedText, stackedActivity ? 1 : 0);
+        Grid.SetColumn(ScanElapsedText, stackedActivity ? 0 : 1);
+        Grid.SetColumnSpan(ScanElapsedText, stackedActivity ? 2 : 1);
+        ScanElapsedText.TextAlignment = stackedActivity ? TextAlignment.Left : TextAlignment.Right;
+        ScanElapsedText.Margin = stackedActivity ? new Thickness(0, 4, 0, 0) : new Thickness(0);
         MetricsGrid.Columns = workspace < 625 ? 2 : 4;
         var stackedComputer = workspace < 625;
         OverviewComputerColumn.Width = new GridLength(1, GridUnitType.Star);
@@ -258,15 +356,16 @@ public partial class MainWindow : Window
         Grid.SetColumn(WindowsSummary, stackedComputer ? 0 : 2);
         ComputerSummary.Margin = stackedComputer ? new Thickness(0, 0, 0, 10) : new Thickness(0, 0, 14, 0);
         CpuSummary.Margin = stackedComputer ? new Thickness(0, 0, 0, 10) : new Thickness(0, 0, 14, 0);
-        HardwareSectionsColumn.Width = new GridLength(compactHardware ? 0 : 210);
-        HardwareSectionsPanel.Visibility = compactHardware ? Visibility.Collapsed : Visibility.Visible;
-        HardwareSectionPicker.Visibility = compactHardware ? Visibility.Visible : Visibility.Collapsed;
+        var hasHardwareSections = _snapshot != null && HardwareSections.Items.Count > 0;
+        HardwareSectionsColumn.Width = new GridLength(compactHardware || !hasHardwareSections ? 0 : 210);
+        HardwareSectionsPanel.Visibility = !compactHardware && hasHardwareSections ? Visibility.Visible : Visibility.Collapsed;
+        HardwareSectionPicker.Visibility = compactHardware && hasHardwareSections ? Visibility.Visible : Visibility.Collapsed;
         HardwareSectionTitle.Visibility = compactHardware ? Visibility.Collapsed : Visibility.Visible;
         Grid.SetColumn(HardwareRecord, compactHardware ? 1 : 0);
         Grid.SetColumnSpan(HardwareRecord, compactHardware ? 1 : 2);
         HardwareSearch.Padding = shortWindow ? new Thickness(8, 5, 8, 5) : new Thickness(12, 9, 12, 9);
         HardwareSearchHost.Margin = new Thickness(0, 0, 0, shortWindow ? 4 : 8);
-        HardwareDetailRow.MinHeight = shortWindow ? 52 : 70;
+        HardwareDetailRow.MinHeight = HardwareFields.Items.Count > 0 ? shortWindow ? 52 : 70 : 0;
         CompareDetailRow.MinHeight = CompareDetailPanel.Visibility == Visibility.Visible ? shortWindow ? 66 : 76 : 0;
         foreach (var picker in new[] { HardwareSectionPicker, HardwareRecord })
         {
@@ -297,9 +396,18 @@ public partial class MainWindow : Window
             var path = source ?? SettingsPath;
             if (!File.Exists(path) || new FileInfo(path).Length > 262144) return;
             using var document = JsonDocument.Parse(File.ReadAllText(path));
-            var preferences = document.RootElement;
+            ApplyPreferences(document.RootElement);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { }
+    }
+    private void ApplyPreferences(JsonElement preferences)
+    {
+        try
+        {
             _rememberedBat = preferences.Text("batPath");
             if (preferences.Get("darkTheme").ValueKind is JsonValueKind.True or JsonValueKind.False) _darkTheme = preferences.Get("darkTheme").ValueKind == JsonValueKind.True;
+            _welcomeSeen = preferences.Flag("welcomeSeen");
+            _showWelcomeOnStartup = preferences.Flag("showWelcomeOnStartup");
             var savedPage = preferences.Text("lastPage");
             if (savedPage.Length > 0) _pendingPage = savedPage;
             var lastFolder = preferences.Text("lastSaveFolder");
@@ -312,13 +420,18 @@ public partial class MainWindow : Window
     private async Task<bool> RememberPreferencesAsync(string? destination = null)
     {
         if (IsVerification && destination == null) return true;
+        var revision = ++_preferencesRevision;
         var path = destination ?? SettingsPath;
         var temporary = path + ".pending-" + Guid.NewGuid().ToString("N");
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var preferences = JsonSerializer.Serialize(new { batPath = _engine?.BatPath, lastSaveFolder = _lastSaveFolder, snapshotFolders = _additionalFolders.ToArray(), darkTheme = _darkTheme, lastPage = _page });
+            var preferences = JsonSerializer.Serialize(new { batPath = _engine?.BatPath ?? _rememberedBat, lastSaveFolder = _lastSaveFolder, snapshotFolders = _additionalFolders.ToArray(), darkTheme = _darkTheme, lastPage = _page,
+                welcomeSeen = _welcomeSeen, showWelcomeOnStartup = _showWelcomeOnStartup });
             await File.WriteAllTextAsync(temporary, preferences);
+            // All callers resume on the window dispatcher. A newer save (or the
+            // synchronous close save) must not be replaced by an older write.
+            if (revision != _preferencesRevision) return true;
             File.Move(temporary, path, true);
             return true;
         }
@@ -330,12 +443,14 @@ public partial class MainWindow : Window
     private bool RememberPreferencesNow(string? destination = null)
     {
         if (IsVerification && destination == null) return true;
+        ++_preferencesRevision;
         var path = destination ?? SettingsPath;
         var temporary = path + ".pending-" + Guid.NewGuid().ToString("N");
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var preferences = JsonSerializer.Serialize(new { batPath = _engine?.BatPath, lastSaveFolder = _lastSaveFolder, snapshotFolders = _additionalFolders.ToArray(), darkTheme = _darkTheme, lastPage = _page });
+            var preferences = JsonSerializer.Serialize(new { batPath = _engine?.BatPath ?? _rememberedBat, lastSaveFolder = _lastSaveFolder, snapshotFolders = _additionalFolders.ToArray(), darkTheme = _darkTheme, lastPage = _page,
+                welcomeSeen = _welcomeSeen, showWelcomeOnStartup = _showWelcomeOnStartup });
             File.WriteAllText(temporary, preferences);
             File.Move(temporary, path, true);
             return true;
@@ -347,29 +462,28 @@ public partial class MainWindow : Window
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
         {
-            EngineConnectionText.Text = "BAT connection needed";
-            EngineVersionText.Text = "Choose your hwid.bat file";
-            ScanButton.IsEnabled = false;
-            _engine?.Dispose();
-            _engine = null;
-            UpdateButtons();
+            DisconnectEngine();
             ShowStatus("Connect your checker", "Keep the EXE beside hwid.bat, or use Connect BAT to select the scanner.", true);
             return;
         }
         try
         {
-            _engine?.Dispose();
-            _engine = new EngineClient(Path.GetFullPath(path));
+            var source = EngineRecovery.ReadScannerText(path);
+            AttachPreparedEngine(new EngineClient(Path.GetFullPath(path)), source);
+        }
+        catch (Exception ex) { DisconnectEngine(); ShowError("Could not connect the BAT", ex); }
+    }
+    private void AttachPreparedEngine(EngineClient engine, string source)
+    {
+            _engine?.Dispose(); _engine = engine;
             EngineConnectionText.Text = "BAT connected";
             EngineConnectionText.ToolTip = _engine.BatPath;
-            var version = Regex.Match(File.ReadAllText(path), @"Version\s*=\s*'([0-9.]+)'");
+            var version = Regex.Match(source, @"Version\s*=\s*'([0-9.]+)'");
             EngineVersionText.Text = version.Success ? "Scanner v" + version.Groups[1].Value : "Existing PowerShell scanner";
-            FooterText.Text = "Connected to " + Path.GetFileName(path) + "  ·  Windows-reported inventory";
+            FooterText.Text = "Connected to " + Path.GetFileName(engine.BatPath) + "  ·  Windows-reported inventory";
             FooterText.ToolTip = _engine.BatPath;
             UpdateButtons();
             ShowStatus("Ready to scan", "Choose Scan this PC to read hardware information and the identifiers Windows supplies.");
-        }
-        catch (Exception ex) { _engine = null; UpdateButtons(); ShowError("Could not connect the BAT", ex); }
     }
     private void ApplyTheme(bool dark)
     {
@@ -382,6 +496,7 @@ public partial class MainWindow : Window
             resources[pair.Key] = brush;
         }
         ThemeButton.Content = dark ? "Theme: Midnight" : "Theme: Daylight";
+        ThemeButton.ToolTip = "Match the app's title bar and controls. New BAT windows follow this saved theme.";
     }
 
     private async void OnToggleTheme(object sender, RoutedEventArgs e)
@@ -456,12 +571,12 @@ public partial class MainWindow : Window
             var element = pages[page];
             var slide = element.RenderTransform as TranslateTransform ?? new TranslateTransform();
             element.RenderTransform = slide;
-            slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(6, 0, TimeSpan.FromMilliseconds(140))
+            slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(3, 0, TimeSpan.FromMilliseconds(120))
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
                 FillBehavior = FillBehavior.Stop
             });
-            FadeIn(element, 0.88, 140, () => ResetPageMotion(element));
+            FadeIn(element, 0.96, 120, () => ResetPageMotion(element));
         }
     }
     private void StopFade(FrameworkElement element)
@@ -500,6 +615,7 @@ public partial class MainWindow : Window
     {
         base.OnPropertyChanged(e);
         if (!_initialized || e.Property != UiMotion.EnabledProperty || UiMotion.GetEnabled(this)) return;
+        ScanProgress.IsIndeterminate = false;
         foreach (var element in _fadeClocks.Keys.ToArray()) StopFade(element);
         foreach (var page in PageHost.Children.OfType<FrameworkElement>()) ResetPageMotion(page);
         FinishWindowFade();
@@ -536,6 +652,8 @@ public partial class MainWindow : Window
             "Identifiers" => IdSearch,
             "Review" => ReviewSearch,
             "Hardware" => HardwareSearch,
+            "Snapshots" => SnapshotSearch,
+            "Compare" => CompareSearch,
             _ => null
         };
         if (target == null) { ShowStatus("Search", "This page has no search box. Search is available on IDs, Review and Hardware."); }
@@ -543,27 +661,31 @@ public partial class MainWindow : Window
         return Task.CompletedTask;
     }
 
-    private void ShowStatus(string title, string detail, bool warning = false)
+    private void ShowStatus(string title, string detail, bool warning = false, UiStatusKind? kind = null)
     {
         if (_closing) return;
         StatusTitle.Text = title;
         SetSummary(StatusDetail, detail);
-        StatusTitle.SetResourceReference(TextBlock.ForegroundProperty, warning ? "WarningBrush" : "AccentBrush");
+        ApplyStatusKind(kind ?? (warning ? UiStatusKind.Review : UiStatusKind.Info));
     }
     private static void SetSummary(TextBlock label, string text, string? fullText = null)
     {
         label.Text = text.ReplaceLineEndings(" ");
         label.ToolTip = fullText ?? text;
     }
-    private void ShowError(string title, Exception ex) => ShowStatus(title, ex.Message.Length > 1800 ? ex.Message[..1800] : ex.Message, true);
+    private void ShowError(string title, Exception ex) => ShowStatus(title, ex.Message.Length > 1800 ? ex.Message[..1800] : ex.Message, kind: UiStatusKind.Error);
     private void SetBusy(bool busy, string operation = "")
     {
         if (busy) _operationFinished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _busy = busy; _operation = operation;
+        Dashboard.IsEnabled = !busy || operation != "Restart";
         var scanning = busy && operation == "Scan";
         MetricsGrid.Visibility = scanning ? Visibility.Collapsed : Visibility.Visible;
         OverviewComputerCard.Visibility = scanning ? Visibility.Collapsed : Visibility.Visible;
-        CancelButton.Visibility = busy && operation == "Scan" ? Visibility.Visible : Visibility.Collapsed;
+        CancelButton.Visibility = busy && operation is "Scan" or "Compare" ? Visibility.Visible : Visibility.Collapsed;
+        CancelButton.Content = operation == "Compare" ? "Cancel comparison" : "Cancel scan";
+        ScanProgress.IsIndeterminate = busy && operation == "Compare" && UiMotion.GetEnabled(this);
+        if (busy && operation == "Compare") ScanProgress.Value = 0;
         CancelButton.IsEnabled = true;
         UpdateButtons();
         if (!busy) _operationFinished?.TrySetResult(true);
@@ -571,15 +693,20 @@ public partial class MainWindow : Window
     private void UpdateButtons()
     {
         if (!_initialized) return;
-        ScanButton.IsEnabled = !_busy && _engine != null;
-        ConnectButton.IsEnabled = !_busy;
-        RestartButton.IsEnabled = !_busy;
+        ScanButton.IsEnabled = !_busy && !_startupConnecting && _engine != null;
+        ConnectButton.IsEnabled = !_busy && !_startupConnecting;
+        RestartButton.IsEnabled = !_busy && !_startupConnecting;
+        WelcomeButton.IsEnabled = !_busy && !_welcomeOpen;
+        RestartButton.Content = _busy && _operation == "Restart" ? "Restarting…" : "Restart app";
+        RestartButton.ToolTip = "Open a fresh desktop window, keeping the current scan, page and comparison. The current window stays open if startup fails.";
         SaveButton.IsEnabled = !_busy && _snapshot != null && _engine != null;
         ExportButton.IsEnabled = !_busy && _snapshot != null;
         CompareFilesButton.IsEnabled = !_busy && _engine != null;
         CompareCurrentButton.IsEnabled = !_busy && _snapshot != null && _engine != null;
         CompareExportButton.IsEnabled = !_busy && _lastComparisonRows != null;
         CompareSelectedButton.IsEnabled = !_busy && _snapshot != null && SnapshotsGrid.SelectedItem is SnapshotEntry;
+        CompareSavedButton.IsEnabled = !_busy && _engine != null;
+        OpenConsoleButton.IsEnabled = !_busy && !_startupConnecting;
         SnapshotFolderSettingsButton.IsEnabled = !_busy && (!IsVerification || VerificationSharedSettingsPath != null);
         UpdatesButton.IsEnabled = !IsVerification;
         UpdateEmptyStates();
@@ -588,6 +715,8 @@ public partial class MainWindow : Window
     private void UpdateEmptyStates()
     {
         if (!_initialized) return;
+        UpdateHardwareEmptyState();
+        UpdateSnapshotEmptyState();
         var scanning = _busy && _operation == "Scan";
         var reviewHasRows = ReviewGrid.Items.Count > 0;
         ReviewGrid.Visibility = reviewHasRows ? Visibility.Visible : Visibility.Collapsed;
@@ -640,14 +769,15 @@ public partial class MainWindow : Window
         CompareEmptyState.Visibility = hasChanges ? Visibility.Collapsed : Visibility.Visible;
         CompareDetailPanel.Visibility = hasComparison || hasChanges ? Visibility.Visible : Visibility.Collapsed;
         CompareSkippedText.Visibility = hasChanges ? Visibility.Visible : Visibility.Collapsed;
-        CompareDetailRow.MinHeight = hasComparison || hasChanges ? Dashboard.ActualHeight < 600 ? 66 : 76 : 0;
+        CompareDetailRow.MinHeight = hasComparison || hasChanges ? Dashboard.ActualHeight < 600 ? 52 : 76 : 0;
         CompareDetailRow.Height = new GridLength(hasComparison || hasChanges ? 0.5 : 0, GridUnitType.Star);
         if (comparing)
             CompareSummaryText.Text = hasComparison ? "Comparing… previous results remain below." : "Comparing the selected captures…";
         else if (scanning && hasComparison)
             CompareSummaryText.Text = "Previous comparison · a new scan is running";
         else if (hasComparison)
-            CompareSummaryText.Text = hasChanges ? _lastComparisonSummary : "Comparison finished";
+            CompareSummaryText.Text = _lastComparisonSummary +
+                (HasComparisonFilter ? $" · {CompareGrid.Items.Count} of {_lastComparisonRows!.Count} differences shown" : "");
         else
             CompareSummaryText.Text = "Choose a current scan or two saved captures.";
         CompareEmptyAction.Visibility = comparing || hasComparison ? Visibility.Collapsed : Visibility.Visible;
@@ -675,6 +805,14 @@ public partial class MainWindow : Window
         }
         else
         {
+            if (_lastComparisonRows!.Count > 0 && !hasChanges && HasComparisonFilter)
+            {
+                CompareEmptyTitle.Text = "No differences match these filters";
+                CompareEmptyText.Text = "The comparison has differences. Clear the search and category filter to show them all.";
+                CompareEmptyAction.Content = "Clear filters"; CompareEmptyAction.Tag = "ClearComparison";
+                CompareEmptyAction.Visibility = Visibility.Visible; CompareEmptyAction.IsEnabled = true;
+                return;
+            }
             CompareEmptyTitle.Text = _comparisonSameFile ? "The same file was selected twice" :
                 !_comparisonHasFields ? "No identifier fields could be compared" : "No changes in the fields compared";
             CompareEmptyText.Text = _comparisonSameFile ? "Both sides use the same JSON file path. Choose different saved captures to compare two scans." :
@@ -692,6 +830,11 @@ public partial class MainWindow : Window
         switch (action)
         {
             case "ClearReview": ReviewSearch.Clear(); break;
+            case "ClearHardware": HardwareSearch.Clear(); break;
+            case "Save": await SaveSnapshotAsync(); break;
+            case "RefreshSnapshots": await RefreshSnapshotsAsync(); break;
+            case "ClearSnapshots": SnapshotSearch.Clear(); break;
+            case "ClearComparison": CompareSearch.Clear(); CompareFilter.SelectedIndex = 0; break;
             case "Scan": await RunScanAsync(); break;
             case "Connect": OnChooseBat(sender, e); break;
             case "CompareCurrent": OnChooseComparison(sender, e); break;
@@ -715,20 +858,23 @@ public partial class MainWindow : Window
         ScanProgress.Value = 0;
         SnapshotContextText.Text = _snapshot == null ? "Preparing the first snapshot" :
             "Last completed snapshot · " + _snapshot.Info.Text("Computer") + " · " + J.Date(_snapshot.Info.Text("Generated"));
-        ShowStatus("Scanning this PC", _snapshot == null ? "Reading hardware information from Windows. You can cancel and try again." : "Reading a new capture. Your last completed scan remains available until this one finishes.");
+        ShowStatus("Scanning this PC", _snapshot == null ? "Reading hardware information from Windows. You can cancel and try again." : "Reading a new capture. Your last completed scan remains available until this one finishes.", kind: UiStatusKind.Working);
         try
         {
             var progress = new Progress<BridgeProgress>(value => ApplyScanProgress(value, generation));
-            var result = await _engine.ScanAsync(progress, _operationCancellation.Token);
-            var candidate = new DesktopSnapshot(result);
+            var cancellation = _operationCancellation.Token;
+            var result = await _engine.ScanAsync(progress, cancellation, NextScanNumber(_snapshot));
+            var candidate = await Task.Run(() => new DesktopSnapshot(result), cancellation);
+            cancellation.ThrowIfCancellationRequested();
             ApplySnapshot(candidate);
             completedScan = true;
             ScanProgress.Value = 100;
-            var complete = candidate.SectionsRead == 18 && candidate.Info.Text("ExtendedStatus") == "Refreshed";
-            ShowStatus(complete ? "Scan complete" : "Scan complete with unread sections",
-                $"{candidate.SectionsRead} of 18 sections read · {candidate.ReportedIds} identifier fields supplied · " +
+            var catalog = candidate.CatalogRow;
+            var complete = candidate.AllSectionsRead && catalog.Status is "READ" or "NOT SCANNED";
+            ShowStatus(complete ? "Scan complete" : "Scan complete · review read coverage",
+                $"{candidate.CoverageText} · {candidate.ReportedIds} identifier fields supplied · " +
                 (candidate.Findings.Count == 0 ? "No review items reported. " : $"{candidate.Findings.Count} items explained in Review. ") +
-                (candidate.Info.Text("ExtendedStatus") == "Refreshed" ? "Device list refreshed." : "The device list could not be refreshed. Open Review or Hardware for details."), !complete);
+                (catalog.Status == "READ" ? "Device list refreshed." : catalog.Detail), kind: !complete || candidate.Findings.Count > 0 ? UiStatusKind.Review : UiStatusKind.Success);
             return true;
         }
         catch (OperationCanceledException) { RestoreScanActivity(); ShowStatus("Scan cancelled", _snapshot == null ? "Start a new scan when you are ready." : "Your last completed snapshot is still active.", true); return false; }
@@ -750,12 +896,13 @@ public partial class MainWindow : Window
         if (!_busy || _operation != "Scan" || _closing || _closeRequested ||
             _operationCancellation?.IsCancellationRequested == true || generation.HasValue && generation != _scanGeneration) return;
         _scanTotalStages = Math.Max(1, value.Total);
-        _scanCompletedStages = Math.Clamp(value.Completed, 0, _scanTotalStages);
-        ScanProgress.Value = value.Total > 0 ? Math.Clamp(100d * value.Completed / value.Total, 0, 100) : 0;
-        Title = "HWID Checker — Desktop · scanning " + Math.Round(ScanProgress.Value) + "%";
+        _scanCompletedStages = Math.Clamp(Math.Max(_scanCompletedStages, value.Completed), 0, _scanTotalStages);
+        ScanProgress.Value = 100d * _scanCompletedStages / _scanTotalStages;
+        Title = _scanCompletedStages >= _scanTotalStages ? "HWID Checker — Desktop · finalizing" :
+            "HWID Checker — Desktop · scanning " + Math.Round(ScanProgress.Value) + "%";
         var name = string.IsNullOrWhiteSpace(value.Name) ? value.Section : value.Name;
         if (string.IsNullOrWhiteSpace(name)) return;
-        if (name == "Preparing") { ShowStatus("Preparing scanner", value.Message); return; }
+        if (name == "Preparing") { if (_scanCompletedStages == 0) ShowStatus("Preparing scanner", value.Message, kind: UiStatusKind.Working); return; }
         if (name == "Extended device inventory") name = "All-known device catalog";
         var finished = value.Status is not ("READING" or "WAITING" or "");
         var detail = value.Message;
@@ -767,16 +914,22 @@ public partial class MainWindow : Window
             finished ? value.Records.ToString() : "—", detail,
             value.Seconds is { } seconds ? seconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " s" : "");
         var existing = ScanRows.Select((item, index) => (item, index)).FirstOrDefault(entry => entry.item.Name == name);
+        if (existing.item != null && existing.item.Status is "READ" or "CHECK" or "NOT READ" &&
+            row.Status is "READING" or "WAITING") return;
         if (existing.item != null) ScanRows[existing.index] = row;
         else ScanRows.Add(row);
-        StatusTitle.Text = "Scanning this PC";
-        SetSummary(StatusDetail, name + " · " + value.Message);
+        UpdateScanActivityText();
+        StatusTitle.Text = _scanCompletedStages >= _scanTotalStages ? "Finalizing scan" : "Scanning this PC";
+        ApplyStatusKind(UiStatusKind.Working);
+        SetSummary(StatusDetail, _scanCompletedStages >= _scanTotalStages
+            ? "All checks finished. Waiting for the complete result before replacing your current snapshot."
+            : name + " · " + detail);
     }
     private void ApplySnapshot(DesktopSnapshot snapshot)
     {
         var previousSection = (HardwareSections.SelectedItem as HardwareSection)?.Name;
         _snapshot = snapshot;
-        IdsCount.Text = snapshot.ReportedIds.ToString("N0"); SectionsCount.Text = snapshot.SectionsRead + " / 18";
+        IdsCount.Text = snapshot.ReportedIds.ToString("N0"); SectionsCount.Text = snapshot.SectionsChecked > 0 ? snapshot.SectionsRead + " / " + snapshot.SectionsChecked : "—";
         ReviewCount.Text = snapshot.Findings.Count.ToString("N0"); DevicesCount.Text = snapshot.DeviceCount.ToString("N0");
         SetSummary(ComputerText, string.IsNullOrWhiteSpace(snapshot.Info.Text("Computer")) ? "Not supplied" : snapshot.Info.Text("Computer"));
         SetSummary(CapturedText, "Captured · " + J.Date(snapshot.Info.Text("Generated")));
@@ -786,7 +939,8 @@ public partial class MainWindow : Window
         SetSummary(CpuText, snapshot.First("CPU", "Name"));
         SnapshotContextText.Text = "Current completed snapshot";
         var ram = snapshot.First("System hardware", "TotalRAM_GiB"); MemoryText.Text = ram.Length > 0 ? "Memory · " + ram + " GiB" : "Memory · not supplied";
-        WindowsText.Text = snapshot.First("Windows", "Caption"); CatalogText.Text = "Catalog · " + snapshot.Info.Text("ExtendedStatus");
+        WindowsText.Text = snapshot.First("Windows", "Caption"); CatalogText.Text = "Device list · " + (snapshot.CatalogRow.Status switch
+        { "READ" => "read", "NOT READ" => "not read", "NOT SCANNED" => "not included", _ => "read status unknown" });
         EngineVersionText.Text = "Scanner v" + snapshot.Version;
         PopulateScanRows(snapshot);
         IdentifiersGrid.SelectedIndex = -1;
@@ -800,6 +954,9 @@ public partial class MainWindow : Window
         SetSummary(CompareBaselineText, "Baseline not selected");
         SetSummary(CompareSkippedText, "");
         _lastComparisonRows = null;
+        SetSummary(CompareCurrentText, "Current: not selected");
+        CompareSearch.Clear(); CompareFilter.SelectedIndex = 0;
+        _comparisonResumeData = null;
         _comparisonHasFields = _comparisonHasGaps = _comparisonSameFile = false;
         CompareExportButton.IsEnabled = false;
         CompareDetail.Clear();
@@ -814,14 +971,13 @@ public partial class MainWindow : Window
             sections.FirstOrDefault(section => section.Name == "Extended device inventory" && section.Count > 0) ??
             sections.FirstOrDefault();
         UpdateButtons();
+        FitLayout();
     }
     private void PopulateScanRows(DesktopSnapshot snapshot)
     {
-        ScanElapsedText.Text = $"{snapshot.Timing.Count} sections + device catalog";
+        ScanElapsedText.Text = snapshot.CoverageText;
         ScanRows.Clear(); foreach (var row in snapshot.Timing) ScanRows.Add(row);
-        var catalog = snapshot.Inventory.Get("Extended scan info");
-        ScanRows.Add(new("All-known device catalog", snapshot.Info.Text("ExtendedStatus") == "Refreshed" ? "READ" : "NOT READ", snapshot.DeviceCount.ToString(),
-            catalog.Number("ParentLinkConflicts") > 0 ? catalog.Number("ParentLinkConflicts") + " unresolved parent links" : "Present, hidden and remembered Windows records", ""));
+        ScanRows.Add(snapshot.CatalogRow);
     }
     private void RestoreScanActivity()
     {
@@ -841,7 +997,8 @@ public partial class MainWindow : Window
     {
         CancelButton.IsEnabled = false;
         _operationCancellation?.Cancel();
-        ShowStatus("Cancelling scan…", "Waiting for the scanner process to stop.");
+        ShowStatus(_operation == "Compare" ? "Cancelling comparison…" : "Cancelling scan…",
+            "Waiting for the worker to stop. Your completed scan and previous comparison stay available.", kind: UiStatusKind.Working);
     }
     private void OnIdFilterChanged(object sender, RoutedEventArgs e) { if (_initialized) FilterIds(); }
     private void OnReviewFilterChanged(object sender, RoutedEventArgs e) { if (_initialized) FilterReview(); }
@@ -849,19 +1006,34 @@ public partial class MainWindow : Window
     {
         if (!_initialized) return;
         var needle = ReviewSearch.Text.Trim();
-        ReviewGrid.ItemsSource = _snapshot == null ? null : _snapshot.Findings.Where(x =>
-            needle.Length == 0 || string.Join(" ", x.Kind, x.Section, x.Message, x.Detail).Contains(needle, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var selected = ReviewGrid.SelectedItem as ReviewRow;
+        var rows = _snapshot?.FindReview(needle) ?? Array.Empty<ReviewRow>();
+        ReplaceFilteredRows(ReviewGrid, rows);
+        ReviewGrid.SelectedItem = selected != null && rows.Contains(selected) ? selected : null;
         UpdateEmptyStates();
     }
     private void FilterIds()
     {
         if (!_initialized) return;
         var needle = IdSearch.Text.Trim(); var filter = IdFilter.SelectedIndex;
-        IdentifiersGrid.ItemsSource = (_snapshot?.Identifiers ?? []).Where(x =>
-            (filter != 1 || x.Status == "Reported") && (filter != 2 || x.Status is "Missing" or "Default") &&
-            (needle.Length == 0 || string.Join(" ", x.Section, x.Field, x.Value, x.Device).Contains(needle, StringComparison.OrdinalIgnoreCase))).ToArray();
+        var rows = _snapshot?.FindIdentifiers(needle, filter) ?? Array.Empty<IdentifierRow>();
+        var selectedRow = IdentifiersGrid.SelectedItem as IdentifierRow;
+        ReplaceFilteredRows(IdentifiersGrid, rows);
+        IdentifiersGrid.SelectedItem = selectedRow != null && rows.Contains(selectedRow) ? selectedRow : null;
+        IdResultsText.Text = _snapshot == null ? "Scan this PC to view identifiers." :
+            $"{rows.Count} of {_snapshot.Identifiers.Count} ID fields listed · {rows.Count(row => row.Status == "Reported")} supplied by Windows";
+        IdEmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        IdEmptyText.Text = _snapshot == null ? "Scan this PC to view identifiers." :
+            needle.Length > 0 || filter != 0 ? "No matching ID fields. Clear the search or choose All ID fields." :
+            "No identifier fields were captured. Hardware and Review show what Windows supplied.";
+        CopyIdsButton.IsEnabled = rows.Count > 0;
+        CopyIdButton.IsEnabled = IdentifiersGrid.SelectedItem is IdentifierRow selected && selected.Value.Length > 0;
     }
-    private void OnIdSelected(object sender, SelectionChangedEventArgs e) { IdDetail.Text = IdentifiersGrid.SelectedItem is IdentifierRow row ? row.Device + "\n" + row.Field + ": " + (row.Value.Length > 0 ? row.Value : "(not supplied)") : ""; }
+    private void OnIdSelected(object sender, SelectionChangedEventArgs e)
+    {
+        IdDetail.Text = IdentifiersGrid.SelectedItem is IdentifierRow row ? row.Device + "\n" + row.Field + ": " + (row.Value.Length > 0 ? row.Value : "(not supplied)") : "";
+        if (_initialized) CopyIdButton.IsEnabled = IdentifiersGrid.SelectedItem is IdentifierRow selected && selected.Value.Length > 0;
+    }
     private void OnIdDoubleClicked(object sender, MouseButtonEventArgs e)
     {
         if (e.OriginalSource is DependencyObject source &&
@@ -870,11 +1042,13 @@ public partial class MainWindow : Window
     }
     private void OnCopyAllIds(object sender, RoutedEventArgs e)
     {
-        var lines = (IdentifiersGrid.ItemsSource as IEnumerable<IdentifierRow>)?
-            .Select(row => row.Section + " · " + row.Field + " · " + (row.Value.Length > 0 ? row.Value : "(not supplied)")).ToArray();
-        if (lines == null || lines.Length == 0) { ShowStatus("Nothing to copy", "Run a scan first, then copy the identifier list."); return; }
-        Copy(string.Join(Environment.NewLine, lines));
+        var text = FormatIdentifierList(IdentifiersGrid.ItemsSource as IEnumerable<IdentifierRow> ?? []);
+        if (text.Length == 0) { ShowStatus("Nothing to copy", "Run a scan or clear the ID filters, then copy the listed fields."); return; }
+        Copy(text);
     }
+    private static string FormatIdentifierList(IEnumerable<IdentifierRow> rows) => string.Join(Environment.NewLine,
+        rows.Select(row => row.Section + " · " + row.Device + " · " + row.Field + " · " +
+            (row.Value.Length > 0 ? row.Value : "(not supplied)") + " · " + row.Status));
     private void OnCopyId(object sender, RoutedEventArgs e) { if (IdentifiersGrid.SelectedItem is IdentifierRow row) Copy(row.Value); }
     private void Copy(string text)
     {
@@ -882,7 +1056,7 @@ public partial class MainWindow : Window
         try
         {
             Clipboard.SetText(text);
-            ShowStatus("Copied to clipboard", text.Length > 90 ? text[..90] + "\u2026" : text);
+            ShowStatus("Copied to clipboard", text.Length > 90 ? text[..90] + "\u2026" : text, kind: UiStatusKind.Success);
         }
         catch (Exception ex) { ShowError("Could not copy this value", ex); }
     }
@@ -896,6 +1070,9 @@ public partial class MainWindow : Window
             HardwareRecord.ItemsSource = null;
             HardwareFields.ItemsSource = null;
             HardwareDetail.Clear();
+            CopyHardwareButton.IsEnabled = false;
+            HardwareRecord.IsEnabled = false;
+            UpdateHardwareEmptyState();
             return;
         }
         SetSummary(HardwareSectionTitle, section.FriendlyName, section.Display);
@@ -908,21 +1085,19 @@ public partial class MainWindow : Window
     {
         if (_snapshot == null) return;
         var needle = HardwareSearch.Text.Trim();
-        HardwareRecord.ItemsSource = _snapshot.Inventory.Get(section.Name).Rows()
-            .Select((value, index) => (value, index, title: new[] { "FriendlyName", "Name", "Model", "DeviceLocator", "DeviceID", "Section" }.Select(name => value.Text(name)).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))))
-            .Where(entry => needle.Length == 0 || entry.title?.Contains(needle, StringComparison.OrdinalIgnoreCase) == true ||
-                HardwareValueMatches(entry.value, needle))
-            .Select(entry => new HardwareRecord(_snapshot.RecordTitle(section.Name, entry.value, entry.index), entry.value, entry.index))
-            .ToArray();
-        HardwareRecord.SelectedIndex = HardwareRecord.Items.Count > 0 ? 0 : -1;
+        var previousIndex = (HardwareRecord.SelectedItem as HardwareRecord)?.Index;
+        var records = _snapshot.FindHardwareRecords(section.Name, "");
+        var matches = _snapshot.FindHardwareRecords(section.Name, needle);
+        HardwareRecord.ItemsSource = matches;
+        HardwareRecord.SelectedItem = matches.FirstOrDefault(record => record.Index == previousIndex) ?? matches.FirstOrDefault();
+        HardwareRecord.IsEnabled = matches.Count > 0;
+        var count = needle.Length > 0 ? $"{matches.Count} of {records.Count} records" :
+            records.Any(entry => entry.Data.Get("Unavailable").ValueKind != JsonValueKind.Undefined) ? "Read unavailable" :
+            records.Count == 1 ? "1 record" : $"{records.Count} records";
+        SetSummary(HardwareCountText, count, section.Display + (needle.Length > 0 ? " · " + count + " match this search" : ""));
         if (HardwareRecord.Items.Count == 0) { HardwareFields.ItemsSource = Array.Empty<FieldRow>(); HardwareDetail.Text = needle.Length == 0 ? "No records captured for this section." : "No records in this section match the search."; }
+        UpdateHardwareEmptyState();
     }
-    private static bool HardwareValueMatches(JsonElement value, string needle) => value.ValueKind switch
-    {
-        JsonValueKind.Object => value.EnumerateObject().Any(field => HardwareValueMatches(field.Value, needle)),
-        JsonValueKind.Array => value.EnumerateArray().Any(item => HardwareValueMatches(item, needle)),
-        _ => value.Text().Contains(needle, StringComparison.OrdinalIgnoreCase)
-    };
     private void OnHardwareFilterChanged(object sender, RoutedEventArgs e)
     {
         if (_initialized && _snapshot != null && HardwareSections.SelectedItem is HardwareSection section) PopulateHardwareRecords(section);
@@ -933,6 +1108,8 @@ public partial class MainWindow : Window
         {
             HardwareFields.ItemsSource = null;
             HardwareDetail.Clear();
+            CopyHardwareButton.IsEnabled = false;
+            UpdateHardwareEmptyState();
             return;
         }
         HardwareFields.ItemsSource = record.Data.ValueKind == JsonValueKind.Object ? record.Data.EnumerateObject().Select(field =>
@@ -940,9 +1117,13 @@ public partial class MainWindow : Window
                 field.Value.ValueKind is JsonValueKind.Array or JsonValueKind.Object ? field.Value.GetRawText() : field.Value.Text())).ToArray() :
             [new FieldRow("Value", record.Data.Display(), record.Data.ValueKind is JsonValueKind.Array or JsonValueKind.Object ? record.Data.GetRawText() : record.Data.Text())];
         HardwareDetail.Text = "Select a field for the full value.";
+        CopyHardwareButton.IsEnabled = false;
+        UpdateHardwareEmptyState();
     }
     private void OnHardwareFieldSelected(object sender, SelectionChangedEventArgs e)
     {
+        CopyHardwareButton.IsEnabled = HardwareFields.SelectedItem is FieldRow selected &&
+            !string.IsNullOrEmpty(selected.RawValue ?? selected.Value);
         HardwareDetail.Text = HardwareFields.SelectedItem is FieldRow field
             ? field.Field + "\n" + field.Value + (field.RawValue != null && field.RawValue != field.Value ? "\n\nOriginal value\n" + field.RawValue : "")
             : "Select a field for the full value.";
@@ -1015,15 +1196,21 @@ public partial class MainWindow : Window
         SnapshotFoldersText.SetResourceReference(TextBlock.ForegroundProperty, settings.Error == null ? "MutedBrush" : "WarningBrush");
         SetSummary(SnapshotFoldersText, text, details);
     }
-    private Task RefreshSnapshotsAsync()
+    private Task RefreshSnapshotsAsync(bool automatic = false)
     {
-        if (_closing) return Task.CompletedTask;
+        if (_closing || _closeRequested) return Task.CompletedTask;
+        // An idle timer must not keep a slow catalog read in a permanent
+        // refresh-again loop or start discovery behind the welcome notice.
+        if (automatic && (_snapshotCatalogRefreshing || _welcomeOpen || _startupConnecting)) return Task.CompletedTask;
         _refreshAgain = true;
         if (_snapshotRefreshTask is { IsCompleted: false }) return _snapshotRefreshTask;
         return _snapshotRefreshTask = RefreshSnapshotLoopAsync();
     }
     private async Task RefreshSnapshotLoopAsync()
     {
+        _snapshotCatalogRefreshing = true;
+        RefreshSnapshotsButton.IsEnabled = false;
+        UpdateSnapshotCount(); UpdateSnapshotEmptyState();
         try
         {
           do
@@ -1031,23 +1218,39 @@ public partial class MainWindow : Window
             _refreshAgain = false;
             var settings = ReadSharedLibrary();
             ShowSnapshotFolders(settings);
-            var catalog = await SnapshotStore.ReadAsync(ReportFolders(settings).ToArray());
+            var catalog = await SnapshotStore.ReadAsync(ReportFolders(settings).ToArray(), _catalogCancellation.Token);
             if (_closing || _closeRequested) return;
-            if (SnapshotsGrid.ItemsSource is not IEnumerable<SnapshotEntry> displayed || !displayed.SequenceEqual(catalog.Entries))
+            _snapshotCatalogLoaded = true;
+            _snapshotCatalogError = null;
+            _snapshotCatalogSkipped = catalog.Skipped;
+            if (!_snapshotEntries.SequenceEqual(catalog.Entries))
             {
-                var selectedPath = (SnapshotsGrid.SelectedItem as SnapshotEntry)?.Path;
-                SnapshotsGrid.ItemsSource = catalog.Entries;
-                SnapshotsGrid.SelectedItem = catalog.Entries.FirstOrDefault(x => x.Path.Equals(selectedPath, StringComparison.OrdinalIgnoreCase));
-                // Brief fade so a refreshed list reads as refreshed, not shuffled.
-                if (_page == "Snapshots" && !_busy) FadeIn(SnapshotsGrid, 0.9, 120);
+                _snapshotEntries = catalog.Entries;
+                FilterSnapshots();
             }
-            SetSummary(SnapshotCountText, $"{catalog.Entries.Count} saved captures found" +
-                (catalog.Skipped > 0 ? $" · {catalog.Skipped} unreadable or unrecognized files/folders skipped" : " · JSON is validated again before comparison"));
+            UpdateSnapshotCount();
             ShowSnapshotFolders(settings, catalog.Folders);
             UpdateButtons();
           } while (_refreshAgain && !_closing);
         }
-        catch (Exception ex) { SetSummary(SnapshotCountText, "Could not refresh snapshots: " + ex.Message); }
+        catch (OperationCanceledException) when (_closing || _closeRequested) { }
+        catch (Exception ex)
+        {
+            _snapshotCatalogLoaded = true;
+            _snapshotCatalogError = ex.Message;
+            SetSummary(SnapshotCountText, "Could not refresh snapshots: " + ex.Message);
+            UpdateSnapshotEmptyState();
+        }
+        finally
+        {
+            _snapshotCatalogRefreshing = false;
+            if (!_closing && !_closeRequested)
+            {
+                RefreshSnapshotsButton.IsEnabled = true;
+                if (_snapshotCatalogError == null) UpdateSnapshotCount();
+                UpdateSnapshotEmptyState();
+            }
+        }
     }
     private async void OnRefreshSnapshots(object sender, RoutedEventArgs e) => await RefreshSnapshotsAsync();
     private async void OnSnapshotFolderSettings(object sender, RoutedEventArgs e)
@@ -1060,15 +1263,17 @@ public partial class MainWindow : Window
     private void OnSnapshotSelected(object sender, SelectionChangedEventArgs e)
     {
         var row = SnapshotsGrid.SelectedItem as SnapshotEntry;
-        SetSummary(SnapshotSelectedPath, row?.Name ?? "Select a snapshot to compare.", row?.Path);
+        SetSummary(SnapshotSelectedPath, row == null ? "Select a previous snapshot, then choose a comparison." :
+            row.Computer + " · " + row.Captured + " · " + row.Name, row?.Path);
         UpdateButtons();
     }
     private async void OnSnapshotDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (!_busy && _snapshot != null && e.OriginalSource is DependencyObject source &&
+        if (!_busy && _engine != null && e.OriginalSource is DependencyObject source &&
             ItemsControl.ContainerFromElement(SnapshotsGrid, source) is DataGridRow { Item: SnapshotEntry row })
         {
-            await CompareAsync(row.Path);
+            if (_snapshot != null) await CompareAsync(row.Path);
+            else await ChooseSecondSnapshotAsync(row.Path);
         }
     }
     private async void OnCompareSelected(object sender, RoutedEventArgs e) { if (SnapshotsGrid.SelectedItem is SnapshotEntry row) await CompareAsync(row.Path); }
@@ -1085,13 +1290,15 @@ public partial class MainWindow : Window
     {
         if (_snapshot == null || _engine == null || _busy) return;
         SetBusy(true, "Compare"); _operationCancellation = new CancellationTokenSource();
-        ShowStatus("Comparing snapshots", "Reading the saved capture and matching comparable identifier fields.");
+        ShowStatus("Comparing snapshots", "Reading the saved capture and matching comparable identifier fields.", kind: UiStatusKind.Working);
         try
         {
             var result = await _engine.CompareAsync(previousPath, _snapshot.Inventory, _operationCancellation.Token);
-            RenderComparison(result, previousPath, liveCurrent: true);
+            var prepared = await PrepareComparisonAsync(result, _snapshot, _operationCancellation.Token);
+            _operationCancellation.Token.ThrowIfCancellationRequested();
+            RenderComparison(prepared.Data, previousPath, liveCurrent: true, preparedRows: prepared.Rows);
             Navigate("Compare"); ShowStatus("Comparison complete", _lastComparisonSummary + " Differences describe saved Windows records.",
-                _lastComparisonRows!.Count > 0 || !_comparisonHasFields || _comparisonHasGaps || _comparisonSameFile);
+                kind: _lastComparisonRows!.Count > 0 || !_comparisonHasFields || _comparisonHasGaps || _comparisonSameFile ? UiStatusKind.Review : UiStatusKind.Success);
         }
         catch (OperationCanceledException) { ShowStatus("Comparison cancelled", "The current scan remains available.", true); }
         catch (Exception ex) { ShowError("Could not compare this snapshot", ex); }
@@ -1119,31 +1326,33 @@ public partial class MainWindow : Window
     {
         if (_engine == null || _busy) return;
         SetBusy(true, "Compare"); _operationCancellation = new CancellationTokenSource();
-        ShowStatus("Comparing saved snapshots", "Reading both captures and matching comparable identifier fields.");
+        ShowStatus("Comparing saved snapshots", "Reading both captures and matching comparable identifier fields.", kind: UiStatusKind.Working);
         try
         {
             var result = await _engine.CompareFilesAsync(previousPath, currentPath, _operationCancellation.Token);
-            RenderComparison(result, previousPath, liveCurrent: false, savedCurrentPath: currentPath);
+            var prepared = await PrepareComparisonAsync(result, _snapshot, _operationCancellation.Token);
+            _operationCancellation.Token.ThrowIfCancellationRequested();
+            RenderComparison(prepared.Data, previousPath, liveCurrent: false, savedCurrentPath: currentPath, preparedRows: prepared.Rows);
             Navigate("Compare"); ShowStatus("Comparison complete", _lastComparisonSummary + " Differences describe saved Windows records.",
-                _lastComparisonRows!.Count > 0 || !_comparisonHasFields || _comparisonHasGaps || _comparisonSameFile);
+                kind: _lastComparisonRows!.Count > 0 || !_comparisonHasFields || _comparisonHasGaps || _comparisonSameFile ? UiStatusKind.Review : UiStatusKind.Success);
         }
         catch (OperationCanceledException) { ShowStatus("Comparison cancelled", "Both saved snapshots remain available.", true); }
         catch (Exception ex) { ShowError("Could not compare these snapshots", ex); }
         finally { SetBusy(false); _operationCancellation?.Dispose(); _operationCancellation = null; }
     }
 
-    private string CompareLabel(JsonElement result, string section, string field)
+    private static string CompareLabel(JsonElement result, string section, string field, DesktopSnapshot? snapshot)
     {
         var label = result.Get("fieldLabels").Get(section).Text(field);
         if (label.Length > 0) return label;
-        return _snapshot?.Label(section, field) ?? J.Humanize(field);
+        return snapshot?.Label(section, field) ?? J.Humanize(field);
     }
 
-    private void RenderComparison(JsonElement result, string previousPath, bool liveCurrent, string? savedCurrentPath = null)
+    private void RenderComparison(JsonElement result, string previousPath, bool liveCurrent, string? savedCurrentPath = null, ChangeRow[]? preparedRows = null)
     {
-        var rows = result.Get("changes").Rows().Select(row => new ChangeRow(row.Text("kind"), row.Text("section") + " / " + CompareLabel(result, row.Text("section"), row.Text("field")),
-            row.Get("previous").Display(), row.Get("current").Display(),
-            "Device: " + row.Text("device") + "\nOLD: " + row.Get("previous").Display() + "\nNEW: " + row.Get("current").Display() + "\n\n" + row.Text("difference"))).ToArray();
+        _comparisonResumeData = preparedRows == null ? result.Clone() : result; _comparisonResumePrevious = previousPath;
+        _comparisonResumeLive = liveCurrent; _comparisonResumeCurrent = savedCurrentPath;
+        var rows = preparedRows ?? BuildComparisonRows(result, _snapshot, CancellationToken.None);
         _lastComparisonRows = rows;
         _lastComparisonBaseline = "Previous: " + Path.GetFileName(previousPath) +
             (result.Text("previousComputer").Length > 0 ? " · " + result.Text("previousComputer") + " · " + J.Date(result.Text("previousCaptured")) : "");
@@ -1156,14 +1365,15 @@ public partial class MainWindow : Window
         _comparisonHasGaps = result.Number("skippedFields") > 0 || result.Get("skippedSections").Rows().Length > 0 || result.Get("scopeWarnings").Rows().Length > 0;
         _comparisonSameFile = !liveCurrent && savedCurrentPath != null &&
             Path.GetFullPath(previousPath).Equals(Path.GetFullPath(savedCurrentPath), StringComparison.OrdinalIgnoreCase);
-        _lastComparisonSummary = rows.Length > 0 ? $"{changed} changed · {added} only in newer capture · {removed} only in older capture" :
+        _lastComparisonSummary = rows.Length > 0 ? $"{changed} changed · {added} current only · {removed} previous only" :
             !_comparisonHasFields ? "No identifier fields could be compared." : "No changes in the fields compared.";
         if (_comparisonSameFile) _lastComparisonSummary = "Same file selected twice · " + _lastComparisonSummary;
         CompareGrid.SelectedIndex = -1;
         CompareGrid.ItemsSource = rows;
         CompareSummaryText.Text = _lastComparisonSummary;
-        SetSummary(CompareBaselineText, _lastComparisonBaseline + "   |   " + _lastComparisonCurrent, _lastComparisonBaseline + "\n" + previousPath + (liveCurrent ? "" : "\n" + savedCurrentPath) + "\n" + _lastComparisonCurrent);
-        var notes = new List<string> { $"Identifier fields available for comparison · {result.Number("previousCount")} in the older capture, {result.Number("currentCount")} in the newer capture.", $"Not compared · {result.Number("skippedFields")} fields." };
+        SetSummary(CompareBaselineText, _lastComparisonBaseline, _lastComparisonBaseline + "\n" + previousPath);
+        SetSummary(CompareCurrentText, _lastComparisonCurrent, _lastComparisonCurrent + (liveCurrent ? "\nCompleted scan in this window" : "\n" + savedCurrentPath));
+        var notes = new List<string> { $"Identifier fields available for comparison · {result.Number("previousCount")} in the previous capture, {result.Number("currentCount")} in the current capture.", $"Not compared · {result.Number("skippedFields")} fields." };
         if (_comparisonSameFile) notes.Add("Both sides were read from the same JSON file path.");
         var skipped = result.Get("skippedSections").Rows().Select(x => x.Text()).ToArray();
         if (skipped.Length > 0) notes.Add("Unread sections: " + string.Join(", ", skipped) + ".");
@@ -1172,7 +1382,8 @@ public partial class MainWindow : Window
         SetSummary(CompareSkippedText, string.Join(" ", notes), _lastComparisonNotes);
         CompareDetail.Text = rows.Length == 0 ? _lastComparisonNotes : "Select a change to inspect the old and new values and the exact difference.";
         CompareExportButton.IsEnabled = !_busy;
-        UpdateEmptyStates();
+        CompareSearch.Clear(); CompareFilter.SelectedIndex = 0;
+        FilterComparison();
     }
 
     private async void OnExportComparison(object sender, RoutedEventArgs e)
@@ -1206,8 +1417,8 @@ public partial class MainWindow : Window
             }
             lines.Add("");
             lines.Add("This export contains device identifiers; share carefully.");
-            await File.WriteAllTextAsync(dialog.FileName, string.Join(Environment.NewLine, lines) + Environment.NewLine, new UTF8Encoding(false));
-            ShowStatus("Comparison exported", dialog.FileName + " · The text file contains device IDs.");
+            await ReportFiles.WriteTextAsync(dialog.FileName, string.Join(Environment.NewLine, lines) + Environment.NewLine);
+            ShowStatus("Comparison exported", dialog.FileName + " · The text file contains device IDs.", kind: UiStatusKind.Success);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ShowError("Could not export the comparison", ex); }
         finally { SetBusy(false); }
@@ -1240,10 +1451,9 @@ public partial class MainWindow : Window
         {
             await Task.Run(() =>
             {
-                WriteSnapshotCsv(csvPath, snapshot);
-                WriteSnapshotHtmlCore(htmlPath, snapshot);
+                ReportFiles.WriteNewPair(csvPath, BuildSnapshotCsv(snapshot), htmlPath, BuildSnapshotHtml(snapshot));
             });
-            ShowStatus("Snapshot exported", Path.GetFileName(csvPath) + " + " + Path.GetFileName(htmlPath) + " in " + picker.FolderName + " · Exports contain device IDs; share carefully.");
+            ShowStatus("Snapshot exported", Path.GetFileName(csvPath) + " + " + Path.GetFileName(htmlPath) + " in " + picker.FolderName + " · Exports contain device IDs; share carefully.", kind: UiStatusKind.Success);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ShowError("Could not export the snapshot", ex); }
         finally { SetBusy(false); }
@@ -1251,15 +1461,15 @@ public partial class MainWindow : Window
 
     private static string CsvField(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";
 
-    private static void WriteSnapshotCsv(string path, DesktopSnapshot snapshot)
+    private static string BuildSnapshotCsv(DesktopSnapshot snapshot)
     {
         var lines = new List<string> { "Section,Device,Field,Value,Status" };
         foreach (var row in snapshot.Identifiers)
             lines.Add(string.Join(",", CsvField(row.Section), CsvField(row.Device), CsvField(row.Field), CsvField(row.Value), CsvField(row.Status)));
-        File.WriteAllLines(path, lines, new UTF8Encoding(false));
+        return string.Join(Environment.NewLine, lines) + Environment.NewLine;
     }
 
-    private void WriteSnapshotHtmlCore(string path, DesktopSnapshot snapshot)
+    private string BuildSnapshotHtml(DesktopSnapshot snapshot)
     {
         string Encode(string value) => System.Net.WebUtility.HtmlEncode(value)
             .Replace("\r", "").Replace("\n", "<br>");
@@ -1269,7 +1479,7 @@ public partial class MainWindow : Window
         html.Append("h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:26px 0 8px;border-bottom:2px solid #c6d2de;padding-bottom:5px}");
         html.Append("table{border-collapse:collapse;width:100%;font-size:13px;margin-bottom:8px}");
         html.Append("th,td{border:1px solid #c6d2de;padding:6px 9px;text-align:left;vertical-align:top}");
-        html.Append("th{background:#e8eef4;font-weight:600}tr:nth-child(even) td{background:#f4f7fa}");
+        html.Append("th{background:#e8eef4;font-weight:600}tr:nth-child(even) td{background:#f4f7fa}td{overflow-wrap:anywhere}table{table-layout:fixed}");
         html.Append(".muted{color:#5b6b7c;font-size:12px}");
         html.Append("</style></head><body>");
         html.Append("<h1>HWID Checker \u2014 hardware report</h1>");
@@ -1303,7 +1513,7 @@ public partial class MainWindow : Window
         }
         html.Append("<p class='muted'>Windows-reported inventory. Values are not guaranteed authentic or unique. This export contains device identifiers; share carefully.</p>");
         html.Append("</body></html>");
-        File.WriteAllText(path, html.ToString(), new UTF8Encoding(false));
+        return html.ToString();
     }
     private async Task SaveSnapshotAsync()
     {
@@ -1328,7 +1538,7 @@ public partial class MainWindow : Window
     {
         if (_snapshot == null || _engine == null || _busy) return;
         SetBusy(true, "Save"); _operationCancellation = new CancellationTokenSource();
-        ShowStatus("Saving snapshot", "Creating and verifying a new TXT + JSON report pair.");
+        ShowStatus("Saving snapshot", "Creating and verifying a new TXT + JSON report pair.", kind: UiStatusKind.Working);
         try
         {
             var result = await _engine.ExportAsync(_snapshot.Inventory, folder, _operationCancellation.Token);
@@ -1338,7 +1548,7 @@ public partial class MainWindow : Window
             if (!await RememberPreferencesAsync() && warning == null)
                 warning = "Desktop could not remember the last save location.";
             var saved = "TXT + JSON verified in " + _lastSaveFolder;
-            ShowStatus("Snapshot saved", warning == null ? saved : warning + " · " + saved, warning != null);
+            ShowStatus("Snapshot saved", warning == null ? saved : warning + " · " + saved, kind: warning == null ? UiStatusKind.Success : UiStatusKind.Review);
             try { await RefreshSnapshotsAsync().WaitAsync(_operationCancellation.Token); }
             catch (OperationCanceledException) when (_operationCancellation.IsCancellationRequested) { }
         }
@@ -1372,26 +1582,6 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) { ShowError("Could not open the report folder", ex); }
     }
-    private void OnOpenConsole(object sender, RoutedEventArgs e)
-    {
-        if (_engine == null) { ShowStatus("Connect the BAT first", "Use Connect BAT to choose the original checker.", true); return; }
-        try
-        {
-            var directory = Path.GetDirectoryName(_engine.BatPath)!;
-            var loader = Path.Combine(directory, "Start-HWID.ps1");
-            var runtime = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
-            if (!Path.GetFileName(_engine.BatPath).Equals("hwid.bat", StringComparison.OrdinalIgnoreCase) || !File.Exists(loader) || !File.Exists(runtime))
-            {
-                Process.Start(new ProcessStartInfo(_engine.BatPath) { UseShellExecute = true, WorkingDirectory = directory })?.Dispose();
-                return;
-            }
-            var start = new ProcessStartInfo(runtime) { UseShellExecute = false, CreateNoWindow = false, WorkingDirectory = directory };
-            foreach (var item in new[] { "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", loader }) start.ArgumentList.Add(item);
-            foreach (var name in new[] { "HWID_OWN_CONSOLE", "HWID_CURRENT_WINDOW", "HWID_STARTUP_SIGNAL" }) start.Environment.Remove(name);
-            Process.Start(start)?.Dispose();
-        }
-        catch (Exception ex) { ShowError("Could not open the original console", ex); }
-    }
     private void UpdateUpdateButton()
     {
         if (_closing || _updater == null) return;
@@ -1420,6 +1610,9 @@ public partial class MainWindow : Window
     private bool PrepareDesktopExit()
     {
         _updater?.Cancel();
+        // A normal restart has already restored a replacement window. Leave any
+        // pending package to that window instead of updating underneath it.
+        if (_restarting) { _updater?.Dispose(); return true; }
         _updater?.RefreshAutomaticPreference();
         if (_updater != null && (_restartForUpdate || _updater.AutomaticEnabled))
         {
@@ -1439,37 +1632,15 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private void OnRestartApp(object sender, RoutedEventArgs e)
-    {
-        if (_busy) { ShowStatus("Finish the active action", "Cancel or wait for the running scan or report action, then restart.", true); return; }
-        if (!IsVerification && _updater != null && _updater.IsReady)
-        {
-            // A prepared update installs during this close and relaunches the app.
-            _restartForUpdate = true;
-            Close();
-            return;
-        }
-        _restarting = true;
-        RememberPreferencesNow();
-        Close();
-    }
-
-    private void LaunchRelaunch()
-    {
-        try
-        {
-            var exe = Process.GetCurrentProcess().MainModule?.FileName;
-            if (!string.IsNullOrWhiteSpace(exe) && File.Exists(exe))
-                Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
-        }
-        catch (Exception)
-        {
-            // A failed relaunch must not block shutdown; the user can start the app normally.
-        }
-    }
+    private async void OnRestartApp(object sender, RoutedEventArgs e) => await RestartDesktopAsync();
 
     private async void OnWindowClosing(object? sender, CancelEventArgs e)
     {
+        if (_restartReceiving || _restartChildAborted)
+        {
+            _restartChildAborted = true; _restartRestoreCancellation?.Cancel();
+            _closing = true; _timer.Stop(); _engine?.Dispose(); return;
+        }
         if (_closing) { e.Cancel = _closeCompletion != null; return; }
         if (_busy)
         {
@@ -1494,7 +1665,7 @@ public partial class MainWindow : Window
         RememberPreferencesNow();
         _closing = true; _timer.Stop(); _operationCancellation?.Cancel(); _engine?.Dispose();
         e.Cancel = true;
-        BeginWindowFade(() => { if (_restarting) LaunchRelaunch(); Close(); });
+        BeginWindowFade(() => Close());
     }
     private void PrepareLayoutStress()
     {
@@ -1577,7 +1748,7 @@ public partial class MainWindow : Window
         success, desktopVersion = DesktopUpdater.CurrentVersion, engineVersion = _snapshot?.Version, engineConnected = _engine != null,
         sectionsRead = _snapshot?.SectionsRead ?? 0, identifierFields = _snapshot?.ReportedIds ?? 0,
         knownDeviceRecords = _snapshot?.DeviceCount ?? 0, findings = _snapshot?.Findings.Count ?? 0,
-        responsiveTicks = _responsiveTicks, busy = _busy, page = _page,
+        responsiveTicks = _responsiveTicks, busy = _busy, page = _page, scanNumber = _snapshot?.Info.Number("ScanNumber") ?? 0,
         scanRows = ScanRows.Count, hardwareSections = HardwareSections.Items.Count,
         identifiersDisplayed = IdentifiersGrid.Items.Count, hardwareIdentifiersSaved = false,
         contentWidth = Dashboard.ActualWidth, contentHeight = Dashboard.ActualHeight,
@@ -1744,7 +1915,65 @@ public partial class MainWindow : Window
         }
         try
         {
+            foreach (var kind in Enum.GetValues<UiStatusKind>())
+            {
+                ApplyStatusKind(kind);
+                var expected = kind switch { UiStatusKind.Info => "READY", UiStatusKind.Working => "WORKING", UiStatusKind.Success => "DONE", UiStatusKind.Review => "REVIEW", _ => "ERROR" };
+                Check(StatusBadge.Text == expected && System.Windows.Automation.AutomationProperties.GetItemStatus(StatusPanel) == expected,
+                    "status meaning remains readable without color: " + expected);
+            }
+            static double Luminance(Color color)
+            {
+                static double Linear(byte channel) { var value = channel / 255d; return value <= 0.04045 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4); }
+                return 0.2126 * Linear(color.R) + 0.7152 * Linear(color.G) + 0.0722 * Linear(color.B);
+            }
+            foreach (var dark in new[] { true, false })
+            {
+                ApplyTheme(dark);
+                var panelLuminance = Luminance(((SolidColorBrush)Application.Current.Resources["PanelBrush"]).Color);
+                Check(new[] { "SuccessBrush", "WorkingBrush", "ErrorBrush", "WarningBrush", "AccentBrush" }.All(key =>
+                {
+                    var foreground = Luminance(((SolidColorBrush)Application.Current.Resources[key]).Color);
+                    return (Math.Max(panelLuminance, foreground) + 0.05) / (Math.Min(panelLuminance, foreground) + 0.05) >= 4.5;
+                }), "semantic status text keeps normal-text contrast on the " + (dark ? "dark" : "light") + " panel");
+            }
+            ApplyTheme(_darkTheme);
+            ShowError("Synthetic action failed", new IOException("Try this action again."));
+            Check(StatusBadge.Text == "ERROR", "failed actions receive an error label separately from review findings");
+            SetBusy(true, "Restart");
+            Check(!Dashboard.IsEnabled && !RestartButton.IsEnabled, "restart locks session controls against duplicate launches or mid-transfer edits");
+            SetBusy(false);
+            Check(Dashboard.IsEnabled && RestartButton.IsEnabled, "a finished or failed restart restores the current window's controls");
             _snapshot = null;
+            FilterIds();
+            UpdateEmptyStates();
+            FitLayout();
+            Check(!HardwareRecord.IsEnabled && !HardwareSectionPicker.IsEnabled && !HardwareSearch.IsEnabled &&
+                HardwareSectionsPanel.Visibility == Visibility.Collapsed && HardwareEmptyState.Visibility == Visibility.Visible,
+                "hardware controls before a scan are disabled and empty section space is reclaimed");
+            Navigate("Identifiers");
+            Check(IdEmptyText.Visibility == Visibility.Visible && !CopyIdButton.IsEnabled && !CopyIdsButton.IsEnabled,
+                "identifiers before a scan explain the next action and disable empty copy operations");
+            ApplySnapshot(original);
+            IdSearch.Text = "SYNTHETIC-NO-ID-MATCH-79F67";
+            Check(IdentifiersGrid.Items.Count == 0 && IdEmptyText.Visibility == Visibility.Visible &&
+                IdResultsText.Text.StartsWith("0 of ", StringComparison.Ordinal) && !CopyIdButton.IsEnabled && !CopyIdsButton.IsEnabled,
+                "identifier searches with no matches show counts and clear copy selection");
+            IdFilter.SelectedIndex = 1;
+            IdSearch.Text = "Reported";
+            Check(IdentifiersGrid.Items.Count == original.ReportedIds && IdEmptyText.Visibility == Visibility.Collapsed &&
+                CopyIdsButton.IsEnabled && IdentifiersGrid.Items.Cast<IdentifierRow>().All(row => row.Status == "Reported"),
+                "identifier status searches and filters agree with the reported field count");
+            var copiedRows = new[] { new IdentifierRow("RAM", "Serial number", "000123", "Reported", "DIMM_A1") };
+            Check(FormatIdentifierList(copiedRows).Contains("DIMM_A1 · Serial number · 000123 · Reported", StringComparison.Ordinal),
+                "copying an identifier list retains the device, exact value and status");
+            IdSearch.Clear(); IdFilter.SelectedIndex = 0;
+            ApplySnapshot(original);
+            Check(SectionsCount.Text == original.SectionsRead + " / " + original.SectionsChecked &&
+                ScanRows.Last().Status == original.CatalogRow.Status,
+                "overview coverage and device catalog reflect the captured scan metadata");
+            _snapshot = null;
+            FilterIds();
             FilterReview();
             UpdateButtons();
             ShowStatus("Ready to scan", "Choose Scan this PC to read hardware information.");
@@ -1812,7 +2041,7 @@ public partial class MainWindow : Window
             using (var added = JsonDocument.Parse("""{"changes":[{"kind":"Current only","section":"CPU","field":"ProcessorId","device":"SYNTHETIC-DEVICE","previous":null,"current":"SYNTHETIC-ID","difference":""}],"previousCount":0,"currentCount":1,"skippedFields":0,"skippedSections":[],"scopeWarnings":[]}"""))
                 RenderComparison(added.RootElement, "older-synthetic.json", true);
             Check(CompareGrid.Visibility == Visibility.Visible && CompareEmptyState.Visibility == Visibility.Collapsed &&
-                _lastComparisonSummary.Contains("1 only in newer capture"), "one-sided added values remain visible as reported changes");
+                _lastComparisonSummary.Contains("1 current only"), "one-sided added values remain visible as reported changes");
             ApplySnapshot(original);
             SetBusy(true, "Compare");
             Check(CompareEmptyTitle.Text == "Comparing snapshots" && CompareEmptyAction.Visibility == Visibility.Collapsed,
@@ -1858,10 +2087,60 @@ public partial class MainWindow : Window
             Check(HardwareRecord.Items.Count == 1, "hardware search accepts numeric records");
             HardwareSearch.Text = "true";
             Check(HardwareRecord.Items.Count == 1, "hardware search accepts boolean records");
+            Check(HardwareCountText.Text == "1 of 4 records", "hardware counts show matching records and exclude null placeholders");
+            var selectedRecordIndex = (HardwareRecord.SelectedItem as HardwareRecord)?.Index;
+            HardwareSearch.Clear();
+            Check(HardwareRecord.Items.Count == 4 && (HardwareRecord.SelectedItem as HardwareRecord)?.Index == selectedRecordIndex,
+                "clearing a hardware filter preserves the selected captured record");
+            Check(!CopyHardwareButton.IsEnabled, "hardware copy starts disabled until a field is selected");
+            HardwareFields.SelectedIndex = 0;
+            Check(CopyHardwareButton.IsEnabled, "selecting a supplied hardware field enables copying its original value");
             HardwareSearch.Text = "absent-ui-record";
             Check(HardwareRecord.Items.Count == 0 && HardwareDetail.Text.Contains("No records"), "empty hardware search clears old details");
+            Check(HardwareCountText.Text == "0 of 4 records" && !HardwareRecord.IsEnabled && !CopyHardwareButton.IsEnabled &&
+                HardwareEmptyState.Visibility == Visibility.Visible && (string?)HardwareEmptyAction.Tag == "ClearHardware",
+                "empty hardware results show truthful counts and a recovery action without stale copy controls");
+            await CaptureEmptyStateAsync("hardware-filter-empty", HardwareEmptyState);
+            OnEmptyStateAction(HardwareEmptyAction, new RoutedEventArgs());
+            Check(HardwareSearch.Text.Length == 0 && HardwareRecord.Items.Count == 4 && HardwareEmptyState.Visibility == Visibility.Collapsed,
+                "hardware clear-search action restores captured records");
+            using (var emptyHardware = JsonDocument.Parse("""{"inventory":{"CPU":[],"BIOS":{"Unavailable":"Synthetic read failure","FailureCode":"READ-02"}},"identifiers":[],"review":{}}"""))
+                ApplySnapshot(new DesktopSnapshot(emptyHardware.RootElement));
+            HardwareSections.SelectedItem = HardwareSections.Items.Cast<HardwareSection>().First(section => section.Name == "CPU");
+            Check(HardwareEmptyState.Visibility == Visibility.Visible && HardwareCountText.Text == "0 records" && !CopyHardwareButton.IsEnabled,
+                "an empty section explains absent fields instead of leaving a blank table");
+            HardwareSections.SelectedItem = HardwareSections.Items.Cast<HardwareSection>().First(section => section.Name == "BIOS");
+            Check(HardwareFields.Items.Count == 2 && HardwareCountText.Text == "Read unavailable" && HardwareEmptyState.Visibility == Visibility.Collapsed,
+                "read-failure records retain their diagnostic fields in the hardware browser");
             HardwareSearch.Clear();
             ApplySnapshot(original);
+            Navigate("Identifiers");
+            Width = 1240; Height = 820;
+            await SettleAsync();
+            Check(IdDeviceColumn.Visibility == Visibility.Visible, "wide identifier tables identify the device beside each field");
+            Width = 640; Height = 480;
+            await SettleAsync();
+            Check(IdDeviceColumn.Visibility == Visibility.Collapsed, "compact identifier tables preserve value space with full device details on selection");
+            Navigate("Snapshots");
+            SnapshotsGrid.ItemsSource = Array.Empty<SnapshotEntry>();
+            _snapshotCatalogLoaded = true; _snapshotCatalogSkipped = 0; _snapshotCatalogError = null;
+            UpdateSnapshotEmptyState();
+            Check(SnapshotEmptyState.Visibility == Visibility.Visible && (string?)SnapshotEmptyAction.Tag == "Save",
+                "an empty snapshot library points a completed scan to saving");
+            Check(SnapshotEmptyState.Background is SolidColorBrush background && background.Color.A == 255,
+                "empty-library guidance fully covers the table headers underneath");
+            await CaptureEmptyStateAsync("snapshots-empty", SnapshotEmptyState);
+            _snapshotCatalogSkipped = 2;
+            UpdateSnapshotEmptyState();
+            Check(SnapshotEmptyText.Text.Contains("2 files or folders"), "an empty library explains unreadable or unrecognized locations");
+            _snapshotCatalogError = "Synthetic folder read failure";
+            UpdateSnapshotEmptyState();
+            Check(SnapshotEmptyTitle.Text.Contains("Could not read") && (string?)SnapshotEmptyAction.Tag == "RefreshSnapshots",
+                "snapshot library errors offer retry instead of claiming no files exist");
+            _snapshotCatalogError = null; _snapshotCatalogSkipped = 0;
+            SnapshotsGrid.ItemsSource = new[] { new SnapshotEntry("synthetic.json", "synthetic.json", "TEST-PC", "Nov 11, 2026", "3.91", "258.2 KB", DateTimeOffset.UnixEpoch) };
+            UpdateSnapshotEmptyState();
+            Check(SnapshotEmptyState.Visibility == Visibility.Collapsed, "a discovered snapshot removes library guidance from the table");
             var originalActivity = ScanRows.ToArray();
 
             foreach (var page in new[] { "Identifiers", "Hardware", "Snapshots", "Review", "Identifiers" }) Navigate(page);

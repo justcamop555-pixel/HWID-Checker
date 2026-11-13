@@ -1,5 +1,6 @@
 param([string]$Engine=(Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'))
 $ErrorActionPreference = 'Stop'
+$env:HWID_THEME='Midnight'
 $source = Join-Path $PSScriptRoot '..\hwid.bat'
 $resultPath = Join-Path $PSScriptRoot 'display-test-result.json'
 $sourceLiteral = $source.Replace("'", "''")
@@ -559,7 +560,7 @@ $process = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\conhost.
 if (-not $process.WaitForExit(60000)) { throw 'Display test did not complete in 60 seconds.' }
 $result = Get-Content -LiteralPath $resultPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($result.Error) { throw $result.Error }
-if (-not $result.ThemeApplied -or $result.BackgroundRGB -ne 2101772) { throw 'The navy console background was not applied.' }
+if (-not $result.ThemeApplied -or $result.BackgroundRGB -ne 2168077) { throw 'The desktop-matched navy console background was not applied.' }
 if (-not $result.QuickEditDisabled -or ($result.InputModeAfter -band 64) -ne 0 -or ($result.InputModeAfter -band 128) -eq 0) { throw 'Quick Edit is still enabled.' }
 if (-not $result.MouseInputDisabled -or ($result.InputModeAfter -band 16) -ne 0) { throw 'Mouse input is still captured instead of left to host scrolling.' }
 if (($result.InputModeBefore -band 0xFFFFFF2F) -ne ($result.InputModeAfter -band 0xFFFFFF2F)) { throw 'Unrelated keyboard input flags changed.' }

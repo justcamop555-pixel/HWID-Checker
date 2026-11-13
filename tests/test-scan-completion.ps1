@@ -84,4 +84,33 @@ $cleanup.Inventory['Report info'].Version='3.80'
 $stem=Join-Path $root 'cleanup';Write-ReportPair $stem 'Synthetic cleanup warning' ($cleanup.Inventory | ConvertTo-Json -Depth 12)
 $saved=Read-SavedReport ($stem+'.json')
 Assert ($saved.'Report info'.WorkerCleanupWarning -match 'worker cleanup failure' -and (Compare-Inventories $cleanup.Inventory $saved).Changes.Count -eq 0) 'Saved cleanup diagnostics retain usable IDs without affecting comparisons'
+$outcomes=Get-ScanOutcomeCounts @(
+    [pscustomobject]@{Status='READ'},[pscustomobject]@{Status='CHECK'},
+    [pscustomobject]@{Status='UNAVAILABLE'},[pscustomobject]@{Status='READING'},[pscustomobject]@{Status='WAITING'}
+)
+Assert ($outcomes.Read -eq 2 -and $outcomes.NotRead -eq 1) 'Live counts distinguish read data, ID review and failed checks without counting pending queries'
+$catalogRead=Get-ScanOutcomeCounts @([pscustomobject]@{Status='READ'}) 'READ'
+Assert ($catalogRead.Read -eq 2 -and $catalogRead.NotRead -eq 0) 'A completed catalog read is included once in the overall check counts'
+$catalogFailed=Get-ScanOutcomeCounts @([pscustomobject]@{Status='READ'}) 'NOT READ'
+Assert ($catalogFailed.Read -eq 1 -and $catalogFailed.NotRead -eq 1) 'A catalog failure cannot be hidden by otherwise readable sections'
+$emptyCounts=Get-ScanOutcomeCounts @() 'WAITING'
+Assert ($emptyCounts.Read -eq 0 -and $emptyCounts.NotRead -eq 0) 'An unstarted scan has no invented success or failure counts'
+foreach($width in @(40,59,60,84,85,96,120)){
+    $text=Get-ScanProgressText 19 19 123.4 $width 18 1
+    Assert ($text.Length -le $width -and $text -match '18 read' -and $text -match '1 not read') ("Live read counts fit a "+$width+"-column progress row")
+}
+$clamped=Get-ScanProgressText 2 19 0 96 9 9
+Assert ($clamped -match '2 read' -and $clamped -match '0 not read') 'Read and failure counts cannot exceed finished checks'
+Assert ((Get-ScanProgressText 8 19 3 96) -match '8 of 19 finished') 'The original progress formatter remains compatible with callers without live counts'
+Assert ($null -eq $script:scanCatalogOutcome) 'Finishing a scan clears catalog outcome state before the next scan'
+$scope=@{'Report info'=@{ExtendedStatus='Refreshed'};'PnP hardware IDs'=@(@{DeviceID='SYNTHETIC-A'},@{DeviceID='SYNTHETIC-B'});'Extended device inventory'=@(@{DeviceID='SYNTHETIC-A'},@{DeviceID='SYNTHETIC-B'},@{DeviceID='SYNTHETIC-OLD'})}
+Assert ((Get-ScanDeviceScope $scope) -match 'Present: 2 / all-known: 3' -and (Get-ScanDeviceScope $scope) -match 'virtual.*disconnected') 'Completion distinguishes present and all-known records without claiming a physical component total'
+$scope['Report info'].ExtendedStatus='Unavailable'
+Assert ((Get-ScanDeviceScope $scope) -match 'all-known: not read' -and (Get-ScanDeviceScope $scope) -notmatch 'all-known: 3') 'An unavailable catalog cannot reuse an older count as a current read'
+$scope['Report info'].ExtendedStatus=''
+Assert ((Get-ScanDeviceScope $scope) -match 'all-known: not included') 'A section-only capture makes the missing catalog scope explicit'
+$scope['Report info'].ExtendedStatus='Refreshed';$scope['Extended device inventory']=@()
+Assert ((Get-ScanDeviceScope $scope) -match 'all-known: 0') 'A successful empty catalog reports zero records'
+$scope['PnP hardware IDs']=@{Unavailable='Synthetic failure'}
+Assert ((Get-ScanDeviceScope $scope) -match 'Present: not available') 'A failed present-device read cannot be counted as one device'
 [Console]::WriteLine("All $script:checks scan-completion checks passed under PowerShell $($PSVersionTable.PSVersion).")

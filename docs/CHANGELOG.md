@@ -2,6 +2,59 @@
 
 [Back to the main README](../README.md)
 
+## Desktop 1.4.6 and BAT 3.91 — November 12, 2026
+
+- Preserve column sorting and matching selections during ID/Review filtering, and clear hidden selections so copy/detail actions cannot use a hidden row.
+- Reuse immutable hardware record rows and a bounded scalar-value search cache. Preserve exact nested-value searches and original record indexes, including records outside the cache budget.
+- Reduce temporary string allocation in saved-snapshot and comparison searches while preserving case-insensitive exact-value and cross-field phrase matching.
+- Pause idle snapshot polling while minimized, welcoming or connecting. Prevent timer polls from perpetually queuing extra reads behind a slow catalog refresh; retain explicit manual refresh requests. Reuse unchanged grid sources instead of resetting them.
+- Cache retained BAT line wrapping per entry. Invalidate on exact text, width or indentation changes while keeping the existing resize-recovery and painting cadence.
+
+- Show a lightweight loading window before reading preferences or constructing the full dashboard. Closing that window cancels startup without writing preferences.
+- Read bounded settings and validate remembered BAT files off the UI thread. Keep controls disabled until the initial connection settles and preserve the remembered scanner path if the app closes during connection.
+- Keep release compression/compilation settings explicit and retain the compatible self-contained/update package layout. Add repeatable first-window timing and slow-start/cancellation checks using isolated runtime extraction folders.
+
+- Present the Desktop welcome before snapshot discovery, retain a scrollable privacy notice at the minimum dialog size, and explain full-value exports, update requests and synced-folder storage.
+- Keep saved snapshot rows available during refresh, show discovery's own loading state, and cancel catalog discovery between reads when the window closes.
+- Expose comparison cancellation and prepare exact previous/current rows off the UI thread before publishing. Preserve the last completed comparison if the replacement is cancelled.
+- Reduce page-transition travel and reset motion on resize; keep compact footer privacy text inside the available width and respect reduced-motion settings for comparison progress.
+- Clarify BAT completion scope: present and all-known Windows device records include virtual or disconnected nodes and are not a physical component total. Failed or omitted catalog reads are labeled explicitly.
+
+- Improve BAT and Desktop live progress with separate finished/read/not-read counts, including the device catalog. Preserve the legacy progress format when timing metadata is unavailable and keep compact lines within their supported widths.
+- Retry transient cleanup failures after scanner cancellation without following paths outside the owned operation folder or recursively deleting unexpected files.
+- Fix Desktop rescans always requesting scan number 1. Pass explicit positive scan numbers to the bridge and advance them only from the completed capture.
+- Show a working finalization phase until the complete result is validated, retain full read-error guidance, and ignore late reading/preparation feedback that would regress accepted progress. Keep the prior snapshot on cancellation or failure. Compact scan headers and status columns retain readable counters and failure labels.
+- Fix console recovery rejecting a valid PowerShell 7 scanner after a PowerShell 5.1 syntax failure. Check all available runtimes before selecting the bundled fallback; renamed BAT files do not depend on an unused sibling loader.
+- Bound connection reads to 8 MB and reject missing/truncated scanner bodies before labeling a BAT connected. Clear stale connection paths and status after errors.
+- Preserve snapshot/comparison column sorting across search changes without duplicating sort rules. Register an earlier default report folder when recovery changes the engine path in a configured shared library; surface registration failures with its original location.
+- Organize Desktop Snapshots around searchable local captures, explicit current-scan/two-file comparisons and selection-aware actions. Preserve an unchanged catalog's sort, scroll and selection during background refresh.
+- Add searchable comparison categories, separate previous/current sources, exact-value details and truthful empty-filter guidance. Export retains the complete result and restart restores the new filters.
+- Embed build-matched offline scanner/launcher recovery. Open BAT console validates syntax and runtime, restores missing/damaged companion files to a separate managed folder, and retries an early failed loader once. Custom files, reports and system policy are preserved; no scanner download is required.
+- Add a Desktop-only welcome/privacy message covering read-only scanning, sensitive identifiers and saving a baseline before sharing. It supports one-time/repeated startup display, Not now, keyboard actions and reopening from the sidebar, and follows both themes with a scrollable compact layout. Normal restarts skip the startup notice.
+- Preserve welcome choices across settings reload and session handoff. Older asynchronous settings writes can no longer replace newer choices or the synchronous close save. Closing during welcome/startup no longer proceeds to automatic update preparation.
+- Shorten the BAT preparation/start messages for readability; no welcome/privacy dialog is added to the console.
+- Match native title-bar, caption text and frame colors to the Desktop theme on supported Windows, including Updates and Folder settings. Resource changes update existing app windows; native caption controls, resizing and snap behavior are retained. Unsupported attributes fall back to the system frame, and high-contrast frame colors remain system-controlled.
+- Match new owned BAT consoles to the Desktop's Midnight/Daylight colors and saved theme, with an optional process override. Missing, oversized or malformed settings fall back to Midnight, including one-item JSON arrays that PowerShell would otherwise unwrap. Current-window and redirected launches retain their host styling.
+- Desktop restart now restores the current capture, filters, selections, page, theme and comparison through a bounded same-user in-memory handoff. The original window closes only after the replacement restores its state and confirms commit. Failed/cancelled/timed-out starts keep the original window available.
+- Separate normal restart from prepared-update installation to prevent an update from replacing files underneath its fresh window. Prepared updates use the existing explicit install flow.
+- Add labeled READY/WORKING/DONE/REVIEW/ERROR states with semantic colors in both themes, plus a READ/CHECK/NOT READ scan key. Genuine unread queries use the error color; missing/default identifiers remain review findings.
+- Keep BAT restart failure messages visible, explain that console restart performs a fresh scan, and defer restarts during active update checks. Restart no longer schedules an update underneath its replacement console. Correct the restart fixture's obsolete prepared-update metadata.
+- Correct hardware searches showing the unfiltered record count and enabling Copy with no selected field. Counts now reflect matches, null placeholders are excluded, and clearing a filter keeps the selected record when it is still available. Read-failure diagnostic fields remain accessible.
+- Disable hardware controls before the first scan and reclaim the empty section-list space. Add actionable guidance for empty hardware selections and saved-snapshot libraries, including unreadable locations and retry. Device names are visible in wide ID tables; compact tables retain the full device name in the selected-value pane. Snapshot sizes have more room.
+- Keep the BAT menu prompt, typed text and validation feedback responsive to resizing while idle, using bounded polling without repeated prompt output or held-Enter redraws.
+- Repair the startup-recovery fixture's missing exit-update stub, which made a successful recovery enter the fixture's error loop and time out. Startup delay, handoff and recovery checks pass without changing production update behavior.
+- Prepare desktop ID/review search text once per immutable capture and reuse full lists when filters are cleared. Build live-scan display models off the UI thread, preserving cancellation and the prior completed capture.
+- Repaint only the changed BAT progress/status row when geometry and row height are stable. Resize, changed wrapping and periodic repair retain the complete renderer. Native color attributes are read once per full frame.
+- Fixed Overview's activity table consuming wheel events while its own vertical scrolling was disabled. Scroll routing now selects the scrollable parent, preserves nested detail/list behavior and supports Overview arrow/page keys without taking text-editing keys.
+- Fixed dedicated-console scan text being overwritten, mixed with old row tails or left with excessive blank history after resizing. Scan display text is retained and laid out again at the current width.
+- Keep the finished summary and Continue prompt responsive to resizing, including rapid shrink/grow cycles with no keyboard input. Scrolling back retains the chosen place; End resumes following.
+- Clear the console host's soft-wrap markers after painting a scan frame, preventing unrelated rows from shifting diagonally during the next resize. Preserve the inherited output mode, cursor and viewport.
+- Added synthetic native-console resize checks on Windows PowerShell 5.1 and PowerShell 7. Hardware collection, identifier values and snapshot formats are unchanged.
+- Desktop coverage uses the sections actually recorded by the scanner. Older captures without an extended catalog show "Not scanned"; missing catalog read metadata shows "Unknown" rather than an invented failure.
+- ID search includes status, shows filtered counts and useful empty-state guidance, and disables copy actions without values. Compact layouts put search and actions on separate rows, and list copies retain device names and statuses.
+- Stage CSV and HTML before publishing either export, and replace comparison files only after a complete staged write. Existing files survive failed replacements, and long HTML values wrap within the report.
+- A persistent native console drawing failure falls back to retained plain text with bounded retries. Read results stay separate from display failures, and old cursor positions are abandoned.
+
 ## Desktop 1.4.5 and BAT 3.90
 
 - Increased the default desktop body font and reduced small or overly bold text. Hardware navigation and controls leave more room for readable section names and values.

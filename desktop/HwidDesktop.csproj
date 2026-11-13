@@ -7,16 +7,19 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>HWID Checker</AssemblyName>
     <RootNamespace>HwidDesktop</RootNamespace>
-    <Version>1.4.5</Version>
+    <Version>1.4.6</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>assets\Hwid.ico</ApplicationIcon>
     <PublishTrimmed>false</PublishTrimmed>
     <UseSharedCompilation>false</UseSharedCompilation>
+    <HwidEngineDirectory Condition="'$(HwidEngineDirectory)' == ''">$(MSBuildProjectDirectory)\..</HwidEngineDirectory>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="tests\**\*.cs" />
     <Page Remove="tests\**\*.xaml" />
     <EmbeddedResource Include="engine\DesktopBridge.ps1" LogicalName="HwidDesktop.EngineBridge" />
+    <EmbeddedResource Include="$(HwidEngineDirectory)\hwid.bat" LogicalName="HwidDesktop.Recovery.Bat" />
+    <EmbeddedResource Include="$(HwidEngineDirectory)\Start-HWID.ps1" LogicalName="HwidDesktop.Recovery.Launcher" />
     <Resource Include="assets\Hwid.ico" />
   </ItemGroup>
 </Project>

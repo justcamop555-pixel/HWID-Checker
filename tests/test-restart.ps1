@@ -69,9 +69,15 @@ try {
     Assert ($env:HWID_CURRENT_WINDOW -ceq '--stale-window' -and $env:HWID_STARTUP_SIGNAL -ceq 'stale-test-signal' -and $env:WT_SESSION -ceq 'stale-test-terminal') 'Failed launch restores the original process environment too'
     $paths=Get-CheckerUpdatePaths
     [void][IO.Directory]::CreateDirectory($paths.Directory)
-    [IO.File]::WriteAllText($paths.ResultPath,'{"state":"ready","message":"Synthetic prepared update","latestVersion":"99.0.0"}')
+    [IO.File]::WriteAllText($paths.ResultPath,(@{state='ready';message='Synthetic prepared update';latestVersion='99.0.0';currentVersion=(Get-CheckerPackageVersion);component='Bat';installDirectory=$paths.InstallDirectory}|ConvertTo-Json -Compress))
     Start-CheckerRestart
     Assert (@($script:messages | Where-Object {$_ -match '^RESTART-02:'}).Count -eq 1) 'A prepared update defers restart to the normal update-aware exit path'
+    function Test-CheckerUpdateRunning {return $true}
+    Start-CheckerRestart
+    Assert (@($script:messages | Where-Object {$_ -match '^RESTART-04:'}).Count -eq 1) 'An in-progress update cannot race a fresh-window restart'
+    $restartFunction=$ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Start-CheckerRestart'},$false) | Select-Object -First 1
+    Assert (-not $restartFunction.Extent.Text.Contains('Start-CheckerExitUpdate')) 'Restart does not schedule installation underneath its replacement console'
+    Assert ($body.Contains("'7' {Start-CheckerRestart;return `$true}")) 'Restart failures return through the visible result-page wait instead of disappearing into the main menu'
 }finally{
     foreach($name in $prior.Keys){[Environment]::SetEnvironmentVariable($name,$prior[$name],'Process')}
 }

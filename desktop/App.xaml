@@ -8,6 +8,9 @@
   <SolidColorBrush x:Key="MutedBrush" Color="#A7B9CC"/>
   <SolidColorBrush x:Key="AccentBrush" Color="#66E1CE"/>
   <SolidColorBrush x:Key="WarningBrush" Color="#F3C785"/>
+  <SolidColorBrush x:Key="SuccessBrush" Color="#83DFA9"/>
+  <SolidColorBrush x:Key="WorkingBrush" Color="#A6CFFF"/>
+  <SolidColorBrush x:Key="ErrorBrush" Color="#FFB4AC"/>
   <SolidColorBrush x:Key="NavActiveBrush" Color="#214642"/>
   <SolidColorBrush x:Key="StatusBrush" Color="#173235"/>
   <SolidColorBrush x:Key="StatusBorderBrush" Color="#36535D"/>
@@ -29,6 +32,9 @@
   <SolidColorBrush x:Key="ListHoverBrush" Color="#213349"/>
 
   <Style TargetType="Window">
+   <Setter Property="local:NativeWindowTheme.CaptionBrush" Value="{DynamicResource SidebarBrush}"/>
+   <Setter Property="local:NativeWindowTheme.TextBrush" Value="{DynamicResource TextBrush}"/>
+   <Setter Property="local:NativeWindowTheme.BorderBrush" Value="{DynamicResource BorderBrush}"/>
    <Setter Property="local:UiMotion.Enabled" Value="{DynamicResource {x:Static SystemParameters.ClientAreaAnimationKey}}"/>
    <Setter Property="FontFamily" Value="Segoe UI"/>
    <Setter Property="FontSize" Value="14"/>
@@ -351,11 +357,11 @@
    <Setter Property="AutomationProperties.ItemStatus" Value="{Binding Status}"/>
    <Style.Triggers>
     <DataTrigger Binding="{Binding Status}" Value="WAITING"><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/></DataTrigger>
-    <DataTrigger Binding="{Binding Status}" Value="READING"><Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/></DataTrigger>
-    <DataTrigger Binding="{Binding Status}" Value="READ"><Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/></DataTrigger>
-    <DataTrigger Binding="{Binding Status}" Value="Reported"><Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/></DataTrigger>
+    <DataTrigger Binding="{Binding Status}" Value="READING"><Setter Property="Foreground" Value="{DynamicResource WorkingBrush}"/></DataTrigger>
+    <DataTrigger Binding="{Binding Status}" Value="READ"><Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/></DataTrigger>
+    <DataTrigger Binding="{Binding Status}" Value="Reported"><Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/></DataTrigger>
     <DataTrigger Binding="{Binding Status}" Value="CHECK"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/></DataTrigger>
-    <DataTrigger Binding="{Binding Status}" Value="NOT READ"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/></DataTrigger>
+    <DataTrigger Binding="{Binding Status}" Value="NOT READ"><Setter Property="Foreground" Value="{DynamicResource ErrorBrush}"/></DataTrigger>
     <DataTrigger Binding="{Binding Status}" Value="Stopped"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/></DataTrigger>
     <DataTrigger Binding="{Binding Status}" Value="Missing"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/></DataTrigger>
     <DataTrigger Binding="{Binding Status}" Value="Default"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/></DataTrigger>

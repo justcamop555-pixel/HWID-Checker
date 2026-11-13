@@ -130,6 +130,19 @@ try
     };
     await File.WriteAllTextAsync(file, JsonSerializer.Serialize(report));
     var original = await File.ReadAllBytesAsync(file);
+    using var cancelledCatalog = new CancellationTokenSource();
+    cancelledCatalog.Cancel();
+    try { await SnapshotStore.ReadAsync(new[] { root }, cancelledCatalog.Token); Check(false, "A cancelled catalog must not publish a partial list"); }
+    catch (OperationCanceledException) { Check(true, "A cancelled catalog stops without publishing a partial list"); }
+    using var midCatalog = new CancellationTokenSource();
+    IEnumerable<string> FoldersCancelledDuringEnumeration()
+    {
+        yield return root;
+        midCatalog.Cancel();
+        yield return root;
+    }
+    try { await SnapshotStore.ReadAsync(FoldersCancelledDuringEnumeration(), midCatalog.Token); Check(false, "Cancellation must be observed during folder enumeration"); }
+    catch (OperationCanceledException) { Check(true, "Cancellation during folder enumeration stops the catalog before file reads"); }
     var catalog = await SnapshotStore.ReadAsync(new[] { root });
     Check(catalog.Entries.Count == 1 && catalog.Entries[0].Path == file,
         "A supported battery-only capture is discoverable in the saved snapshot library");
@@ -146,4 +159,186 @@ finally
     if (File.Exists(file)) File.Delete(file);
     Directory.Delete(root);
 }
-Console.WriteLine($"All {checks} desktop model checks passed. Synthetic identifiers only.");
+var older = Snapshot("READ", "CHECK", "NOT READ");
+Check(older.SectionsChecked == 3 && older.SectionsRead == 2 && !older.AllSectionsRead && older.CoverageText == "2 of 3 sections read",
+    "Coverage uses the recorded section count rather than assuming the newest scanner schema");
+Check(Snapshot().SectionsChecked == 0 && !Snapshot().AllSectionsRead && Snapshot().CoverageText.Contains("not recorded"),
+    "Missing timing does not become zero of eighteen failed sections");
+Check(Snapshot("READ", "CHECK").AllSectionsRead && Snapshot("READ").CatalogRow.Status == "NOT SCANNED",
+    "An older capture without a device catalog is distinguished from a failed catalog read");
+Check(model.SectionsChecked == 1 && model.CatalogRow.Status == "READ" && model.CatalogRow.Records == "1",
+    "Duplicate timing rows cannot inflate the checked count and catalog counts exclude placeholders");
+foreach (var status in new[] { "Unavailable", "unavailable", " Unavailable " })
+{
+    var failed = new DesktopSnapshot(JsonSerializer.SerializeToElement(new
+    {
+        inventory = new Dictionary<string, object>
+        {
+            ["Report info"] = new { ExtendedStatus = status },
+            ["Extended device inventory"] = new[] { new { Name = "Saved device" } }
+        }
+    }));
+    Check(failed.CatalogRow.Status == "NOT READ" && failed.CatalogRow.Records == "—",
+        "A failed catalog refresh does not present retained records as newly read");
+}
+var unverified = new DesktopSnapshot(JsonSerializer.SerializeToElement(new
+{
+    inventory = new Dictionary<string, object> { ["Extended device inventory"] = new[] { new { Name = "Legacy device" } } }
+}));
+Check(unverified.CatalogRow.Status == "UNKNOWN" && unverified.DeviceCount == 1,
+    "Catalog records without original read metadata are available without a fabricated success or failure");
+
+var exports = Path.Combine(Path.GetTempPath(), "HWID-export-checks-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(exports);
+var previousFile = Path.Combine(exports, "comparison.txt");
+var csv = Path.Combine(exports, "report.csv");
+var html = Path.Combine(exports, "report.html");
+try
+{
+    await ReportFiles.WriteTextAsync(previousFile, "Previous comparison");
+    using (var locked = new FileStream(previousFile, FileMode.Open, FileAccess.Read, FileShare.None))
+    {
+        var rejected = false;
+        try { await ReportFiles.WriteTextAsync(previousFile, "Replacement comparison"); }
+        catch (IOException) { rejected = true; }
+        Check(rejected, "A locked comparison file rejects replacement");
+    }
+    Check(await File.ReadAllTextAsync(previousFile) == "Previous comparison" && Directory.GetFiles(exports, "*.pending").Length == 0,
+        "A failed comparison export preserves the existing report and cleans its temporary file");
+    await ReportFiles.WriteTextAsync(previousFile, "New comparison · 000123\r\n");
+    Check(await File.ReadAllTextAsync(previousFile) == "New comparison · 000123\r\n",
+        "A successful comparison replacement retains exact Unicode and identifier text");
+    Directory.CreateDirectory(html);
+    var pairRejected = false;
+    try { ReportFiles.WriteNewPair(csv, "000123", html, "<html>000123</html>"); }
+    catch (IOException) { pairRejected = true; }
+    Check(pairRejected && !File.Exists(csv) && Directory.Exists(html),
+        "A blocked HTML destination does not leave a partial CSV export or replace the blocker");
+    Directory.Delete(html);
+    ReportFiles.WriteNewPair(csv, "\"Value\"\r\n\"000123\"\r\n", html, "<html>000123 · 合成</html>");
+    Check(await File.ReadAllTextAsync(csv) == "\"Value\"\r\n\"000123\"\r\n" && (await File.ReadAllTextAsync(html)).Contains("合成"),
+        "CSV and HTML are both published with the original text");
+    pairRejected = false;
+    try { ReportFiles.WriteNewPair(csv, "Overwrite", html, "Overwrite"); }
+    catch (IOException) { pairRejected = true; }
+    Check(pairRejected && (await File.ReadAllTextAsync(csv)).Contains("000123") && Directory.GetFiles(exports, "*.pending").Length == 0,
+        "Pair collisions preserve existing exports and leave no pending files");
+}
+finally
+{
+    foreach (var item in Directory.GetFiles(exports)) File.Delete(item);
+    if (Directory.Exists(html)) Directory.Delete(html);
+    Directory.Delete(exports);
+}
+var searchable = new DesktopSnapshot(JsonSerializer.SerializeToElement(new
+{
+    inventory = new Dictionary<string, object> { ["Report info"] = new { Computer = "SYNTHETIC" } },
+    identifiers = new[]
+    {
+        new { Section="Memory modules", Field="SerialNumber", Value="000123", Quality="Reported", Device="DIMM_A1 Ω" },
+        new { Section="Network adapters", Field="MacAddress", Value="00-01-02-03-04-05", Quality="Placeholder", Device="NIC0" },
+        new { Section="CPU", Field="ProcessorId", Value="", Quality="Missing", Device="CPU0" }
+    },
+    review = new { UnreadDetails = new[] { new { Section="CPU", Reason="Read denied", Code="TEST", Message="Synthetic Ω error", Action="Retry" } } }
+}));
+foreach (var query in new[] { "", "000123", "dimm", "reported", "Default", "Missing", "Ω", "000123 DIMM_A1", "not-present" })
+{
+    foreach (var filter in new[] { 0, 1, 2 })
+    {
+        var expected = searchable.Identifiers.Where(row =>
+            (filter != 1 || row.Status == "Reported") && (filter != 2 || row.Status is "Missing" or "Default") &&
+            (query.Length == 0 || string.Join(" ", row.Section, row.Field, row.Value, row.Device, row.Status).Contains(query, StringComparison.OrdinalIgnoreCase)));
+        Check(searchable.FindIdentifiers(query, filter).SequenceEqual(expected),
+            "Indexed ID search retains exact field/device/status matching for query " + query + " / filter " + filter);
+    }
+    Check(searchable.FindReview(query).SequenceEqual(searchable.Findings.Where(row =>
+        query.Length == 0 || string.Join(" ", row.Kind, row.Section, row.Message, row.Detail).Contains(query, StringComparison.OrdinalIgnoreCase))),
+        "Indexed review search retains the original matching semantics for " + query);
+}
+Check(ReferenceEquals(searchable.FindIdentifiers(""), searchable.Identifiers) && ReferenceEquals(searchable.FindReview(""), searchable.Findings),
+    "Clearing a search reuses the immutable snapshot rows without rebuilding a full list");
+Check(((IList<IdentifierRow>)searchable.Identifiers).IsReadOnly && ((IList<ReviewRow>)searchable.Findings).IsReadOnly,
+    "Published snapshot row collections cannot invalidate the search index");
+var replacementSearch = new DesktopSnapshot(JsonSerializer.SerializeToElement(new
+{
+    inventory = new Dictionary<string, object>(),
+    identifiers = new[] { new { Section="CPU", Field="ProcessorId", Value="NEW-SYNTHETIC-ID", Quality="Reported", Device="CPU0" } }
+}));
+Check(replacementSearch.FindIdentifiers("000123").Count == 0 && replacementSearch.FindIdentifiers("NEW-SYNTHETIC-ID").Count == 1 &&
+    searchable.FindIdentifiers("000123").Count == 1, "New scans replace their search data without changing the earlier capture");
+var hardwareSearch = new DesktopSnapshot(JsonSerializer.SerializeToElement(new
+{
+    inventory = new Dictionary<string, object>
+    {
+        ["PnP hardware IDs"] = new object?[] { null, new { Name="WiFi Synthetic", InstanceId="PCI\\SYNTHETIC-001", Nested=new { Values=new object?[] { "001234", true, 54321, null } } },
+            new { FriendlyName="Storage Synthetic", HiddenValue="EXACT-HIDDEN-0099" }, "Scalar record" },
+        ["CPU"] = new[] { new { Name="Synthetic CPU", SerialNumber="000001" } }
+    }
+}));
+bool ValueContains(JsonElement value, string needle) => value.ValueKind switch
+{
+    JsonValueKind.Object => value.EnumerateObject().Any(field => ValueContains(field.Value, needle)),
+    JsonValueKind.Array => value.EnumerateArray().Any(item => ValueContains(item, needle)),
+    _ => value.Text().Contains(needle, StringComparison.OrdinalIgnoreCase)
+};
+foreach (var section in new[] { "PnP hardware IDs", "CPU", "Missing section" })
+foreach (var query in new[] { "", "wifi", "001234", "true", "54321", "hidden-0099", "scalar", "not-present", "000001" })
+{
+    var expected = hardwareSearch.Inventory.Get(section).Rows().Select((value,index)=>(value,index))
+        .Where(entry => entry.value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) &&
+            (query.Length == 0 || hardwareSearch.RecordTitle(section, entry.value, entry.index).Contains(query, StringComparison.OrdinalIgnoreCase) || ValueContains(entry.value, query)))
+        .Select(entry=>entry.index);
+    Check(hardwareSearch.FindHardwareRecords(section, query).Select(row=>row.Index).SequenceEqual(expected),
+        "Hardware index preserves recursive value, title and original record-index search: " + section + " / " + query);
+}
+Check(ReferenceEquals(hardwareSearch.FindHardwareRecords("PnP hardware IDs", ""), hardwareSearch.FindHardwareRecords("PnP hardware IDs", "")) &&
+    ((IList<HardwareRecord>)hardwareSearch.FindHardwareRecords("PnP hardware IDs", "")).IsReadOnly,
+    "Clearing hardware search reuses immutable record rows");
+var overflowSearch = new DesktopSnapshot(JsonSerializer.SerializeToElement(new
+{
+    inventory = new Dictionary<string, object>
+    {
+        ["Extended device inventory"] = new[] { new { Name="Synthetic large record", Blob=new string('x',1_048_580)+"EXACT-TAIL-0098" } },
+        ["PnP hardware IDs"] = new[] { new { Name="Synthetic many values", Values=Enumerable.Range(0,20_000).Select(i=>"leaf-"+i).ToArray() } }
+    }
+}));
+Check(overflowSearch.CachedHardwareCharacters <= 1_048_576 && overflowSearch.FindHardwareRecords("Extended device inventory", "EXACT-TAIL-0098").Count == 1 &&
+    overflowSearch.FindHardwareRecords("PnP hardware IDs", "leaf-19999").Count == 1,
+    "Hardware values beyond the bounded cache remain searchable without truncating large fields or late array values");
+Check(hardwareSearch.FindHardwareRecords("PnP hardware IDs", "leaf-19999").Count == 0 &&
+    hardwareSearch.FindHardwareRecords("PnP hardware IDs", "EXACT-HIDDEN-0099").Count == 1,
+    "Hardware search data stays isolated between captures");
+var searchChange = new ChangeRow("Changed", "CPU / Serial number", "000001", "000009", "Device: synthetic CPU\nExact change: 1 -> 9");
+var searchCapture = new SnapshotEntry(@"C:\Synthetic folder\snapshot.json", "snapshot.json", "HOME-PC", "Nov 12, 2026", "3.91", "1 KB", DateTimeOffset.UnixEpoch);
+foreach(var query in new[] { "", "cpu", "000001", "000009", "synthetic", "number 000001", "000001 000009", "Changed CPU", "missing", "snapshot.json HOME-PC", "HOME-PC Nov", "Nov 12", "folder", "3.91" })
+{
+    Check(searchChange.MatchesSearch(query) == string.Join(" ", searchChange.Kind, searchChange.Label, searchChange.Previous, searchChange.Current, searchChange.Detail).Contains(query,StringComparison.OrdinalIgnoreCase),
+        "Comparison search preserves exact values and cross-field phrase matches: " + query);
+    Check(searchCapture.MatchesSearch(query) == string.Join(" ", searchCapture.Name, searchCapture.Computer, searchCapture.Captured, searchCapture.Path, searchCapture.Version).Contains(query,StringComparison.OrdinalIgnoreCase),
+        "Snapshot search preserves path/date/version and cross-field phrase matches: " + query);
+}
+Console.WriteLine($"All {checks} desktop model, search and export checks passed. Synthetic identifiers only.");
+if (args.Contains("--benchmark-hardware"))
+{
+    var large = new DesktopSnapshot(JsonSerializer.SerializeToElement(new
+    {
+        inventory = new Dictionary<string, object>
+        {
+            ["PnP hardware IDs"] = Enumerable.Range(0,2_000).Select(i=>new { Name="Synthetic device "+i, DeviceID="PCI\\SYNTHETIC-"+i,
+                Properties=new { SerialNumber="SERIAL-"+i.ToString("D8"), Values=new[] {"Driver value "+i,"Exact value "+i} } }).ToArray()
+        }
+    }));
+    var queries = new[] { "SERIAL-00001999", "pci", "missing-device", "Exact value 103", "device 51" };
+    foreach (var query in queries) { _ = large.FindHardwareRecords("PnP hardware IDs", query); }
+    long indexedTotal=0, recursiveTotal=0;
+    var bytes=GC.GetAllocatedBytesForCurrentThread();var watch=System.Diagnostics.Stopwatch.StartNew();
+    for(var pass=0;pass<10;pass++) foreach(var query in queries) indexedTotal+=large.FindHardwareRecords("PnP hardware IDs",query).Count;
+    var indexedMs=watch.ElapsedMilliseconds;var indexedBytes=GC.GetAllocatedBytesForCurrentThread()-bytes;
+    bytes=GC.GetAllocatedBytesForCurrentThread();watch.Restart();
+    for(var pass=0;pass<10;pass++) foreach(var query in queries)
+        recursiveTotal+=large.Inventory.Get("PnP hardware IDs").Rows().Select((value,index)=>(value,index)).Count(entry=>
+            large.RecordTitle("PnP hardware IDs",entry.value,entry.index).Contains(query,StringComparison.OrdinalIgnoreCase)||ValueContains(entry.value,query));
+    var recursiveMs=watch.ElapsedMilliseconds;var recursiveBytes=GC.GetAllocatedBytesForCurrentThread()-bytes;
+    if(indexedTotal!=recursiveTotal)throw new Exception("The hardware benchmark found different search results.");
+    Console.WriteLine($"Synthetic hardware benchmark: 2000 records / 50 searches / indexed {indexedMs}ms and {indexedBytes} bytes / recursive {recursiveMs}ms and {recursiveBytes} bytes. No timing threshold enforced.");
+}

@@ -7,7 +7,7 @@ set "HWID_RESTART_SIGNAL="
 title HWID Checker - Preparing
 echo.
 echo   HWID CHECKER
-echo   [1/3] Preparing startup...
+echo   [1/3] Preparing HWID Checker...
 call :hwid_prepare
 set "HWID_SCRIPT=%~f0"
 set "HWID_CURRENT_WINDOW=%~1"
@@ -45,7 +45,7 @@ echo Ask your administrator about approved execution. Security settings were not
 set "HWID_EXIT=13"
 goto hwid_finish
 :hwid_run
-echo   [3/3] Starting checker. The readable window may take a moment to open...
+echo   [3/3] Starting the hardware scanner...
 "%HWID_ENGINE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "try { $raw = [IO.File]::ReadAllText($env:HWID_SCRIPT); $parts = $raw -split '(?m)^# POWERSHELL_START\r?$',2; if ($parts.Count -ne 2 -or [string]::IsNullOrWhiteSpace($parts[1])) { throw 'The checker content is missing or incomplete. Download a complete copy of hwid.bat.' }; & ([scriptblock]::Create($parts[1])) } catch { Write-Host ('[START-01] Unable to start checker: ' + $_.Exception.Message); exit 1 }"
 set "HWID_EXIT=%errorlevel%"
 if not "%HWID_EXIT%"=="0" echo [START-02] Checker ended with exit code %HWID_EXIT%. See the error details above.
@@ -94,7 +94,7 @@ function Set-CheckerStartupStatus([string]$State,[string]$Detail='') {
 function Restore-CheckerOperation {
     try {if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose()}}catch{}finally{$script:scanQueryWorker=$null}
     try {if($null -ne $script:scanProgressClock){$script:scanProgressClock.Stop()}}catch{}finally{$script:scanProgressClock=$null}
-    $script:scanProgressState=$null;$script:scanProgressTotal=$null;$script:scanViewState=$null;$script:scanGroupState=$null
+    $script:scanProgressState=$null;$script:scanProgressTotal=$null;$script:scanViewState=$null;$script:scanGroupState=$null;$script:scanDisplayState=$null
     $script:reportBookmarks=[ordered]@{}
     if($ownedConsole -and -not $redirected){try{[Console]::CursorVisible=$true}catch{}}
 }
@@ -301,10 +301,28 @@ function Start-ReadableConsole($ScriptPath, $Redirected, $Owned, $CurrentWindow)
         if($null -ne $child){try{$child.Dispose()}catch{}}
     }
 }
+function Get-CheckerTheme([string]$Override=$env:HWID_THEME,[string]$PreferencesPath='') {
+    $Override=([string]$Override).Trim()
+    if($Override -ieq 'Daylight'){return 'Daylight'}
+    if($Override -ieq 'Midnight'){return 'Midnight'}
+    try {
+        if(-not $PreferencesPath){$PreferencesPath=Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'HWID Checker\Desktop\settings.json'}
+        if([IO.File]::Exists($PreferencesPath) -and (Get-Item -LiteralPath $PreferencesPath -ErrorAction Stop).Length -le 262144){
+            $json=[IO.File]::ReadAllText($PreferencesPath)
+            # ConvertFrom-Json can unwrap a one-item root array. Desktop settings
+            # require an object, so reject other roots before that conversion.
+            if(-not $json.TrimStart().StartsWith('{')){return 'Midnight'}
+            $preferences=ConvertFrom-Json $json -ErrorAction Stop
+            if($preferences -is [pscustomobject] -and $preferences.darkTheme -is [bool] -and -not $preferences.darkTheme){return 'Daylight'}
+        }
+    }catch{}
+    return 'Midnight'
+}
 function Initialize-ReadableConsole($Owned, $Redirected) {
-    $result = [ordered]@{ Mode='Current window'; FontApplied=$false; FontName=''; FontHeight=0; FontWeight=0; Columns=0; Rows=0; BufferRows=0; QuickEditDisabled=$false; MouseInputDisabled=$false; ContextMenuDisabled=$false; InputModeBefore=0; InputModeAfter=0; ThemeApplied=$false; BackgroundRGB=0 }
+    $result = [ordered]@{ Mode='Current window'; FontApplied=$false; FontName=''; FontHeight=0; FontWeight=0; Columns=0; Rows=0; BufferRows=0; QuickEditDisabled=$false; MouseInputDisabled=$false; ContextMenuDisabled=$false; InputModeBefore=0; InputModeAfter=0; Theme='Host'; ThemeApplied=$false; CaptionThemeApplied=$false; BackgroundRGB=0 }
     if (-not $Owned -or $Redirected) { return [pscustomobject]$result }
     $result.Mode = 'Classic console'
+    $result.Theme=Get-CheckerTheme
     try {
         if (-not ('HwidConsoleDisplay' -as [type])) {
             Add-Type -TypeDefinition @'
@@ -318,6 +336,8 @@ public static class HwidConsoleDisplay {
     }
     [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int id);
     [DllImport("kernel32.dll")] static extern IntPtr GetConsoleWindow();
+    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref uint value, int size);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out uint value, int size);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] static extern IntPtr GetSystemMenu(IntPtr window, bool revert);
     [DllImport("user32.dll")] static extern IntPtr GetSubMenu(IntPtr menu, int position);
@@ -362,6 +382,10 @@ public static class HwidConsoleDisplay {
     static extern bool ReadConsoleOutputW(IntPtr output, [Out] ScreenCell[] data, Coord size, Coord origin, ref Rect region);
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)]
     static extern bool WriteConsoleOutputW(IntPtr output, ScreenCell[] data, Coord size, Coord origin, ref Rect region);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)]
+    static extern bool WriteConsoleW(IntPtr output, string text, uint length, out uint written, IntPtr reserved);
+    [DllImport("kernel32.dll")] static extern bool SetConsoleCursorPosition(IntPtr output, Coord position);
+    [DllImport("kernel32.dll")] static extern bool SetConsoleWindowInfo(IntPtr output, bool absolute, ref Rect window);
     public static ScreenPatch CaptureRegion(int left, int top, int width, int height) {
         if(left<0 || top<0 || width<1 || height<1 || width>32767 || height>32767) return null;
         var patch=new ScreenPatch { Left=left, Top=top, Width=width, Height=height, Cells=new ScreenCell[width*height] };
@@ -387,7 +411,41 @@ public static class HwidConsoleDisplay {
             }
         }
         var rect=new Rect { Left=(short)patch.Left, Top=(short)patch.Top, Right=(short)(patch.Left+patch.Width-1), Bottom=(short)(patch.Top+patch.Height-1) };
-        return WriteConsoleOutputW(GetStdHandle(-11),cells,new Coord { X=(short)patch.Width, Y=(short)patch.Height },new Coord(),ref rect);
+        return WriteConsoleOutputW(GetStdHandle(-11),cells,new Coord { X=(short)patch.Width, Y=(short)patch.Height },new Coord(),ref rect)
+            && rect.Left==patch.Left && rect.Top==patch.Top && rect.Right==patch.Left+patch.Width-1 && rect.Bottom==patch.Top+patch.Height-1;
+    }
+    public static bool PaintScanFrame(ScreenPatch patch, string[] lines, ushort[] attributes) {
+        if(patch==null || patch.Left!=0 || patch.Top!=0 || patch.Height<1) return false;
+        var info=ReadBuffer();
+        if(info.BufferSize.X!=patch.Width || info.BufferSize.Y!=patch.Height) return false;
+        return PaintScanRegion(patch,lines,attributes);
+    }
+    public static bool PaintScanRegion(ScreenPatch patch, string[] lines, ushort[] attributes) {
+        if(patch==null || patch.Left!=0 || patch.Top<0 || patch.Height<1) return false;
+        var output=GetStdHandle(-11);
+        var before=ReadBuffer();
+        if(before.BufferSize.X!=patch.Width || patch.Top+patch.Height>before.BufferSize.Y) return false;
+        uint mode;
+        if(!GetConsoleMode(output,out mode)) return false;
+        // Rectangular cell writes do not reset the host's soft-wrap row flags.
+        // Full-width cell writes can mark rows as continuations. Processed line
+        // feeds AFTER painting make each physical row a hard line, so the next
+        // host resize cannot join unrelated scan rows.
+        var processed=(mode | 0x0001u) & ~0x0004u;
+        if(processed!=mode && !SetConsoleMode(output,processed)) return false;
+        try {
+            if(!PaintRegion(patch,lines,attributes)) return false;
+            if(!SetConsoleCursorPosition(output,new Coord { Y=(short)patch.Top })) return false;
+            var breaks=new string('\n',Math.Min(patch.Height,before.BufferSize.Y-patch.Top-1));
+            uint written;
+            if(breaks.Length>0 && (!WriteConsoleW(output,breaks,(uint)breaks.Length,out written,IntPtr.Zero) || written!=breaks.Length)) return false;
+            return true;
+        } finally {
+            if(processed!=mode) SetConsoleMode(output,mode);
+            SetConsoleCursorPosition(output,before.Cursor);
+            var window=before.Window;
+            SetConsoleWindowInfo(output,true,ref window);
+        }
     }
     [StructLayout(LayoutKind.Sequential)] public struct BufferInfo {
         public uint Size; public Coord BufferSize; public Coord Cursor; public ushort Attributes;
@@ -435,17 +493,40 @@ public static class HwidConsoleDisplay {
         GetConsoleScreenBufferInfoEx(GetStdHandle(-11), ref info); return info;
     }
     public static uint ReadBackground() { return ReadBuffer().Colors[0]; }
-    public static bool ApplyTheme() {
+    public static uint ReadThemeColor(int index) { return ReadBuffer().Colors[index]; }
+    public static bool ReadCaptionColor(int attribute, out uint value) {
+        value=0;
+        try { return DwmGetWindowAttribute(GetConsoleWindow(),attribute,out value,4)==0; }
+        catch(DllNotFoundException) { return false; } catch(EntryPointNotFoundException) { return false; }
+    }
+    public static bool ApplyCaptionTheme(bool light) {
+        uint dark=light?0u:1u;
+        uint background=light?Rgb(248,250,252):Rgb(16,27,41);
+        uint foreground=light?Rgb(23,34,46):Rgb(238,245,250);
+        uint border=light?Rgb(198,210,222):Rgb(48,66,88);
+        try {
+            var window=GetConsoleWindow();
+            DwmSetWindowAttribute(window,20,ref dark,4);
+            int captionResult=DwmSetWindowAttribute(window,35,ref background,4);
+            int textResult=DwmSetWindowAttribute(window,36,ref foreground,4);
+            DwmSetWindowAttribute(window,34,ref border,4);
+            return captionResult==0 && textResult==0;
+        } catch(DllNotFoundException) { return false; } catch(EntryPointNotFoundException) { return false; }
+    }
+    public static bool ApplyTheme() { return ApplyTheme(false); }
+    public static bool ApplyTheme(bool light) {
         var info=ReadBuffer();
-        info.Colors[0]=Rgb(12,18,32);     // Deep navy background
-        info.Colors[1]=Rgb(19,32,53);     // Panel navy
-        info.Colors[7]=Rgb(144,164,190);  // Secondary labels
-        info.Colors[8]=Rgb(68,95,127);    // Borders
-        info.Colors[10]=Rgb(100,235,175); // Success mint
-        info.Colors[11]=Rgb(80,220,245);  // Navigation cyan
-        info.Colors[12]=Rgb(255,112,133); // Errors
-        info.Colors[14]=Rgb(255,209,112); // Warnings
-        info.Colors[15]=Rgb(230,241,255); // Main text
+        // Match the desktop's semantic colors; logical console color indexes
+        // stay unchanged, so status meaning and report text are preserved.
+        info.Colors[0]=light?Rgb(238,242,247):Rgb(13,21,33);
+        info.Colors[1]=light?Rgb(255,255,255):Rgb(21,33,49);
+        info.Colors[7]=light?Rgb(91,107,124):Rgb(167,185,204);
+        info.Colors[8]=light?Rgb(198,210,222):Rgb(48,66,88);
+        info.Colors[10]=light?Rgb(23,108,64):Rgb(131,223,169);
+        info.Colors[11]=light?Rgb(15,118,110):Rgb(102,225,206);
+        info.Colors[12]=light?Rgb(180,35,24):Rgb(255,180,172);
+        info.Colors[14]=light?Rgb(138,90,0):Rgb(243,199,133);
+        info.Colors[15]=light?Rgb(23,34,46):Rgb(238,245,250);
         info.Window.Right++; info.Window.Bottom++;
         return SetConsoleScreenBufferInfoEx(GetStdHandle(-11), ref info);
     }
@@ -458,7 +539,9 @@ public static class HwidConsoleDisplay {
         $result.MouseInputDisabled=[HwidConsoleDisplay]::UseHostScrolling()
         $result.ContextMenuDisabled=[HwidConsoleDisplay]::DisableEditPopup()
         $result.InputModeBefore=$before; $result.InputModeAfter=[HwidConsoleDisplay]::ReadInputMode()
-        $result.ThemeApplied=[HwidConsoleDisplay]::ApplyTheme()
+        $light=$result.Theme -eq 'Daylight'
+        $result.ThemeApplied=[HwidConsoleDisplay]::ApplyTheme($light)
+        $result.CaptionThemeApplied=[HwidConsoleDisplay]::ApplyCaptionTheme($light)
         $result.BackgroundRGB=[HwidConsoleDisplay]::ReadBackground()
         [Console]::BackgroundColor=[ConsoleColor]::Black
         [Console]::ForegroundColor=[ConsoleColor]::White
@@ -613,6 +696,8 @@ function Show-UiTransition([ValidateSet('Back','Next','Exit','Restart')]$Directi
 function Reset-UiPage {
     $script:reportBookmarks=[ordered]@{}
     $script:scanViewState=$null
+    $script:scanDisplayState=$null
+    $script:scanDisplayWarning=$null
     if ($ownedConsole -and -not $redirected) {
         try {
             [Console]::Clear()
@@ -626,10 +711,193 @@ function Start-UiReport([switch]$Scanning) {
         try {
             if($Scanning){
                 $script:scanViewState=[pscustomobject]@{FollowLatest=$true;LastTop=[Console]::WindowTop}
+                $script:scanDisplayState=$null
                 [Console]::SetBufferSize([Console]::WindowWidth,[math]::Max([Console]::WindowHeight,[Console]::CursorTop+8))
+                # Keep the existing text fallback when native console APIs are unavailable.
+                if(('HwidConsoleDisplay' -as [type]) -and $null -ne [HwidConsoleDisplay]::CaptureRegion(0,0,1,1)){
+                    $script:scanDisplayState=[pscustomobject]@{
+                        Entries=(New-Object 'System.Collections.Generic.List[object]')
+                        Width=0;Height=0;LastTop=0;FollowLatest=$true;Dirty=$true
+                        RefreshClock=[Diagnostics.Stopwatch]::StartNew()
+                        FailureKey='';FailureClock=$null
+                    }
+                }
             }else{[Console]::SetBufferSize([Console]::WindowWidth,[math]::Max([Console]::BufferHeight,[math]::Max(4096,[Console]::WindowHeight)))}
         }catch{}
     }
+}
+function Get-ScanDisplayLines($Entry,[int]$Width) {
+    # Retain the original string so shrinking and widening never destroys text.
+    $width=[math]::Max(1,$Width-1)
+    $text=[string]$Entry.Text
+    $cacheProperty=if($null -ne $Entry){$Entry.PSObject.Properties['LayoutCache']}else{$null}
+    $cache=if($cacheProperty){$cacheProperty.Value}else{$null}
+    if($null -ne $cache -and $cache.Width -eq $width -and [string]::Equals($cache.Text,$text,[StringComparison]::Ordinal) -and $cache.Value -eq [bool]$Entry.Value){return $cache.Lines}
+    $lines=New-Object 'System.Collections.Generic.List[string]'
+    foreach($part in ($text -split "\r?\n")){
+        $rest=$part -replace '[\x00-\x1f\x7f]',' '
+        while($rest.Length -gt $width){
+            $take=$width
+            if($take -gt 1 -and [char]::IsHighSurrogate($rest[$take-1])){$take--}
+            $lines.Add($rest.Substring(0,$take))
+            $rest=$rest.Substring($take)
+            if($Entry.Value -and $width -gt 8){$rest='    '+$rest}
+        }
+        $lines.Add($rest)
+    }
+    $result=$lines.ToArray()
+    if($cacheProperty){$cacheProperty.Value=[pscustomobject]@{Width=$width;Text=$text;Value=[bool]$Entry.Value;Lines=$result}}
+    return $result
+}
+function Update-ScanDisplay([switch]$Force) {
+    $state=$script:scanDisplayState
+    if($null -eq $state -or -not $ownedConsole -or $redirected){return}
+    # At most two attempts; a resize storm must not monopolize collection/input.
+    for($attempt=0;$attempt -lt 2;$attempt++){
+        try{
+            $width=[Console]::WindowWidth;$height=[Console]::WindowHeight
+            if($width -lt 2 -or $height -lt 1){return}
+            $resized=$state.Width -ne $width -or $state.Height -ne $height -or [Console]::BufferWidth -ne $width
+            $top=[Console]::WindowTop
+            if(-not $resized -and $top -ne $state.LastTop){
+                $state.FollowLatest=($top -ge [Console]::BufferHeight-$height)
+                $state.LastTop=$top
+            }
+            # A shrink/grow round trip can finish between polls at the same width.
+            # A bounded native repaint also repairs that case without clearing/flashing.
+            if(-not $Force -and -not $state.Dirty -and -not $resized -and $state.RefreshClock.ElapsedMilliseconds -lt 400){return}
+            $anchor=$null;$offset=0
+            foreach($entry in $state.Entries){
+                if($entry.Row -ge 0 -and $entry.Row -le $state.LastTop){$anchor=$entry;$offset=$state.LastTop-$entry.Row}
+            }
+            $lines=New-Object 'System.Collections.Generic.List[string]'
+            $colors=New-Object 'System.Collections.Generic.List[uint16]'
+            # Console color getters query the native buffer. Read them once per
+            # frame rather than once for every retained line and blank row.
+            $background=([int][Console]::BackgroundColor -shl 4)
+            $blankAttributes=[uint16]($background -bor [int][Console]::ForegroundColor)
+            foreach($entry in $state.Entries){
+                $entry.Row=$lines.Count
+                $parts=@(Get-ScanDisplayLines $entry $width)
+                $entry.Rows=$parts.Count
+                foreach($line in $parts){
+                    $lines.Add($line)
+                    $colors.Add([uint16]($background -bor [int][ConsoleColor]$entry.Color))
+                }
+            }
+            if($lines.Count -gt 32760){throw 'The scan display exceeds the console history limit.'}
+            $cursorRow=$lines.Count;$cursorLeft=0
+            if($state.Entries.Count){
+                $last=$state.Entries[$state.Entries.Count-1]
+                if($last.Pending){
+                    $length=[math]::Min($last.PendingLength,([string]$last.Text).Length)
+                    $cursorRow=$last.Row+[int][math]::Floor([math]::Max(0,$length-1)/($width-1))
+                    $cursorLeft=if($length){(($length-1)%($width-1))+1}else{0}
+                }
+            }
+            $rows=Get-ReportHistoryRows $height $cursorRow
+            # Clear the entire old layout, including trailing cells and blank rows.
+            while($lines.Count -lt $rows){$lines.Add('');$colors.Add($blankAttributes)}
+            $maximum=[math]::Max(0,$rows-$height)
+            [Console]::SetWindowPosition(0,[math]::Min([Console]::WindowTop,$maximum))
+            [Console]::SetBufferSize($width,$rows)
+            $patch=New-Object HwidConsoleDisplay+ScreenPatch
+            $patch.Left=0;$patch.Top=0;$patch.Width=$width;$patch.Height=$rows
+            if(-not (Invoke-ScanFramePaint $patch $lines.ToArray() $colors.ToArray())){throw 'The scan screen could not be painted.'}
+            [Console]::SetCursorPosition($cursorLeft,$cursorRow)
+            $top=if($state.FollowLatest){$maximum}elseif($null -ne $anchor){[math]::Min($maximum,$anchor.Row+[math]::Min($offset,[math]::Max(0,$anchor.Rows-1)))}else{[math]::Min($maximum,$state.LastTop)}
+            [Console]::SetWindowPosition(0,[math]::Max(0,$top))
+            if([Console]::WindowWidth -ne $width -or [Console]::WindowHeight -ne $height -or [Console]::BufferWidth -ne $width){$state.Dirty=$true;continue}
+            $state.Width=$width;$state.Height=$height;$state.LastTop=$top;$state.Dirty=$false
+            $state.RefreshClock.Restart()
+            $state.FailureKey='';$state.FailureClock=$null
+            if($null -ne $script:scanViewState){
+                $script:scanViewState.LastTop=$top;$script:scanViewState.FollowLatest=$state.FollowLatest
+            }
+            return
+        }catch{
+            # Geometry can change between any two console calls. Retry next pulse.
+            $state.Dirty=$true
+            try{
+                if([Console]::WindowWidth -ne $width -or [Console]::WindowHeight -ne $height){$state.FailureKey='';$state.FailureClock=$null;continue}
+                $key="$width/$height"
+                if($state.FailureKey -ne $key -or $null -eq $state.FailureClock){
+                    $state.FailureKey=$key;$state.FailureClock=[Diagnostics.Stopwatch]::StartNew()
+                }elseif($state.FailureClock.ElapsedMilliseconds -ge 1000){
+                    Use-ScanTextFallback $state
+                    return
+                }
+            }catch{}
+        }
+    }
+}
+function Invoke-ScanFramePaint($Patch,$Lines,$Colors) {
+    return [HwidConsoleDisplay]::PaintScanFrame($Patch,[string[]]$Lines,[uint16[]]$Colors)
+}
+function Use-ScanTextFallback($State) {
+    # A persistent drawing failure must not hide successful collection.
+    $script:scanDisplayState=$null
+    $script:scanDisplayWarning='Live console drawing became unavailable; collection continued with text output.'
+    $script:scanProgressFallbackUsed=$true
+    if($null -ne $script:scanProgressState){$script:scanProgressState | Add-Member NoteProperty BoundaryFallback $true -Force}
+    try{
+        [Console]::Clear()
+        [Console]::SetWindowPosition(0,0)
+        foreach($entry in $State.Entries){
+            $parts=@(Get-ScanDisplayLines $entry ([Console]::WindowWidth))
+            for($index=0;$index -lt $parts.Count;$index++){
+                Ensure-ScanBuffer 5
+                Write-Host $parts[$index] -ForegroundColor $entry.Color -NoNewline:($entry.Pending -and $index -eq $parts.Count-1)
+            }
+        }
+        Complete-UiReport
+    }catch{
+        try{Write-Host '  Scan results are retained. Open Summary [1] or Full report [5] after scanning.' -ForegroundColor $palette.Warn}catch{}
+    }
+}
+function Add-ScanDisplayEntry($Text,$Color,[switch]$Value,[switch]$Pending) {
+    $entry=[pscustomobject]@{
+        Text=[string]$Text;Color=$Color;Value=[bool]$Value;Pending=[bool]$Pending;PendingLength=([string]$Text).Length;Row=-1;Rows=1;LayoutCache=$null
+    }
+    $script:scanDisplayState.Entries.Add($entry)
+    $script:scanDisplayState.Dirty=$true
+    Update-ScanDisplay
+    return $entry
+}
+function Set-ScanDisplayEntry($Entry,$Text,$Color) {
+    $Entry.Text=[string]$Text;$Entry.Color=$Color
+    $state=$script:scanDisplayState
+    # Keep the full transcript authoritative, but repaint only a changed status
+    # row when its size and screen geometry are unchanged. Resize/recovery uses
+    # the complete renderer, including periodic repair of missed resize cycles.
+    try{
+        if(-not $state.Dirty -and $state.RefreshClock.ElapsedMilliseconds -lt 400 -and
+            $state.Width -eq [Console]::WindowWidth -and $state.Height -eq [Console]::WindowHeight -and
+            [Console]::BufferWidth -eq $state.Width -and $Entry.Row -ge 0){
+            $parts=@(Get-ScanDisplayLines $Entry $state.Width)
+            if($parts.Count -eq $Entry.Rows){
+                $patch=New-Object HwidConsoleDisplay+ScreenPatch
+                $patch.Left=0;$patch.Top=$Entry.Row;$patch.Width=$state.Width;$patch.Height=$parts.Count
+                $attribute=[uint16](([int][Console]::BackgroundColor -shl 4) -bor [int][ConsoleColor]$Color)
+                $attributes=New-Object 'uint16[]' $parts.Count
+                for($index=0;$index -lt $attributes.Length;$index++){$attributes[$index]=$attribute}
+                if([HwidConsoleDisplay]::PaintScanRegion($patch,[string[]]$parts,$attributes)){
+                    if($state.Width -eq [Console]::WindowWidth -and $state.Height -eq [Console]::WindowHeight){
+                        if(-not $Entry.Pending -and [object]::ReferenceEquals($Entry,$state.Entries[$state.Entries.Count-1])){
+                            $anchor=Get-ScanViewAnchor
+                            $rows=Get-ReportHistoryRows ([Console]::WindowHeight) ($Entry.Row+$Entry.Rows)
+                            if([Console]::BufferHeight -lt $rows){[Console]::SetBufferSize([Console]::BufferWidth,$rows)}
+                            [Console]::SetCursorPosition(0,$Entry.Row+$Entry.Rows)
+                            Complete-ScanDisplayWrite $anchor
+                        }
+                        return
+                    }
+                }
+            }
+        }
+    }catch{}
+    $script:scanDisplayState.Dirty=$true
+    Update-ScanDisplay
 }
 function Get-ScanViewAnchor {
     if($null -eq $script:scanViewState -or -not $ownedConsole -or $redirected){return $null}
@@ -661,6 +929,7 @@ function Complete-ScanDisplayWrite($Anchor) {
 function Read-ScanNavigation([scriptblock]$AvailableReader,[scriptblock]$KeyReader) {
     if($null -eq $script:scanViewState -or -not $ownedConsole -or $redirected){return}
     try {
+        Update-ScanDisplay
         $null=Get-ScanViewAnchor
         # Bound each pass so held keys cannot monopolize the query/progress loop.
         for($count=0;$count -lt 32;$count++){
@@ -678,6 +947,11 @@ function Read-ScanNavigation([scriptblock]$AvailableReader,[scriptblock]$KeyRead
 }
 function Write-ScanStatus($State,$Text,$Color) {
     if($null -eq $State -or -not $ownedConsole -or $redirected){return $false}
+    if($null -ne $script:scanDisplayState -and $null -ne $State.Entry){
+        Set-ScanDisplayEntry $State.Entry ($State.Prefix+[string]$Text) $Color
+        return $null -ne $script:scanDisplayState
+    }
+    if($null -ne $State.Entry){return $false}
     try {
         if([Console]::WindowWidth -ne $State.Width){return $false}
         $left=[int]$State.Left;$width=$State.Width-$left-1
@@ -739,7 +1013,12 @@ function Wait-UiPage([scriptblock]$KeyReader,[string]$ContinueTo) {
         if($bookmarked -and -not $ContinueTo){Move-UiReportView 'Home'}
         if($ContinueTo -and -not $KeyReader){Clear-ScanTypeAhead}
         while($true) {
-            $key=if($KeyReader){& $KeyReader}else{[Console]::ReadKey($true)}
+            Update-ScanDisplay
+            $key=if($KeyReader){& $KeyReader}else{
+                # ReadKey blocks resize recovery while the finished scan is open.
+                while(-not [Console]::KeyAvailable){Update-ScanDisplay;Start-Sleep -Milliseconds 40}
+                [Console]::ReadKey($true)
+            }
             if($null -eq $key){return}
             if($key.Key -eq [ConsoleKey]::Enter){return}
             if($bookmarked -and -not $ContinueTo) {
@@ -756,7 +1035,7 @@ function Wait-UiPage([scriptblock]$KeyReader,[string]$ContinueTo) {
 function Clear-ScanTypeAhead([scriptblock]$HeldReader,[scriptblock]$AvailableReader,[scriptblock]$DrainReader) {
     try {
         # Wait without repainting while Enter is held, then discard scan-time keys.
-        while($(if($HeldReader){& $HeldReader}else{[HwidConsoleDisplay]::EnterIsDown()})){Start-Sleep -Milliseconds 40}
+        while($(if($HeldReader){& $HeldReader}else{[HwidConsoleDisplay]::EnterIsDown()})){Update-ScanDisplay;Start-Sleep -Milliseconds 40}
         $clock=[Diagnostics.Stopwatch]::StartNew()
         while($clock.ElapsedMilliseconds -lt 250 -and $(if($AvailableReader){& $AvailableReader}else{[Console]::KeyAvailable})) {
             if($DrainReader){& $DrainReader | Out-Null}else{[void][Console]::ReadKey($true)}
@@ -836,14 +1115,24 @@ function Show-MenuInputError($Area,$Maximum=9) {
     }
     Write-Host $message -ForegroundColor $palette.Error
 }
+function Read-MenuKey($Area,$Buffer,[scriptblock]$AvailableReader,[scriptblock]$KeyReader) {
+    # ReadKey blocks resize recovery. Poll gently while idle; unchanged prompt
+    # rows are cached, so this does not flood output or redraw on held Enter.
+    while(-not $(if($AvailableReader){& $AvailableReader}else{[Console]::KeyAvailable})) {
+        if($null -ne $Area -and $Area.Enabled){$null=Write-MenuInputArea $Area $Buffer}
+        Start-Sleep -Milliseconds 40
+    }
+    if($KeyReader){return (& $KeyReader)}
+    return [Console]::ReadKey($true)
+}
 function Read-MenuKeyboard([scriptblock]$KeyReader,$Area,$Maximum=9) {
     $fixed=Write-MenuInputArea $Area ''
     if(-not $fixed){Write-Host "  Select [0-$Maximum]: " -ForegroundColor $palette.Text -NoNewline}
     $buffer=''
     $overflow=$false
     while ($true) {
-        # This blocks while idle; empty Enter repeats never print or repaint anything.
-        $key=if($KeyReader){& $KeyReader}else{[Console]::ReadKey($true)}
+        # Empty Enter repeats never print or repaint anything.
+        $key=if($KeyReader){& $KeyReader}else{Read-MenuKey $Area $buffer}
         if ($null -eq $key) { return $null }
         if ($key.Key -eq [ConsoleKey]::Enter) {
             if ([string]::IsNullOrWhiteSpace($buffer)) { continue }
@@ -920,7 +1209,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.90' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.91' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -990,7 +1279,7 @@ function Get-FieldLabel($Name,$SectionName='') {
         CurrentHorizontalResolution='WMI-reported width (pixels)';CurrentVerticalResolution='WMI-reported height (pixels)';DriverDate='Driver date (Windows-reported)';HardwareInterface='Hardware-backed interface flag'
         MacAddressReadStatus='Current MAC read status';NetworkAddresses='Reported network addresses';RawInterfaceOperationalStatus='Raw interface status code'
         SavedAt='Saved at';ProgressWarning='Progress display warning'
-        CompletionDisplayWarning='Scan completion display warning';WorkerCleanupWarning='Scan cleanup warning'
+        CompletionDisplayWarning='Scan completion display warning';ScanDisplayWarning='Console display fallback';WorkerCleanupWarning='Scan cleanup warning'
         QueryCleanupWarning='Query cleanup warning';QueryCleanupSections='Sections with query cleanup warnings'
         ExtendedQueryCleanupWarning='Extended query cleanup warning';ExtendedWorkerCleanupWarning='Extended worker cleanup warning'
         ParentInstanceId='Parent device instance ID';ParentName='Parent device name';ParentReadStatus='Parent-link read status'
@@ -2385,6 +2674,7 @@ function Start-ExtendedDeviceScan {
         if($null -ne $cursor){try{[Console]::CursorVisible=$cursor}catch{}}
     }
     if($report['Report info'].ExtendedQueryCleanupWarning -or $report['Report info'].ExtendedWorkerCleanupWarning){Write-PnpValue 'Extended cleanup' 'Catalog data kept; cleanup reported a problem. Main [5] has details.' $palette.Warn}
+    if($script:scanDisplayWarning){$report['Report info']['ScanDisplayWarning']=$script:scanDisplayWarning}
     Show-ExtendedDeviceReport
 }
 function Get-PnpStatus($Code) {
@@ -2466,6 +2756,13 @@ function Get-PnpIssues($Devices) {
     }
 }
 function Write-PnpLine($Text,$Color) {
+    if($null -ne $script:scanDisplayState -and $ownedConsole -and -not $redirected){
+        $progress=$script:scanProgressState
+        $isProgress=$null -ne $progress -and $null -eq $progress.Entry -and $progress.Top -eq [Console]::CursorTop
+        $entry=Add-ScanDisplayEntry $Text $Color
+        if($isProgress){$progress | Add-Member NoteProperty Entry $entry -Force}
+        return
+    }
     $anchor=Get-ScanViewAnchor
     if($ownedConsole -and -not $redirected) {
         try {
@@ -2478,6 +2775,13 @@ function Write-PnpLine($Text,$Color) {
     try {Write-Host $Text -ForegroundColor $Color}finally{Complete-ScanDisplayWrite $anchor}
 }
 function Write-PnpValue($Label,$Value,$Color) {
+    if($null -ne $script:scanDisplayState -and $ownedConsole -and -not $redirected){
+        $safeLabel=([string]$Label -replace '[\x00-\x1f\x7f]',' ')
+        $text=([string]$Value -replace '[\x00-\x1f\x7f]',' ')
+        if([string]::IsNullOrWhiteSpace($text)){$text='(not supplied)'}
+        [void](Add-ScanDisplayEntry ('    '+$safeLabel+': '+$text) $Color -Value)
+        return
+    }
     $width=96
     try {if([Console]::WindowWidth -gt 0){$width=[math]::Max(8,[Console]::WindowWidth-2)}}catch{}
     $text=([string]$Value -replace '[\x00-\x1f\x7f]',' ')
@@ -2782,10 +3086,27 @@ function Show-ScanGroup($Name) {
     }catch{return $_.Exception.Message}
     return $null
 }
-function Get-ScanProgressText([int]$Completed,[int]$Total,[double]$Seconds,[int]$Width=96) {
+function Get-ScanOutcomeCounts($Timings,[string]$CatalogStatus='') {
+    $read=0;$notRead=0
+    foreach($timing in $Timings){
+        if($timing.Status -in @('READ','CHECK')){$read++}
+        elseif($timing.Status -in @('UNAVAILABLE','NOT READ')){$notRead++}
+    }
+    if($CatalogStatus -in @('READ','CHECK')){$read++}
+    elseif($CatalogStatus -in @('UNAVAILABLE','NOT READ')){$notRead++}
+    return [pscustomobject]@{Read=$read;NotRead=$notRead}
+}
+function Get-ScanProgressText([int]$Completed,[int]$Total,[double]$Seconds,[int]$Width=96,[int]$Read=-1,[int]$NotRead=-1) {
     $Total=[math]::Max(1,$Total)
     $Completed=[math]::Max(0,[math]::Min($Completed,$Total))
     if($Width -lt 40){return ('{0}/{1} / {2:0}%' -f $Completed,$Total,(100*$Completed/$Total))}
+    if($Read -ge 0 -and $NotRead -ge 0){
+        $Read=[math]::Min($Read,$Completed);$NotRead=[math]::Min($NotRead,$Completed-$Read)
+        if($Width -lt 60){return ('{0}/{1} done / {2} read / {3} not read' -f $Completed,$Total,$Read,$NotRead)}
+        if($Width -lt 85){return ('{0}/{1} done / {2} read / {3} not read / {4:0.0}s' -f $Completed,$Total,$Read,$NotRead,[math]::Max(0.0,$Seconds))}
+        $filled=[int][math]::Floor(12*$Completed/$Total)
+        return ('[{0}{1}] {2,3:0}% / {3}/{4} done / {5} read / {6} not read / {7:0.0}s' -f ('#'*$filled),('-'*(12-$filled)),(100*$Completed/$Total),$Completed,$Total,$Read,$NotRead,[math]::Max(0.0,$Seconds))
+    }
     if($Width -lt 70){return ('{0}/{1} finished / {2:0}% / {3:0.0}s' -f $Completed,$Total,(100*$Completed/$Total),[math]::Max(0.0,$Seconds))}
     $filled=[int][math]::Floor(20*$Completed/$Total)
     return ('[{0}{1}] {2,3:0}% / {3} of {4} finished / {5:0.0}s elapsed' -f ('#'*$filled),('-'*(20-$filled)),(100*$Completed/$Total),$Completed,$Total,[math]::Max(0.0,$Seconds))
@@ -2796,7 +3117,12 @@ function Update-ScanProgress([int]$Completed=$script:scanStep,[switch]$Boundary)
     $width=96
     try{if([Console]::WindowWidth -gt 3){$width=[Console]::WindowWidth-3}}catch{}
     $total=if($null -ne $script:scanProgressTotal){$script:scanProgressTotal}else{$scanTotal}
-    $text='  '+(Get-ScanProgressText $Completed $total $script:scanProgressClock.Elapsed.TotalSeconds $width)
+    if($null -eq $script:scanTimings){
+        $text='  '+(Get-ScanProgressText $Completed $total $script:scanProgressClock.Elapsed.TotalSeconds $width)
+    }else{
+        $outcomes=Get-ScanOutcomeCounts $script:scanTimings $script:scanCatalogOutcome
+        $text='  '+(Get-ScanProgressText $Completed $total $script:scanProgressClock.Elapsed.TotalSeconds $width $outcomes.Read $outcomes.NotRead)
+    }
     if(-not $state.BoundaryFallback){
         $painted=$false
         try{$painted=Write-ScanStatus $state $text $palette.Heading}catch{}
@@ -2814,6 +3140,11 @@ function Update-ScanProgress([int]$Completed=$script:scanStep,[switch]$Boundary)
 }
 function Start-ScanLine($Prefix) {
     Read-ScanNavigation
+    if($null -ne $script:scanDisplayState -and $ownedConsole -and -not $redirected){
+        $entry=Add-ScanDisplayEntry ($Prefix+'[READING...]') $palette.Muted -Pending
+        $width=[Console]::WindowWidth
+        return [pscustomobject]@{Entry=$entry;Prefix=$Prefix;Left=($Prefix.Length%[math]::Max(1,$width-1));Top=($entry.Row+[int][math]::Floor($Prefix.Length/[math]::Max(1,$width-1)));Width=$width;LastLength=12}
+    }
     $anchor=Get-ScanViewAnchor
     try {
     if($null -ne $script:scanViewState){try{Ensure-ScanBuffer ([int][math]::Ceiling(([string]$Prefix).Length/[math]::Max(1,[Console]::WindowWidth))+5)}catch{}}
@@ -2838,6 +3169,17 @@ function Update-ScanWaiting($State,[double]$Seconds) {
 }
 function Complete-ScanLine($State,$Name,$Text,$Color) {
     Read-ScanNavigation
+    if($null -ne $script:scanDisplayState -and $null -ne $State.Entry){
+        $State.Entry.Pending=$false
+        Set-ScanDisplayEntry $State.Entry ($State.Prefix+[string]$Text) $Color
+        return
+    }
+    if($null -ne $State.Entry){
+        # The native renderer was abandoned. Its saved coordinates are obsolete.
+        Write-Host ''
+        Write-Host ($Name+': ') -ForegroundColor $palette.Muted -NoNewline
+        $State=$null
+    }
     $anchor=Get-ScanViewAnchor
     try {
     if($null -ne $script:scanViewState){try{Ensure-ScanBuffer ([int][math]::Ceiling(([string]$Text).Length/[math]::Max(1,[Console]::WindowWidth))+5)}catch{}}
@@ -3042,7 +3384,7 @@ function Section($Name, [scriptblock]$Query) {
         $warnings.Add("${Name}: $message")
         $report[$Name] = @{Unavailable=$message;FailureCode=$failure.Code;FailureReason=$failure.Reason;NextStep=$failure.Action}
         $timer.Stop()
-        $resultWarning=Show-ScanReadResult $line $Name 'NOT READ' 0 ($summary+' / Main [4] / '+$failure.Code) $timer.Elapsed.TotalSeconds $palette.Warn
+        $resultWarning=Show-ScanReadResult $line $Name 'NOT READ' 0 ($summary+' / Main [4] / '+$failure.Code) $timer.Elapsed.TotalSeconds $palette.Error
     } finally {
         $timer.Stop()
         if($null -ne $script:scanTimings){$script:scanTimings.Add([pscustomobject]@{Section=$Name;Status=$status;Results=$results;Seconds=[math]::Round($timer.Elapsed.TotalSeconds,3);Summary=$summary;FailureCode=$failureCode;NextStep=$nextStep;Recoveries=@($script:lastQueryRecoveries);QueryCleanupWarning=$script:lastQueryCleanupFailure;ProgressWarning=(@($groupWarning,$resultWarning,$script:lastQueryFeedbackFailure) | Where-Object {$_}) -join ' / '})}
@@ -3109,16 +3451,28 @@ function GiB($Bytes) {
     if(-not $parsed.Valid){return $null}
     return [math]::Round($parsed.Value / 1GB,2)
 }
+function Get-ScanDeviceScope($Inventory) {
+    $present='not available'
+    if(Test-SectionReadable $Inventory['PnP hardware IDs']){$present=[string]@($Inventory['PnP hardware IDs']).Count}
+    $known=switch([string]$Inventory['Report info'].ExtendedStatus){
+        'Refreshed' {[string]@($Inventory['Extended device inventory'] | Where-Object {$null -ne $_}).Count}
+        'Unavailable' {'not read'}
+        '' {'not included'}
+        default {'status unknown'}
+    }
+    return "Present: $present / all-known: $known. Device records include virtual nodes; all-known may include disconnected devices."
+}
 function Show-ScanCompletion($Inventory,$Identifiers,[int]$Read,[int]$Total,[bool]$Complete,[string]$ExtendedNote='') {
     try {
         $info=$Inventory['Report info']
-        Ensure-ScanBuffer 8
+        Ensure-ScanBuffer 10
         $hasData=Test-ScanHasReadableData $Inventory
         Write-Heading $(if($Complete){'SCAN COMPLETE'}elseif($hasData){'SCAN FINISHED / SOME DATA NOT READ'}else{'SCAN FINISHED / NO DATA READ'})
         $checks=$Total+$(if($ExtendedNote){1}else{0})
         Write-PnpValue 'Finished' ("$checks/$checks checks finished / $Read/$Total areas read / $($Total-$Read) not read$ExtendedNote / $($info.ScanSeconds)s") $(if($Complete){$palette.Good}else{$palette.Warn})
         $found=@($Identifiers | Where-Object Quality -eq 'Reported').Count
         Write-PnpValue 'Selected IDs' ("$found identifier fields filled by Windows") $(if($found){$palette.Good}else{$palette.Muted})
+        Write-PnpValue 'Device scope' (Get-ScanDeviceScope $Inventory) $palette.Muted
         Write-PnpValue 'Meaning' '100% means all checks finished. ID counts measure fields and can include repeated values.' $palette.Muted
         $review=Get-ReviewSummary $Inventory $Identifiers $Inventory['Warnings']
         Write-PnpValue 'Review' ("$($review.Total) items to review. Choose [4] from the main menu for explanations.") $(if($review.Total){$palette.Warn}else{$palette.Good})
@@ -3149,12 +3503,13 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     $script:scanProgressFallbackUsed=$false
     $script:scanGroupState=[pscustomobject]@{LastGroup='';Index=0;Total=$(if($IncludeExtended){8}else{7})}
     $script:scanTimings=New-Object 'System.Collections.Generic.List[object]'
+    $script:scanCatalogOutcome=$null
     Reset-UiPage
     Start-UiReport -Scanning
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-PnpLine '  Hardware identity and Windows inventory. Read-only scan.' $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.90'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.91'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-PnpLine "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" $palette.Muted
@@ -3167,8 +3522,8 @@ if($ownedConsole -and -not $redirected) {
     try {$script:scanProgressState=[pscustomobject]@{Top=[Console]::CursorTop;Width=[Console]::WindowWidth}}catch{}
 }
 if($null -ne $script:scanProgressState) {
-    Write-PnpLine (Limit-TableText ('  '+(Get-ScanProgressText 0 $script:scanProgressTotal 0 ([Console]::WindowWidth-3))) ([Console]::WindowWidth-1)) $palette.Heading
-}else{Write-PnpValue 'Progress' (Get-ScanProgressText 0 $script:scanProgressTotal 0) $palette.Heading}
+    Write-PnpLine (Limit-TableText ('  '+(Get-ScanProgressText 0 $script:scanProgressTotal 0 ([Console]::WindowWidth-3) 0 0)) ([Console]::WindowWidth-1)) $palette.Heading
+}else{Write-PnpValue 'Progress' (Get-ScanProgressText 0 $script:scanProgressTotal 0 96 0 0) $palette.Heading}
 if($IncludeExtended){Write-PnpValue 'Device scope' 'Present devices + all Windows-known PnP records, including hidden/disconnected nodes.' $palette.Muted}
 try {
 if($UseWorker) {
@@ -3177,8 +3532,9 @@ if($UseWorker) {
 }
 $report['Report info']['QueryMode']=if($null -ne $script:scanQueryWorker){'Live progress'}else{'Direct queries'}
 Write-Heading "SCANNING $scanTotal SECTIONS"
-Write-PnpLine '  READ = data received. CHECK = data received with items to review in [4].' $palette.Muted
-Write-PnpLine '  NOT READ = Windows could not supply usable data. Records are Windows entries; IDs count fields.' $palette.Muted
+Write-PnpLine '  Status key / READ: Windows supplied data. Counts are fields or device records.' $palette.Good
+Write-PnpLine '  CHECK: Data was read; choose [4] to understand the review items.' $palette.Warn
+Write-PnpLine '  NOT READ: A Windows read failed; choose [4] for the error and next step.' $palette.Error
 Write-PnpLine '  Scroll during scan: wheel / Up Down / PgUp PgDn / Home End. Enter is ignored.' $palette.Muted
 Section 'System identity' {
     Get-HwidInstance -OperationTimeoutSec 20 Win32_ComputerSystemProduct -Property Vendor,Name,Version,IdentifyingNumber,UUID | Select-Object Vendor, Name, Version, IdentifyingNumber, UUID
@@ -3271,6 +3627,7 @@ if($IncludeExtended) {
         try {Complete-ScanLine $extraLine 'Extended catalog' ('[NOT READ] '+$failure.Reason+' / '+$failure.Code) $palette.Warn}catch{$extraResultWarning=$_.Exception.Message}
     }finally{
         $extraClock.Stop()
+        $script:scanCatalogOutcome=if($report['Report info'].ExtendedStatus -eq 'Refreshed'){'READ'}else{'NOT READ'}
         $extraFeedback=(@($extraGroupWarning,$extraResultWarning,$script:lastQueryFeedbackFailure) | Where-Object {$_}) -join ' / '
         if($script:lastQueryCleanupFailure){
             $info=$report['Extended scan info']
@@ -3304,7 +3661,9 @@ $report['Warnings'] = @($warnings.ToArray())
     $finalProgressWarning=$null
     try {Update-ScanProgress $script:scanProgressTotal -Boundary}catch{$finalProgressWarning=$_.Exception.Message}
     if($script:scanProgressFallbackUsed){$report['Report info']['ProgressHeaderFallback']=$true}
+    if($script:scanDisplayWarning){$report['Report info']['ScanDisplayWarning']=$script:scanDisplayWarning}
     $completionWarning=Show-ScanCompletion $report $rows $read $scanTotal $complete $extendedNote
+    if($script:scanDisplayWarning){$report['Report info']['ScanDisplayWarning']=$script:scanDisplayWarning}
     $completionFeedback=(@($finalProgressWarning,$completionWarning) | Where-Object {$_}) -join ' / '
     if($completionFeedback){$report['Report info']['CompletionDisplayWarning']=$completionFeedback}
     $finishedSnapshot=[pscustomobject]@{Inventory=$report;Warnings=$warnings;Identifiers=$rows;Completed=$true}
@@ -3314,6 +3673,7 @@ $report['Warnings'] = @($warnings.ToArray())
     $script:scanProgressClock=$null
     $script:scanProgressState=$null
     $script:scanProgressTotal=$null
+    $script:scanCatalogOutcome=$null
     $script:scanViewState=$null
     $workerToRelease=$script:scanQueryWorker;$script:scanQueryWorker=$null
     if($null -ne $workerToRelease){
@@ -4479,7 +4839,7 @@ function Start-ChangeWatch {
         $script:checkerPhase='Main menu'
     }
 }
-function Get-CheckerPackageVersion {return '1.4.5'}
+function Get-CheckerPackageVersion {return '1.4.6'}
 function Get-CheckerUpdatePaths([string]$ScriptPath=$env:HWID_SCRIPT,[string]$LocalRoot=$env:LOCALAPPDATA) {
     $install=[IO.Path]::GetFullPath((Split-Path -Parent ([IO.Path]::GetFullPath($ScriptPath))))
     if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}
@@ -4710,6 +5070,7 @@ function Start-CheckerRestartWindow([string]$ScriptPath=$env:HWID_SCRIPT) {
 }
 function Start-CheckerRestart {
     if(-not $ownedConsole -or $redirected){Write-PnpValue 'RESTART-01' 'Restarting needs an interactive console window. Close this checker and run hwid.bat again.' $palette.Warn;return}
+    if(Test-CheckerUpdateRunning){Write-PnpValue 'RESTART-04' 'An update check is running. Wait for it to finish, then use [9] > [5] to review its status before restarting.' $palette.Warn;return}
     $pending=$false
     try {
         $paths=Get-CheckerUpdatePaths
@@ -4723,7 +5084,7 @@ function Start-CheckerRestart {
         return
     }
     Show-UiTransition 'Restart' 'Fresh checker'
-    Start-CheckerExitUpdate
+    Write-PnpValue 'Restarting checker' 'Opening a new window and a fresh scan. Saved reports remain in the shared folders.' $palette.Heading
     try {
         $child=Start-CheckerRestartWindow
         if($null -eq $child){throw 'The new checker window did not start.'}
@@ -4741,7 +5102,7 @@ function Show-CheckerUpdates {
         Write-Heading 'UPDATES / BAT & DESKTOP PACKAGE'
         $paths=Get-CheckerUpdatePaths
         $preferences=Get-CheckerUpdatePreferences $paths
-        Write-PnpValue 'Installed' ('Scanner 3.90 / package '+(Get-CheckerPackageVersion)) $palette.Text
+        Write-PnpValue 'Installed' ('Scanner 3.91 / package '+(Get-CheckerPackageVersion)) $palette.Text
         Write-PnpValue 'Automatic updates' $(if($preferences.Enabled){'On. Standalone-launcher sessions prepare updates and install after normal Exit.'}else{'Off. Enable this setting to install a prepared update after normal Exit.'}) $palette.Muted
         if($preferences.Warning){Write-PnpValue 'Preferences' $preferences.Warning $palette.Warn}
         $result=Read-CheckerUpdateResult $paths
@@ -4792,7 +5153,7 @@ function Show-ScanTools {
         Show-MenuItem '4' 'Extended device scan / hidden & disconnected' ''
         Show-MenuItem '5' 'Updates / automatic update controls' ''
         Show-MenuItem '6' 'Watch for changes (auto rescan)' ''
-        Show-MenuItem '7' 'Restart checker (fresh window)' ''
+        Show-MenuItem '7' 'Restart checker (fresh window)' 'Starts a new scan. Save this scan with main [6] first if needed.'
         Show-MenuItem '0' 'Back to main menu' ''
         Write-PnpValue 'Before rescanning' 'Use main [6] to keep the current snapshot as TXT + JSON. Rescanning does not save automatically.' $palette.Muted
         Write-PnpValue 'Scope' 'Reads devices currently exposed by Windows; some IDs require administrator access or are not supplied.' $palette.Muted
@@ -4807,7 +5168,7 @@ function Show-ScanTools {
             '4' {Start-ExtendedDeviceScan}
             '5' {Show-CheckerUpdates;Reset-UiPage;Start-UiReport;continue ScanTools}
             '6' {Start-ChangeWatch}
-            '7' {Start-CheckerRestart;return $false}
+            '7' {Start-CheckerRestart;return $true}
             '3' {
                 if($null -ne $lastScanPrevious -and $null -ne $lastScanCurrent){Show-RescanResult $lastScanPrevious $lastScanCurrent}
                 else {Write-Heading 'NO RESCAN YET';Write-PnpValue 'Next' 'Choose main [9] > [1] to rescan first.' $palette.Muted}

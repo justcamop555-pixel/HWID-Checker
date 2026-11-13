@@ -78,7 +78,15 @@ public sealed record ScanRow(string Name, string Status, string Records, string 
 internal sealed record IdentifierRow(string Section, string Field, string Value, string Status, string Device);
 internal sealed record FieldRow(string Field, string Value, string? RawValue = null);
 internal sealed record ReviewRow(string Kind, string Section, string Message, string Detail);
-internal sealed record ChangeRow(string Kind, string Label, string Previous, string Current, string Detail);
+internal sealed record ChangeRow(string Kind, string Label, string Previous, string Current, string Detail)
+{
+    internal bool MatchesSearch(string needle) => Kind.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+        Label.Contains(needle, StringComparison.OrdinalIgnoreCase) || Previous.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+        Current.Contains(needle, StringComparison.OrdinalIgnoreCase) || Detail.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+        // Only a query containing the join separator can cross field boundaries.
+        // Keep those exact matches without building a large string on every key.
+        needle.Contains(' ') && string.Join(" ", Kind, Label, Previous, Current, Detail).Contains(needle, StringComparison.OrdinalIgnoreCase);
+}
 internal sealed record HardwareSection(string Name, int Count)
 {
     public string RawName => Name;
@@ -100,7 +108,13 @@ internal sealed record HardwareSection(string Name, int Count)
     public string Display => FriendlyName + "  ·  " + CountText;
 }
 internal sealed record HardwareRecord(string Title, JsonElement Data, int Index);
-internal sealed record SnapshotEntry(string Path, string Name, string Computer, string Captured, string Version, string Size, DateTimeOffset SortTime);
+internal sealed record SnapshotEntry(string Path, string Name, string Computer, string Captured, string Version, string Size, DateTimeOffset SortTime)
+{
+    internal bool MatchesSearch(string needle) => Name.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+        Computer.Contains(needle, StringComparison.OrdinalIgnoreCase) || Captured.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+        Path.Contains(needle, StringComparison.OrdinalIgnoreCase) || Version.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+        needle.Contains(' ') && string.Join(" ", Name, Computer, Captured, Path, Version).Contains(needle, StringComparison.OrdinalIgnoreCase);
+}
 internal sealed record SnapshotCatalog(IReadOnlyList<SnapshotEntry> Entries, int Skipped, string[] Folders);
 
 internal sealed class DesktopSnapshot
@@ -108,30 +122,64 @@ internal sealed class DesktopSnapshot
     public JsonElement Data { get; }
     public JsonElement Inventory => Data.Get("inventory");
     public JsonElement Info => Inventory.Get("Report info");
-    public List<IdentifierRow> Identifiers { get; } = [];
-    public List<ReviewRow> Findings { get; } = [];
+    public IReadOnlyList<IdentifierRow> Identifiers { get; }
+    public IReadOnlyList<ReviewRow> Findings { get; }
+    private readonly (IdentifierRow Row, string Text)[] _identifierSearch;
+    private readonly (ReviewRow Row, string Text)[] _reviewSearch;
+    private sealed record HardwareSearchEntry(HardwareRecord Row, string[]? Values);
+    private sealed record HardwareSearchSection(IReadOnlyList<HardwareRecord> Rows, HardwareSearchEntry[] Entries);
+    private readonly Dictionary<string, HardwareSearchSection> _hardwareSearch = new(StringComparer.Ordinal);
+    internal int CachedHardwareCharacters { get; private set; }
     public List<ScanRow> Timing { get; } = [];
     public IReadOnlyList<HardwareSection> Sections { get; }
     public string Version => Data.Text("version");
     public int ReportedIds => Identifiers.Count(x => x.Status == "Reported");
+    public int SectionsChecked => Timing.Select(x => x.Name.Trim()).Where(name => name.Length > 0)
+        .Distinct(StringComparer.OrdinalIgnoreCase).Count();
+    public string CoverageText => SectionsChecked > 0 ? $"{SectionsRead} of {SectionsChecked} sections read" : "Section read status not recorded";
+    public bool AllSectionsRead => SectionsChecked > 0 && SectionsRead == SectionsChecked;
     public int SectionsRead => Timing.Where(x =>
         x.Status.Trim().Equals("READ", StringComparison.OrdinalIgnoreCase) ||
         x.Status.Trim().Equals("CHECK", StringComparison.OrdinalIgnoreCase))
         .Select(x => x.Name.Trim()).Where(name => name.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Count();
     public int DeviceCount => Inventory.Get("Extended device inventory").Rows()
         .Count(row => row.ValueKind == JsonValueKind.Object && J.IsCapturedRecord(row));
+    public ScanRow CatalogRow
+    {
+        get
+        {
+            var status = Info.Text("ExtendedStatus").Trim();
+            var info = Inventory.Get("Extended scan info");
+            var conflicts = info.Number("ParentLinkConflicts");
+            if (status.Equals("Refreshed", StringComparison.OrdinalIgnoreCase))
+                return new("All-known device catalog", "READ", DeviceCount.ToString(),
+                    conflicts > 0 ? conflicts + " unresolved parent links" : "Present, hidden and remembered Windows records", "");
+            if (status.Equals("Unavailable", StringComparison.OrdinalIgnoreCase) ||
+                info.Text("Error").Length > 0 || info.Text("Unavailable").Length > 0)
+                return new("All-known device catalog", "NOT READ", "—",
+                    "The device list could not be refreshed. Open Review or Hardware for details.", "");
+            if (status.Length == 0 && info.ValueKind == JsonValueKind.Undefined &&
+                Inventory.Get("Extended device inventory").ValueKind == JsonValueKind.Undefined)
+                return new("All-known device catalog", "NOT SCANNED", "—", "This capture does not include an extended device scan.", "");
+            return new("All-known device catalog", "UNKNOWN", DeviceCount.ToString(),
+                DeviceCount > 0 ? "Saved device records are available; the original read status was not recorded." :
+                    "Device-list read status was not recorded.", "");
+        }
+    }
 
     public DesktopSnapshot(JsonElement data)
     {
         if (data.Get("inventory").ValueKind != JsonValueKind.Object) throw new InvalidDataException("The scanner returned no inventory.");
         Data = data.Clone();
+        var identifiers = new List<IdentifierRow>();
+        var findings = new List<ReviewRow>();
         Sections = Inventory.EnumerateObject()
             .Select(section => new HardwareSection(section.Name, section.Value.Rows().Count(J.IsCapturedRecord))).ToArray();
         foreach (var row in Data.Get("identifiers").Rows())
         {
             var section = row.Text("Section"); var rawField = row.Text("Field");
             var quality = row.Text("Quality");
-            Identifiers.Add(new(section, Label(section, rawField), row.Text("Value"), quality == "Placeholder" ? "Default" : quality, row.Text("Device")));
+            identifiers.Add(new(section, Label(section, rawField), row.Text("Value"), quality == "Placeholder" ? "Default" : quality, row.Text("Device")));
         }
         foreach (var row in Inventory.Get("Scan timing").Rows())
         {
@@ -141,12 +189,12 @@ internal sealed class DesktopSnapshot
         }
         var review = Data.Get("review");
         foreach (var row in review.Get("UnreadDetails").Rows())
-            Findings.Add(new("Read error", row.Text("Section"), row.Text("Reason") + " · " + row.Text("Code"),
+            findings.Add(new("Read error", row.Text("Section"), row.Text("Reason") + " · " + row.Text("Code"),
                 row.Text("Message") + "\n\nNext step: " + row.Text("Action")));
         foreach (var row in review.Get("IdIssues").Rows())
         {
             var section = row.Text("Section"); var field = Label(section, row.Text("Field"));
-            Findings.Add(new("ID review", section, field + " · " + (row.Text("Quality") == "Placeholder" ? "default value" : "not supplied"),
+            findings.Add(new("ID review", section, field + " · " + (row.Text("Quality") == "Placeholder" ? "default value" : "not supplied"),
                 "Device: " + row.Text("Device") + "\nField: " + field + "\nValue: " + row.Get("Value").Display() +
                 "\n\nA missing or generic identifier can be normal for this component. The full inventory retains the Windows-reported value."));
         }
@@ -158,11 +206,94 @@ internal sealed class DesktopSnapshot
                 var source = row.Text("Section");
                 if (source.Length == 0) source = row.Text("Device");
                 if (source.Length == 0) source = key == "DiskClashes" ? "Storage" : "Device records";
-                Findings.Add(new(key is "PnpConflicts" or "DiskClashes" or "RecordConflicts" ? "Conflict" : "Device status", source, message, row.Display()));
+                findings.Add(new(key is "PnpConflicts" or "DiskClashes" or "RecordConflicts" ? "Conflict" : "Device status", source, message, row.Display()));
             }
         foreach (var row in Inventory.Get("Extended device inventory").Rows().Where(x => x.Flag("ParentInstanceIdConflict")))
-            Findings.Add(new("Parent link", row.Text("Name"), "Parent-device readings disagree", "Instance: " + row.Text("DeviceInstanceId") +
+            findings.Add(new("Parent link", row.Text("Name"), "Parent-device readings disagree", "Instance: " + row.Text("DeviceInstanceId") +
                 "\n\nObserved parents:\n" + row.Get("ParentInstanceIdReadings").Display() + "\n\nThe relationship is unresolved. Core device identifiers remain available."));
+        Identifiers = identifiers.AsReadOnly();
+        Findings = findings.AsReadOnly();
+        _identifierSearch = identifiers.Select(row => (row, string.Join(" ", row.Section, row.Field, row.Value, row.Device, row.Status))).ToArray();
+        _reviewSearch = findings.Select(row => (row, string.Join(" ", row.Kind, row.Section, row.Message, row.Detail))).ToArray();
+        BuildHardwareSearch();
+    }
+    private void BuildHardwareSearch()
+    {
+        // Bound the optional value cache for large saved inventories. Records
+        // beyond this budget retain exact recursive search, without truncation.
+        var characters = 1_048_576;
+        var leaves = 16_384;
+        foreach (var section in Inventory.EnumerateObject())
+        {
+            var entries = new List<HardwareSearchEntry>();
+            var records = section.Value.Rows();
+            for (var index = 0; index < records.Length; index++)
+            {
+                var value = records[index];
+                if (value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) continue;
+                var row = new HardwareRecord(RecordTitle(section.Name, value, index), value, index);
+                var values = new List<string>();
+                var cached = CacheHardwareValues(value, values, ref characters, ref leaves);
+                entries.Add(new(row, cached ? values.ToArray() : null));
+            }
+            var array = entries.ToArray();
+            _hardwareSearch[section.Name] = new(Array.AsReadOnly(array.Select(entry => entry.Row).ToArray()), array);
+        }
+        CachedHardwareCharacters = 1_048_576 - characters;
+    }
+    private static bool CacheHardwareValues(JsonElement value, List<string> values, ref int characters, ref int leaves)
+    {
+        if (characters <= 0 || leaves <= 0) return false;
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var field in value.EnumerateObject())
+                if (!CacheHardwareValues(field.Value, values, ref characters, ref leaves)) return false;
+        }
+        else if (value.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in value.EnumerateArray())
+                if (!CacheHardwareValues(item, values, ref characters, ref leaves)) return false;
+        }
+        else
+        {
+            var text = value.Text();
+            if (text.Length > characters) return false;
+            characters -= text.Length; leaves--; values.Add(text);
+        }
+        return true;
+    }
+    public IReadOnlyList<HardwareRecord> FindHardwareRecords(string section, string needle)
+    {
+        if (!_hardwareSearch.TryGetValue(section, out var index)) return Array.Empty<HardwareRecord>();
+        if (needle.Length == 0) return index.Rows;
+        return index.Entries.Where(entry => entry.Row.Title.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+            (entry.Values != null ? entry.Values.Any(value => value.Contains(needle, StringComparison.OrdinalIgnoreCase)) :
+                HardwareValueMatches(entry.Row.Data, needle))).Select(entry => entry.Row).ToArray();
+    }
+    private static bool HardwareValueMatches(JsonElement value, string needle) => value.ValueKind switch
+    {
+        JsonValueKind.Object => value.EnumerateObject().Any(field => HardwareValueMatches(field.Value, needle)),
+        JsonValueKind.Array => value.EnumerateArray().Any(item => HardwareValueMatches(item, needle)),
+        _ => value.Text().Contains(needle, StringComparison.OrdinalIgnoreCase)
+    };
+    public IReadOnlyList<IdentifierRow> FindIdentifiers(string needle, int filter = 0)
+    {
+        if (needle.Length == 0 && filter is not (1 or 2)) return Identifiers;
+        var matches = new List<IdentifierRow>();
+        foreach (var entry in _identifierSearch)
+            if ((filter != 1 || entry.Row.Status == "Reported") &&
+                (filter != 2 || entry.Row.Status is "Missing" or "Default") &&
+                (needle.Length == 0 || entry.Text.Contains(needle, StringComparison.OrdinalIgnoreCase)))
+                matches.Add(entry.Row);
+        return matches.ToArray();
+    }
+    public IReadOnlyList<ReviewRow> FindReview(string needle)
+    {
+        if (needle.Length == 0) return Findings;
+        var matches = new List<ReviewRow>();
+        foreach (var entry in _reviewSearch)
+            if (entry.Text.Contains(needle, StringComparison.OrdinalIgnoreCase)) matches.Add(entry.Row);
+        return matches.ToArray();
     }
     public string Label(string section, string field)
     {
@@ -294,7 +425,7 @@ internal static class SnapshotStore
         "Network adapters", "Monitors", "Battery", "Windows", "Windows Machine GUID", "PnP hardware IDs", "Extended device inventory"
     };
 
-    public static Task<SnapshotCatalog> ReadAsync(IEnumerable<string> directories) => Task.Run(() =>
+    public static Task<SnapshotCatalog> ReadAsync(IEnumerable<string> directories, CancellationToken cancellationToken = default) => Task.Run(() =>
     {
         var entries = new List<SnapshotEntry>();
         var folders = new List<string>();
@@ -302,6 +433,7 @@ internal static class SnapshotStore
         var seenFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var directory in directories)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(directory)) continue;
             try
             {
@@ -317,6 +449,7 @@ internal static class SnapshotStore
         var seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var folder in folders)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             string[] files;
             try { files = Directory.GetFiles(folder, "*.json", SearchOption.TopDirectoryOnly); }
             catch (DirectoryNotFoundException) { continue; }
@@ -328,6 +461,7 @@ internal static class SnapshotStore
 
             foreach (var file in files)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (!seenFiles.Add(file)) continue;
                 try
                 {
@@ -343,11 +477,12 @@ internal static class SnapshotStore
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         var ordered = entries.OrderByDescending(x => x.SortTime)
             .ThenBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         return new SnapshotCatalog(ordered, skipped, folders.ToArray());
-    });
+    }, cancellationToken);
 
     private static SnapshotEntry? ReadEntry(string file)
     {

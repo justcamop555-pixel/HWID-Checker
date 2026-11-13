@@ -69,6 +69,7 @@ if([string]::IsNullOrWhiteSpace($EngineDirectory)){throw 'Scanner files were not
 $engineRoot=Resolve-FileSystemPath $EngineDirectory
 $batchPath=Join-Path $engineRoot 'hwid.bat'
 $launcherPath=Join-Path $engineRoot 'Start-HWID.ps1'
+if(-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)){throw 'Start-HWID.ps1 is required beside hwid.bat to build offline console recovery.'}
 if(-not (Test-Path -LiteralPath $batchPath -PathType Leaf)){throw ('hwid.bat was not found in the selected engine directory: '+$engineRoot)}
 $batchText=[IO.File]::ReadAllText($batchPath)
 if([regex]::Matches($batchText,'(?m)^# POWERSHELL_START\r?$').Count -ne 1){throw 'The selected hwid.bat does not contain the expected embedded PowerShell checker.'}
@@ -113,8 +114,11 @@ $publishArguments=@(
     'publish',$project,'--configuration','Release','--runtime','win-x64',
     '--self-contained','true','--output',$publishRoot,
     '-p:PublishSingleFile=true','-p:IncludeNativeLibrariesForSelfExtract=true',
+    '-p:PublishReadyToRun=false','-p:PublishReadyToRunComposite=false',
+    '-p:EnableCompressionInSingleFile=false',
     '-p:PublishTrimmed=false','-p:DebugType=None','-p:DebugSymbols=false',
     '-p:UseSharedCompilation=false'
+    ('-p:HwidEngineDirectory='+$engineRoot)
 )
 & $dotnet.Source @publishArguments
 if($LASTEXITCODE -ne 0){throw ('Desktop publish failed. Build diagnostics remain in '+$buildRoot)}
@@ -170,6 +174,9 @@ if((Get-FileHash -LiteralPath $updaterPath -Algorithm SHA256).Hash -ne $updaterH
     EngineVersion=$engineVersion
     Runtime='win-x64'
     SelfContained=$true
+    ReadyToRun=$false
+    CompositeReadyToRun=$false
+    SingleFileCompression=$false
     PackageDirectory=$packageRoot
     Executable=$packageExe
     Archive=$archivePath

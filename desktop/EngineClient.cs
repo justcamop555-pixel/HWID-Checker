@@ -86,8 +86,11 @@ internal sealed class EngineClient : IDisposable
             throw new EngineException("The linked hwid.bat file could not be found. Keep it beside the desktop app or choose its location.");
     }
 
-    public Task<JsonElement> ScanAsync(IProgress<BridgeProgress>? progress, CancellationToken ct)
-        => RunAsync("Scan", null, null, null, progress, ct);
+    public Task<JsonElement> ScanAsync(IProgress<BridgeProgress>? progress, CancellationToken ct, int scanNumber = 1)
+    {
+        if (scanNumber < 1) throw new EngineException("The scan number must be positive.", "ENGINE-SCAN-NUMBER");
+        return RunAsync("Scan", null, null, null, progress, ct, scanNumber);
+    }
 
     public Task<JsonElement> CompareAsync(string previousPath, JsonElement currentInventory, CancellationToken ct)
     {
@@ -125,7 +128,7 @@ internal sealed class EngineClient : IDisposable
     }
 
     private async Task<JsonElement> RunAsync(string action, JsonElement? inventory, string? argument,
-        string? currentArgument, IProgress<BridgeProgress>? progress, CancellationToken ct)
+        string? currentArgument, IProgress<BridgeProgress>? progress, CancellationToken ct, int scanNumber = 1)
     {
         lock (sync)
         {
@@ -187,6 +190,8 @@ internal sealed class EngineClient : IDisposable
                 requestPath = await WriteRequestAsync(request, operationFolder, temporaryFiles, token).ConfigureAwait(false);
             }
 
+            if (action == "Scan")
+                requestPath = await WriteRequestAsync(new { scanNumber }, operationFolder, temporaryFiles, token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             process = StartBridge(action, bridgePath, requestPath, operationFolder);
             lock (sync) activeProcess = process;
@@ -277,11 +282,15 @@ internal sealed class EngineClient : IDisposable
             }
             if (operationFolder is not null)
             {
-                foreach (string file in temporaryFiles) DeleteOwnedFile(file, operationFolder);
+                foreach (string file in temporaryFiles) await DeleteOwnedFileAsync(file, operationFolder).ConfigureAwait(false);
                 // Refuse recursive cleanup: unexpected contents must never be removed.
-                try { Directory.Delete(operationFolder, recursive: false); }
-                catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
+                for (int attempt = 0; attempt < 6; attempt++)
+                {
+                    try { Directory.Delete(operationFolder, recursive: false); break; }
+                    catch (DirectoryNotFoundException) { break; }
+                    catch (IOException) { if (attempt < 5) await Task.Delay(50).ConfigureAwait(false); }
+                    catch (UnauthorizedAccessException) { break; }
+                }
             }
             lock (sync)
             {
@@ -345,7 +354,7 @@ internal sealed class EngineClient : IDisposable
             "ENGINE-RUNTIME", lastStartFailure);
     }
 
-    private static IEnumerable<string> PowerShellCandidates()
+    internal static IEnumerable<string> PowerShellCandidates()
     {
         HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
         List<string> paths = new();
@@ -457,13 +466,16 @@ internal sealed class EngineClient : IDisposable
         catch (Win32Exception) { }
     }
 
-    private static void DeleteOwnedFile(string file, string operationFolder)
+    internal static async Task DeleteOwnedFileAsync(string file, string operationFolder)
     {
         string expectedParent = Path.GetFullPath(operationFolder).TrimEnd(Path.DirectorySeparatorChar);
         if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(file)), expectedParent, StringComparison.OrdinalIgnoreCase)) return;
-        try { File.Delete(file); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        for (int attempt = 0; attempt < 6; attempt++)
+        {
+            try { File.Delete(file); return; }
+            catch (IOException) { if (attempt < 5) await Task.Delay(50).ConfigureAwait(false); }
+            catch (UnauthorizedAccessException) { return; }
+        }
     }
 
     public void Dispose()

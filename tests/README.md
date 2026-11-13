@@ -1,5 +1,7 @@
 # Developer checks
 
+`test-scan-display-cache.ps1` verifies retained-line cache invalidation for exact text, resizing, indentation, Unicode and legacy callers. It includes a synthetic wrapping benchmark without a timing pass/fail threshold. Run it under both Windows PowerShell 5.1 and PowerShell 7; it does not scan hardware.
+
 [Back to the main README](../README.md)
 
 Desktop EXE tests are documented separately in [desktop verification](../desktop/tests/README.md). The console checks below continue to cover the BAT engine.
@@ -22,10 +24,12 @@ Tests are optional for users. Run them from the repository root in a Windows Pow
 | `test-scan-readable-data.ps1` | 24 checks: wholly unreadable rescan/watch rejection, last-capture preservation, valid partial/catalog-only reads, honest comparison limits, worker helper consistency and device-ID menu routes | No |
 | `test-report-metadata.ps1` | 19 checks: section-aware metadata names/dates/access labels, real console/TXT entry points, unchanged raw JSON/identifiers, unknown values and alternate calendars | No |
 | `test-battery-scan.ps1` | 19 checks: supported provider fields, exact device IDs, optional absence, stable multi-battery comparison, contextual presence labels and unread-category counts | No |
-| `test-restart.ps1` | 11 checks: native fresh-window startup through the real BAT prelude, punctuation/Unicode directories, preference inheritance, startup acknowledgement and recoverable launch failures | No; opens a temporary console |
+| `test-restart.ps1` | 14 checks: native fresh-window startup, punctuation/Unicode paths, inherited preferences, acknowledgement, recoverable failures, update-check deferral and visible failure navigation | No; opens a temporary console |
+| `test-theme-matching.ps1` | 38 native checks: BAT/Desktop palette parity for both themes, saved/overridden preferences, missing/null/invalid/oversized settings, caption-theme acceptance and inherited-host preservation | No; hidden temporary console |
 | `test-animation.ps1` | 47 checks: bounded frames, directional timing, input interruption and resize/failure cleanup | No |
 | `test-animation-native.ps1` | 15 checks: real console screen/cursor restoration, input skipping and buffer-resize cancellation | No; opens a temporary console |
 | `test-scan-display-fallback.ps1` | Resized progress fallback and standalone catalog result-line completion | No |
+| `test-scan-resize.ps1` | 60 native checks: serial retention, bounded history, worker queries, resizing, host reflow, output-mode restoration, scrolling, fallback, isolated progress-row updates, full redraw recovery and idle menu input/error retention | No; opens a hidden temporary console |
 | `test-id-view.ps1` | 28 checks: malformed scalar IDs, valid strings/lists/zero values, serial/MAC labels, null rows, adapter metadata and safe display | No |
 | `test-review.ps1` | 24 checks: warning deduplication/recovery, stored failures, extended failures, duplicate statuses, resource shortages/conflicts and consistent review totals | No |
 | `test-scan-metadata.ps1` | 41 checks: optional storage/partition/memory/monitor conversions, raw-value retention, direct/worker scan agreement and report round trips | No |
@@ -57,7 +61,7 @@ Tests are optional for users. Run them from the repository root in a Windows Pow
 | `test-id-completeness.ps1` | 68 checks: cross-source ID disagreements, exact text/zeros/order, compatible-ID source labels, optional container/base-container GUIDs, raw malformed observations, snapshot round trips, serialized property calls and distinct-node coverage across 65 nodes in direct/worker modes | No |
 | `test-scan-diagnostics.ps1` | 60 checks: localized WMI HRESULTs/legacy error codes, present-only recovery, access/timeout retry suppression, final-reader diagnostics, padded duplicates, model coverage and saved snapshots | No |
 | `test-device-coverage.ps1` | 36 checks: all-known startup/rescan coverage, progress stages, failed-batch isolation, bounded retries, error containment, raw-ID preservation and snapshot metadata in both scan modes | No |
-| `test-scan-scroll.ps1` | 33 native checks: bounded scan history, viewport-preserving timer/output writes, injected keys during a worker query, follow/pause controls, held Enter, resizing, narrow full scans and cleanup | No; opens a hidden temporary console |
+| `test-scan-scroll.ps1` | 36 native checks: bounded scan history, viewport-preserving timer/output writes, injected keys during a worker query, follow/pause controls, held Enter, resizing, narrow full scans and cleanup | No; opens a hidden temporary console |
 | `test-runtime-launchers.ps1` | Eight launcher/runtime cases, including missing/old/restricted engines and the PS1 loader | No |
 | `test-startup-recovery.ps1` | 35 checks: CMD preparation order, empty/missing/broken bodies, exit-code preservation, both PS loaders, cleanup failures, bounded diagnostics, fatal traps and actual menu-action recovery on 5.1/7 | No |
 | `test-scan-scalars.ps1` | 41 checks: present-only consistency, disconnected/unknown presence, scalar/container validation, numeric ranges/enums, nested monitor data, raw-shape preservation and saved comparisons in direct/worker modes | No |
@@ -73,3 +77,5 @@ Live diagnostics print counts/status/timing rather than device identifiers. The 
 Tests may leave synthetic reports, temporary launcher cases and diagnostic scripts under `tests/`. These generated paths are ignored by Git. Do not run every diagnostic concurrently; native console tests share result filenames.
 
 The tests locate `hwid.bat` and `Start-HWID.ps1` in the repository root. Keep the folder structure when moving the repository.
+
+The scan-completion suite also checks live read/not-read counts, catalog outcomes, compact progress widths, clamping and per-scan state reset. Calls without timing metadata retain the original progress formatter.

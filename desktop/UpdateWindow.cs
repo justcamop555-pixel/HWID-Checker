@@ -112,7 +112,8 @@ internal sealed class UpdateWindow : Window
             (status.BatVersion.Length > 0 ? " · BAT " + status.BatVersion : "") +
             (_updater.IsReady ? "\n\nThe verified package is ready. " +
                 (_updater.AutomaticEnabled ? "It will install after the app closes." : "Choose Install and restart to apply it.") : "");
-        _message.SetResourceReference(TextBlock.ForegroundProperty, status.State == "error" ? "WarningBrush" : "TextBrush");
+        _message.SetResourceReference(TextBlock.ForegroundProperty, status.State == "error" ? "ErrorBrush" :
+            _updater.IsBusy ? "WorkingBrush" : _updater.IsReady ? "SuccessBrush" : "TextBrush");
         _check.IsEnabled = !_updater.IsBusy && status.State is not ("repair" or "restart");
         _download.Visibility = status.State == "available" ? Visibility.Visible : Visibility.Collapsed;
         _download.IsEnabled = !_updater.IsBusy;

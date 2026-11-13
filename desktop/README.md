@@ -2,20 +2,33 @@
 
 A Windows desktop interface for the existing HWID Checker scanner. The application launches the PowerShell scanner embedded in the adjacent `hwid.bat`, then presents its results in a graphical dashboard.
 
-Desktop **1.4.5** pairs with BAT **3.90** for a shared local snapshot library and application updates. See the [changelog](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/CHANGELOG.md) for release details.
+Desktop **1.4.6** includes BAT **3.91**. Download the complete Windows x64 package from [GitHub Releases](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.4.6).
+
+The update adds clearer ID search counts and empty states, responsive ID controls, device-aware list copying, accurate coverage for older captures, and staged CSV/HTML and comparison exports. The BAT retains scan text through resizing and can fall back to normal text output if native drawing remains unavailable. Published release history is in the [changelog](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/CHANGELOG.md).
 
 ## Start the application
+
+Download and **extract the complete ZIP** before launching `HWID Checker.exe`. Keep its companion files together in a local folder. Starting from inside an archive or waiting for a cloud-only file to download can add delays before the application can run.
+
+Normal launches show **Starting HWID Checker** while local settings load, then open the dashboard. Settings and saved scanner-file checks run away from the UI thread, so slow storage or an unavailable scanner path can no longer block the entire window. Close the loading window to cancel; no hardware scan starts automatically. On a first launch, Windows file verification and runtime preparation can still take time before any application window appears.
+
+Release builds keep the single-file bundle uncompressed and retain the existing self-contained/update-package format. Startup performance is measured before changing compilation settings; there is no fixed launch-time guarantee on every PC.
 
 1. Extract the complete portable package to a local folder.
 2. Keep **HWID Checker.exe** and **hwid.bat** together.
 3. Open **HWID Checker.exe**.
-4. Start a scan from the dashboard.
+4. Read the Desktop welcome/privacy notice, then choose **Open dashboard**.
+5. Start a scan from the dashboard.
 
 The package targets **Windows x64** and includes its .NET desktop runtime. The scanner still requires **Windows PowerShell 5.1 or PowerShell 7**, FullLanguage mode, and the Windows CIM/WMI providers used by the console checker. Administrator access is optional; available fields depend on the hardware, Windows providers, drivers and current access.
 
 ## Use the dashboard
 
+ID and Review searches retain the selected column sort and keep a selected row when it still matches. Hiding a row clears its selection and copy/detail target. Hardware search checks record names and nested values, including large fields. Automatic snapshot-list polling pauses while minimized and waits while the welcome notice, initial connection or another refresh is active.
+
 For a first check, choose **Scan this PC**, wait for the results, then open **Review** to see anything that needs explanation. Choose **Save snapshot** to keep a baseline before changing hardware or drivers. Later, rescan and compare with that saved JSON file. A saved snapshot is a capture from one point in time; saving again without rescanning does not collect new readings.
+
+The Desktop-only **Welcome to HWID Checker** message explains the read-only hardware scan, sensitive report contents and saving a baseline before sharing. Saving does not redact identifiers. After **Open dashboard**, the notice stays dismissed unless **Show this message on future app launches** is selected. **Not now** leaves it available for the next cold launch. Reopen it at any time from **Welcome & privacy**. Normal session-preserving restarts skip the startup notice. The BAT does not show this dialog.
 
 | Task | Behavior |
 | --- | --- |
@@ -27,12 +40,16 @@ For a first check, choose **Scan this PC**, wait for the results, then open **Re
 | Export a readable report | Use **Export CSV / HTML…** to save the identifier table as CSV and the captured inventory as a standalone HTML page. Use the JSON snapshot for later comparison. |
 | Share folders with the BAT | Open **Snapshots → Folder settings…** to choose a shared save folder and manage the folders both apps watch. |
 | Compare snapshots | Compare an older JSON snapshot with the current scan, or choose two saved JSON snapshots without starting a scan. Results show old/new values and exact identifier differences. |
-| Export comparison results | After a comparison finds changes, save its displayed results as a text report. |
-| Open BAT console | Open the connected scanner in its console. The standard package includes `Start-HWID.ps1` for the standard BAT filename. |
-| Theme and restart | Switch between **Midnight** and **Daylight**, or use **Restart app** in the sidebar. |
+| Export comparison results | Save the complete comparison and coverage notes as text, including rows hidden by search or filters. |
+| Open BAT console | Check the scanner, open a separate console, and recover missing or invalid companions from the bundled offline copy. |
+| Theme and restart | Switch between **Midnight** and **Daylight**. **Restart app** restores the current scan, filters, selections, page and comparison in a fresh desktop process. The original stays open if the replacement cannot become ready. |
 | Updates | Check newer packages, download a verified update, and install it after closing or with **Install and restart**. |
 
 The square layout keeps table headers aligned with their card borders. Body text uses regular Segoe UI with a larger default size. In a narrow window, the scan buttons move below the page title, PC details stack vertically, and **Hardware** uses a section dropdown. While scanning, the activity table uses the overview space. Hover over shortened text for the full value, or select a table row to read and copy its details.
+
+The selected theme also colors the native title bar and frame on supported Windows versions, including the app's Updates and Folder settings windows. Windows still provides the normal caption buttons, resizing and snap behavior. Older systems keep their supported system frame, and high-contrast mode retains system frame colors. Windows-managed file pickers and message boxes use the Windows appearance.
+
+New owned BAT consoles use matching Midnight/Daylight background, text and status colors. They read the Desktop's saved theme; the `HWID_THEME=Midnight` or `HWID_THEME=Daylight` process override takes precedence. An already open BAT keeps its launch theme. Current-window and redirected launches retain their host appearance.
 
 **Hardware** starts with PC details rather than internal report metadata. Names such as **Memory (RAM)** and **Graphics (GPU)** describe the captured sections; scan information and diagnostics remain available further down the list. Capture times and access level use readable labels. Identifier text and saved JSON retain the Windows-reported values.
 
@@ -44,7 +61,16 @@ Battery hardware is optional. A PC without a battery receives an explicit absenc
 
 Comparisons show the selected identifier fields supported by the engine. Missing/default fields, unread sections and uncertain reader coverage may be left un-compared. Windows device nodes, grouping IDs and serial numbers have different meanings; a reported difference alone does not establish physical hardware replacement.
 
+### Read live scan progress
+
+BAT and Desktop show finished checks, data reads and failed reads separately. CHECK means data was read but some values need review; it is included in the read count. The device catalog is included in overall check counts. Narrow BAT windows use a compact progress row; very narrow windows keep the count/percentage. Older progress callers without timing metadata retain their original display.
+
+Desktop uses **Finalizing scan** after all checks finish while it waits for a complete, validated result. Its previous snapshot stays active until that result is accepted. Late heartbeats cannot move progress backwards or turn a completed read back into a reading row. Cancellation keeps the previous completed capture. Temporary operation cleanup retries short file/folder access failures within a fixed limit and stays inside that operation folder. Successful Desktop rescans advance the scan number passed to the BAT engine; failed or cancelled attempts do not consume a completed scan number. Compact windows give the live counts their own row.
 ### Understand the results
+
+Status text uses the same meanings in both themes: **READY** for an idle window, **WORKING** for an active operation, **DONE** for a successful action, **REVIEW** for information that needs explanation, and **ERROR** for an action that failed. Scan rows distinguish green **READ**, amber **CHECK**, and red **NOT READ**. Missing/default IDs remain review items; they do not automatically mean hardware failure.
+
+Normal desktop restarts transfer the active session through an in-memory Windows named pipe restricted to the same user/elevation. They do not create a temporary snapshot file. Installing a new package uses the **Updates → Install and restart** workflow; save a snapshot first when that dialog asks, because update installation does not transfer the active session. Saved reports remain in the shared folders.
 
 | What you see | What it means / next step |
 | --- | --- |
@@ -67,9 +93,11 @@ The application reads the companion `hwid.bat` at runtime. It does not convert o
 
 Use **Connect BAT…** to select an existing checker when it is stored elsewhere. The EXE uses your saved connection if that file is available, then checks for an adjacent BAT. The scanning bridge loads collection/report functions from that file and runs them in a separate, hidden PowerShell process. The desktop window presents progress and results.
 
-Use **Connect BAT…** to select the `hwid.bat` supplied with this desktop package when upgrading an older scanner. This package includes BAT **3.85**. Earlier BAT versions can still compare a JSON report by path.
+Use **Connect BAT…** to select the `hwid.bat` supplied with this desktop package when upgrading an older scanner. This release includes BAT **3.91**. Earlier BAT versions can still compare a JSON report by path.
 
-**Open BAT console** uses `Start-HWID.ps1` when it is beside the standard `hwid.bat` and Windows PowerShell is available. For a renamed BAT or a missing loader, the app opens the connected BAT directly.
+**Open BAT console** checks the selected scanner with available PowerShell runtimes before opening a separate console. It tries the other installed runtimes before replacing a source rejected by one parser. The standard `hwid.bat` requires its sibling launcher; a renamed BAT is launched directly and ignores an unused missing or invalid launcher. A missing, oversized or syntactically invalid companion falls back to the scanner and launcher embedded in this desktop build. The offline copy is restored under `%LOCALAPPDATA%\HWID Checker\RecoveredScanner` and verified against the embedded bytes; custom files are kept. The restored connection is remembered when settings can be saved. When recovery changes the scanner folder, its earlier default report folder is registered in an existing shared library so old captures remain discoverable. Registration failures show the earlier path and a Folder settings action. A renamed valid BAT is launched by its explicit path. Missing or restricted PowerShell still requires an approved runtime; recovery does not change system policy or download a scanner.
+
+Connection checks reject empty, truncated or larger-than-8-MB BAT files before displaying a connected state. A failed connection clears stale scanner names and paths.
 
 ## Application updates
 
@@ -78,6 +106,10 @@ Automatic updates start enabled. Desktop checks published releases in the backgr
 The updater downloads release metadata and application files from this project's GitHub releases. Scans and report content stay outside update requests. Desktop updates its installation and adjacent BAT. A separately connected BAT uses that BAT's update controls. [Update behavior and recovery](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/UPDATES.md)
 
 ## Reports and local data
+
+The **Welcome & privacy** notice appears before saved-file discovery on a first launch and can be reopened from the sidebar. Its text scrolls while the action buttons remain visible, including in compact windows. Choose whether to show it on future launches; session-preserving restarts do not repeat it.
+
+Saving does **not** redact identifiers. Clipboard copies, snapshots and extra exports contain the full values. Keep an original JSON baseline for comparison and redact a separate copy before sharing. Hardware scanning runs locally; update checks contact GitHub without sending scan reports. OneDrive or another folder service may synchronize files saved in its folders.
 
 Scans and exports contain identifiers such as serial numbers, UUIDs, MAC addresses, device-instance paths and the computer name. Choose an appropriate local destination and review identifying values before sharing a report or screenshot. Exports are readable TXT/JSON files.
 
@@ -91,6 +123,16 @@ Temporary bridge/request files are created under the current user's local applic
 
 Keyboard shortcuts: **Ctrl+R** scans/rescans; **Ctrl+S** saves the current snapshot. Select an ID or hardware field to read its full value and use the copy button. A new completed scan clears comparison results that referred to the previous current scan.
 
+### Find and compare saved snapshots
+
+- **Refreshing…** identifies background discovery. The previous list stays available while folders are read; Refresh list becomes available again when that read ends. Closing the app cancels discovery between folder/file reads. A blocked filesystem call may still take time to return.
+- **Cancel comparison** stops an active comparison or row preparation. The last complete result and the current scan remain available; no partial comparison is published. Reduced-motion settings use static progress instead of an animated comparison indicator.
+
+- Open **Snapshots** to see saved JSON captures, newest first by default. Search by PC name, date, file name or folder. Refreshing an unchanged catalog keeps the current selection, sort and scroll position.
+- Select a previous capture and choose **Compare with this scan** to use the completed scan in this window. **Compare two saved…** uses the selected capture as the previous side and asks for a current saved JSON; without a selection, choose both files. A live scan is not required for two-file comparison.
+- **Compare IDs** labels the previous and current sources separately. Filter **Changed values**, **Current only**, or **Previous only**, and search full identifiers, field names or device details. Selecting a row shows the complete values and exact difference.
+- No search matches is different from no ID changes. Coverage notes remain available, and **Export results…** exports the complete comparison even when filters hide rows. One-sided records describe capture availability; they do not by themselves prove a physical device was added or removed.
+- **Ctrl+F** focuses the search on Snapshots and Compare IDs. Restart preserves these filters along with the current capture. A new completed scan clears comparisons of the previous current scan.
 ## Verification
 
 See [desktop verification](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/desktop/VERIFICATION.md) for the results of specific builds, and [test instructions](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/desktop/tests/README.md) to reproduce the checks. Historical results identify their original scanner version and section count; the current scanner has 18 normal sections plus the all-known device catalog. Synthetic fixtures cover Unicode paths, cancellation, exports, identifier comparison and saved-file discovery. Live diagnostics record counts/status rather than identifiers.

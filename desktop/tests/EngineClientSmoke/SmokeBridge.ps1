@@ -6,6 +6,10 @@ $ErrorActionPreference='Stop'
 function Emit($Value){[Console]::Out.WriteLine(($Value | ConvertTo-Json -Depth 15 -Compress));[Console]::Out.Flush()}
 $mode=[IO.File]::ReadAllText($BatPath).Trim()
 $inventory=[ordered]@{'Report info'=@{Version='3.83';Computer='SYNTHETIC';Generated='2026-11-04T12:00:00-05:00'};CPU=@([pscustomobject]@{DeviceID='CPU0';ProcessorId='SYNTHETIC-ONLY-000123';Name='Synthetic é 中文'})}
+if($Action -eq 'Scan' -and $RequestPath){
+    $scanRequest=[IO.File]::ReadAllText($RequestPath) | ConvertFrom-Json
+    $inventory['Report info'].ScanNumber=$scanRequest.scanNumber
+}
 if($Action -eq 'Compare'){
     $request=[IO.File]::ReadAllText($RequestPath) | ConvertFrom-Json
     $current=[IO.File]::ReadAllText($request.currentPath) | ConvertFrom-Json

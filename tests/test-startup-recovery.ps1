@@ -94,6 +94,7 @@ function Show-ControlDeck {$script:visits++}
 function Read-MenuChoice {$script:reads++;if($script:reads -eq 1){return '5'};return '0'}
 function Get-MenuDestination {param($Choice) return 'Fixture report'}
 function Show-UiTransition {param($Direction,$Destination)}
+function Start-CheckerExitUpdate {}
 function Reset-UiPage {}
 function Start-UiReport {}
 function Show-FullReport {throw 'Synthetic report render failure'}

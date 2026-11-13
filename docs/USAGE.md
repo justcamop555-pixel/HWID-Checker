@@ -4,7 +4,18 @@
 
 Application updates are available from Desktop **Updates** or BAT **[9] → [5]**. Automatic updates start enabled and prepare compatible newer packages in the background. [Update behavior and recovery](UPDATES.md)
 
+## Desktop snapshots and comparison
+
+Desktop shows **Refreshing…** while reading the shared JSON library and keeps the previous rows available. **Cancel comparison** stops the active comparison while retaining the last complete result. Saving and copying preserve full identifiers: review or redact a separate copy before sharing. The **Welcome & privacy** sidebar action explains local scanning, GitHub update checks and synced-folder storage.
+
+Open **Snapshots** and search by PC, capture date, file name or folder. Select a previous capture, then choose **Compare with this scan** or **Compare two saved…**. The second action works without a live scan. **Compare IDs** shows the previous/current sources, category filters and searchable full values; select a difference for exact changed characters. Export includes the complete comparison. An empty search is labeled separately from an unchanged comparison.
+
+Desktop **Open BAT console** can use its embedded offline scanner if linked files are deleted or fail validation. Custom files stay in place. PowerShell must still be available and permitted to run. See [Desktop recovery details](../desktop/README.md#keep-the-bat-connection-working).
+Live progress counts finished checks separately from data reads and failed reads. Desktop keeps the last completed snapshot until finalization accepts the new result, and successful rescans advance the saved scan number.
+
 ## Read a scan
+
+The BAT completion summary separates **present** Plug and Play device records from the **all-known** catalog. These are Windows nodes, including virtual devices; the catalog may also contain disconnected devices. They are not a count of physical components. Catalog reads that failed or were not requested are labeled instead of shown as successful zero counts.
 
 Use **[1]** for the overview. It separates normal query coverage, identifier fields, present devices and the all-known extended catalog. Startup and full rescans collect the 18 normal sections plus this catalog automatically. The overall progress bar has 19 stages and reaches 100% after the catalog attempt finishes; READ/NOT READ shows whether collection succeeded.
 
@@ -41,7 +52,11 @@ The finish screen shows **Query cleanup** when applicable. **[5] > Scan timing >
 
 In the dedicated console, you can also navigate **during** background scanning with the mouse wheel/scrollbar, Up/Down, Page Up/Down, Home and End. Scrolling back pauses following so new rows and timers preserve your chosen view. **End** resumes following the latest output. Scan history stays close to the content actually written, with a small reserve for the next line, rather than thousands of blank rows. Enter and menu numbers are ignored while collection runs; keyboard processing is bounded so holding a key cannot monopolize the scan loop. If the live worker is unavailable and direct queries are used, keyboard navigation is processed between queries; host mouse scrolling remains available.
 
-Narrow windows retain wrapped scan text. Resizing skips stale timer coordinates; subsequent output remains readable, and the completed report can still be scrolled. Full-screen reports keep their existing history behavior; the main menu clears completed scan history when opened.
+Narrow windows retain wrapped scan text. The dedicated scan screen keeps its original display text and redraws it at the current width, including the completion summary and Continue prompt. Shrinking, widening or repeatedly resizing the window clears old row tails and keeps history close to the written content. A finished scan also checks for resizing while waiting for Enter; no keypress is needed to restore the layout. Full-screen reports keep their existing history behavior; the main menu clears completed scan history when opened.
+
+The scan renderer also resets Windows' soft-wrap row markers after painting. This keeps separate rows from joining into diagonal text when the console host reflows the screen during a resize. It restores the current output mode, cursor and viewport; global console preferences are not changed. The [Windows console reflow implementation](https://github.com/microsoft/terminal/blob/main/src/host/screenInfo.cpp) explains how the host uses row-wrapping metadata during resizing.
+
+If native drawing repeatedly fails at a stable window size, the BAT switches to normal text output and retains the scan lines already collected. It abandons the old cursor coordinates and records a **Console display fallback** note under Scan information in the full report. This is a display issue; it does not turn a successful Windows query into a read failure.
 
 If a provider rejects requested fields, the checker retries once using the properties that provider exposes. It keeps the same device filter, namespace and reader. **Compatible read** means that retry succeeded; unsupported fields can still be missing. The finish screen counts recovered sections, and **[5] Full inventory report** includes retry diagnostics under Scan timing. These details are also saved in TXT/JSON. Access failures, timeouts and missing providers keep their normal warnings.
 
@@ -266,6 +281,16 @@ Names beginning with **Unknown**, or their localized equivalents, do not indepen
 Extended hardware/compatible ID lists keep valid text, order, invalid raw observations, and read-status findings. Usable PnP-record lists stay preferred. If they are absent, collected property lists supply the usable values. `HardwareIDPropertyReadings` and `CompatibleIDPropertyReadings` retain original observations; different lists are flagged, and their combined inspection values do not establish a Windows driver-priority order. **[5]** and saved JSON keep these full details.
 
 ## Navigation
+
+The Desktop welcome message explains read-only scanning and report privacy before the first use. Choose **Open dashboard** to continue, optionally enabling future startup display. Use **Welcome & privacy** to read it again. **Not now** does not save a dismissal, and a normal desktop restart skips the startup notice. This dialog is only in the Desktop app. Save a snapshot to keep your baseline, and review or redact identifiers before sharing; saving does not hide them.
+
+**Theme matching:** Desktop's Midnight/Daylight button also updates the app-owned title bars and frames where Windows supports it. Newly opened owned BAT consoles use the saved Desktop theme, or the `HWID_THEME` process override. Current-window/redirected consoles and Windows-managed file pickers keep their host/system styling. Reopen the BAT from Desktop to adopt a newly selected theme.
+
+Desktop **Restart app** opens a replacement process and restores the current scan, page, filters, selections and comparison in memory. The current window stays open if the replacement fails or times out. A prepared update uses **Updates → Install and restart**; save the current scan before that installation when prompted.
+
+In the BAT, **[9] → [7] Restart checker** opens a fresh console and starts a new scan. Save the current capture with main **[6]** first if needed. An active update check defers restart, and launch errors remain visible until you continue. Saved reports stay in the shared folders.
+
+Desktop status badges spell out **READY**, **WORKING**, **DONE**, **REVIEW** or **ERROR**. Scan keys in both interfaces explain **READ** (data received), **CHECK** (review the captured values) and **NOT READ** (the Windows read failed). Color reinforces each label; missing/default identifiers are review findings rather than proof of failed hardware.
 
 - Main menu: type **0–9**, then Enter. Empty Enter is ignored.
 - Reports in the checker's readable console: scroll with the wheel, arrows, Page Up/Down or Home/End. Use any numbered shortcuts printed on that page.

@@ -19,7 +19,9 @@ void Mode(string value) => File.WriteAllText(bat, value, new UTF8Encoding(false)
 void Cleaned()
 {
     string operation = File.ReadAllText(marker);
-    Assert(!Directory.Exists(operation), "Only this completed operation's temporary folder is removed");
+    var remains = Directory.Exists(operation);
+    Assert(!remains, "Only this completed operation's temporary folder is removed" +
+        (remains ? " / " + operation + " / files: " + string.Join(", ", Directory.GetFiles(operation).Select(Path.GetFileName)) : ""));
 }
 async Task ExpectEngine(string code, Func<Task> action)
 {
@@ -51,6 +53,20 @@ try
         try { await protocol.ReadLineAsync(CancellationToken.None); throw new Exception("Expected oversized protocol failure"); }
         catch (EngineException ex) { Assert(ex.Code == "ENGINE-PROTOCOL" && bytes.BytesRead <= 32768, "An oversized unterminated response is rejected before consuming the rest of the stream"); }
     }
+    string cleanupScope = Path.Combine(root, "cleanup-scope"); Directory.CreateDirectory(cleanupScope);
+    string heldFile = Path.Combine(cleanupScope, "held-request.txt"); File.WriteAllText(heldFile, "Synthetic request");
+    using (var held = File.Open(heldFile, FileMode.Open, FileAccess.Read, FileShare.Read))
+    {
+        var removal = EngineClient.DeleteOwnedFileAsync(heldFile, cleanupScope);
+        await Task.Delay(110);
+        held.Dispose();
+        await removal;
+    }
+    Assert(!File.Exists(heldFile), "A transient file lock is retried during owned-operation cleanup");
+    string outside = Path.Combine(root, "outside-request.txt"); File.WriteAllText(outside, "Synthetic outside file"); files.Add(outside);
+    await EngineClient.DeleteOwnedFileAsync(outside, cleanupScope);
+    Assert(File.Exists(outside), "Cleanup never follows a file path outside its exact operation folder");
+    Directory.Delete(cleanupScope, false);
     Mode("normal");
     using EngineClient client = new(bat);
     List<BridgeProgress> updates = new();
@@ -59,6 +75,13 @@ try
     Assert(updates.Count == 1 && updates[0].Name == "Synthetic é 中文" && updates[0].Completed == 1, "Progress arrives with Unicode and stage counts");
     Assert(updates[0].FailureCode == "" && updates[0].NextStep == "", "Older bridge progress without guidance remains compatible");
     Assert(scan.GetProperty("version").GetString() == "3.83", "Result data remains valid after its JSON document closes");
+    Assert(scan.GetProperty("inventory").GetProperty("Report info").GetProperty("ScanNumber").GetInt32() == 1,
+        "The first scan forwards the default scan number");
+    Cleaned();
+    Mode("scan-number");
+    JsonElement numbered = await client.ScanAsync(null, CancellationToken.None, 7);
+    Assert(numbered.GetProperty("inventory").GetProperty("Report info").GetProperty("ScanNumber").GetInt32() == 7,
+        "The requested rescan number reaches the PowerShell bridge");
     Cleaned();
     Mode("read-guidance");
     updates.Clear();
