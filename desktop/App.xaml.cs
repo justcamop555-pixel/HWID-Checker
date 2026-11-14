@@ -29,6 +29,7 @@ public partial class App : Application
                 var loading = new StartupWindow(); MainWindow = loading;
                 loading.ContentRendered += async (_, _) =>
                 {
+                    NativeStartup.SignalReady();
                     if (!loading.BeginPreparation()) return;
                     _startupPhases["loadingRenderedMs"] = _startupClock.ElapsedMilliseconds;
                     await PrepareDashboardAsync(loading, e.Args);
@@ -36,6 +37,7 @@ public partial class App : Application
                 loading.Show(); return;
             }
             var window = new MainWindow(e.Args);
+            window.ContentRendered += (_, _) => NativeStartup.SignalReady();
             MainWindow = window;
             window.Show();
         }
@@ -91,7 +93,9 @@ public partial class App : Application
     internal Task WriteStartupResultAsync(string path, bool scannerConnected)
     {
         _startupPhases["scannerReadyMs"] = _startupClock.ElapsedMilliseconds;
+        using var launcher = NativeStartup.TryGetLauncher();
         return File.WriteAllTextAsync(path, JsonSerializer.Serialize(new { success = scannerConnected,
+            nativeLauncherValidated = launcher != null,
             phases = _startupPhases, measurementStartedTimestamp = _startupEpoch, measurementFrequency = Stopwatch.Frequency,
             hardwareIdentifiersSaved = false, startupLoadingShown = _startupPhases.ContainsKey("loadingRenderedMs") }));
     }

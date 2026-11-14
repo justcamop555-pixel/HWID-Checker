@@ -2,6 +2,18 @@
 
 [Desktop guide](../README.md) · [Main project](../../README.md)
 
+## Native startup and high-DPI layouts
+
+From the repository root, use the complete extracted 1.5.0 package:
+
+```powershell
+.\desktop\tests\test-native-launcher.ps1 -ExePath '<package>\HWID Checker.exe' -OutputDirectory '<new-test-folder>'
+.\desktop\tests\test-runtime-package.ps1 -Archive '<package.zip>' -Version '1.5.0' -OutputDirectory '<new-test-folder>'
+.\desktop\tests\verify-desktop.ps1 -ExePath '<package>\HWID Checker.exe' -Mode Render -Size 683x360 -LayoutStress -OutputDirectory '<new-test-folder>'
+```
+
+The launcher test uses a synthetic .NET Framework child to check argument forwarding, readiness, exit status, cancellation and missing files. The package test validates the actual ZIP and rejects a missing runtime file. Small-window renders and Library DPI math checks supplement, but do not replace, testing on physical monitors at different scaling settings. Startup timing reports for the native EXE measure the parent's memory only; do not compare that number with a single-process application's total memory.
+
 The BAT remains the collection/report engine. Desktop checks exercise the bridge, process transport and UI without rewriting it.
 
 | Suite | Coverage | Uses actual hardware? |
@@ -75,7 +87,9 @@ This covers PC/date/folder search, selection retention and removal, comparison w
 dotnet run --project .\desktop\tests\EngineRecoverySmoke\EngineRecoverySmoke.csproj -c Release
 ```
 
-The 21 standard recovery checks use isolated folders and parser subprocesses. A 22nd check supplies both Windows PowerShell 5.1 and PowerShell 7 to reproduce and prevent an earlier-parser rejection overriding a valid later runtime. They cover deleted/corrupt companions, concurrent repairs, custom-file preservation, required versus unused launchers, renamed BAT arguments, missing runtime fallback, cancellation, theme/signal environment and no snapshot/settings writes. They do not interact with a terminal window or change PowerShell policy. Pass an approved PowerShell executable as the program argument to repeat with another runtime.
+The 24 standard recovery checks use isolated folders and parser subprocesses. A 25th check supplies both Windows PowerShell 5.1 and PowerShell 7 to ensure an earlier parser rejection cannot override a valid later runtime. They cover consent before any repair, unusable-runtime diagnostics, cancellation, deleted/corrupt companions, concurrent repairs, custom-file preservation, required versus unused launchers, renamed BAT arguments, theme/signal environment and no snapshot/settings writes. They do not interact with a terminal window or change PowerShell policy.
+
+Library verification also checks compact repair dialogs in both themes, acceptance/decline actions, missing/duplicate device-matching explanations and comparison direction warnings. The desktop bridge regression includes three checks for preserving conflict diagnostics and rejecting guessed matches.
 
 ## Scan progress and repeated scans
 
@@ -85,3 +99,7 @@ The 21 standard recovery checks use isolated folders and parser subprocesses. A 
 ```
 
 ScanUI runs 22 synthetic checks for scan numbering, CHECK/read/failure counts, delayed and obsolete feedback, complete error guidance, finalization before publication, cancellation, restoring an earlier capture and readable compact counters in both themes. The repeat mode runs two actual read-only scans and checks that the second publishes scan number 2; diagnostics retain counts/status rather than hardware values. Use a normal same-user Windows context for live provider checks.
+
+Setup verification: build `desktop/build-setup.ps1 -TestInstall` from a verified package, then run `desktop/tests/test-setup.ps1 -SetupPath <TEST.exe> -PackageDirectory <package> -OutputDirectory <new-test-folder>`. This uses a separate per-user registration, restores deliberately deleted/corrupted test companions and verifies saved/custom files survive uninstall. Production administrator/UAC behavior is not covered by this mode. Never publish the TEST executable.
+
+Library UI checks cover Review type filtering, clearing both filters, exact long ID text and compact full-detail dialogs in both themes. UpdaterClientSmoke checks installed report defaults and blocks scheduling the portable updater against installed copies.

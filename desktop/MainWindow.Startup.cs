@@ -24,7 +24,7 @@ public partial class MainWindow
             if (prepared.Item1 == null)
             {
                 DisconnectEngine();
-                ShowStatus("Connect your checker", "Keep the EXE beside hwid.bat, or use Connect BAT to select the scanner.", true);
+                ShowStatus("Scanner needs repair", "Use Open BAT console to check and restore the bundled scanner, or Setup & repair to reinstall the application files. Existing snapshots remain available.", true);
             }
             else AttachPreparedEngine(prepared.Item1, prepared.Item2);
         }

@@ -90,6 +90,14 @@ Assert ($compare.Data.previousComputer -ceq 'SYNTHETIC-PC' -and $compare.Data.cu
 Assert ($compare.Data.fieldLabels.CPU.ProcessorId -ceq 'CPU identifier' -and $compare.Data.fieldLabels.'Memory modules'.Speed -match 'raw') 'Imported comparison inventories retain the engine field labels for both identity and hardware fields'
 $same=Invoke-Bridge Compare $fixture @{previousPath=$inventoryPath;currentPath=$inventoryPath}
 Assert ($same.Data.changes.Count -eq 0) 'An unchanged snapshot does not manufacture ID changes'
+$conflicted=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($inventoryPath))
+$conflicted.CPU=@($conflicted.CPU[0],$conflicted.CPU[0])
+$conflicted.'Memory modules'=@([pscustomobject]@{SerialNumber='RAM-001'},[pscustomobject]@{SerialNumber='RAM-002'})
+$conflictedPath=Join-Path $root 'conflicted.json';Save-Json $conflictedPath $conflicted
+$coverage=Invoke-Bridge Compare $fixture @{previousPath=$conflictedPath;currentPath=$inventoryPath}
+Assert ($coverage.Data.unkeyedSections -contains 'Memory modules') 'Comparison transports missing-key sections separately from unread sections'
+Assert (@($coverage.Data.ambiguousDevices|Where-Object {$_.Section -eq 'CPU' -and $_.Count -eq 2 -and $_.DeviceKey -eq 'DeviceID=CPU0' -and $_.Sources -contains 'Previous'}).Count -eq 1) 'Duplicate-key diagnostics retain section, key, count and source through the desktop bridge'
+Assert (@($coverage.Data.changes|Where-Object {$_.section -in @('CPU','Memory modules')}).Count -eq 0) 'Unmatched or ambiguous device records cannot invent ID changes'
 $badFixture=Join-Path $root 'not-hwid.bat';[IO.File]::WriteAllText($badFixture,'@echo off',[Text.UTF8Encoding]::new($false))
 $invalid=Invoke-Bridge Scan $badFixture $null 1
 Assert ($invalid.Results.Count -eq 0 -and $invalid.Errors.Count -eq 1 -and $invalid.Errors[0].code -eq 'BRIDGE-01') 'An incomplete companion BAT produces one actionable bootstrap error'

@@ -85,7 +85,7 @@ public partial class MainWindow : Window
         "--fixture" or "--render" or "--scan-test" or "--workflow-test" or "--ui-test" or "--readability-test" or "--scroll-test" or "--restart-test" or "--restart-result" or "--theme-test" or "--welcome-test" or "--library-test" or "--scan-ui-test" or "--startup-test");
     private int _ticks, _responsiveTicks;
     private string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HWID Checker", "Desktop", "settings.json");
-    private string DefaultReportsFolder => Path.Combine(Path.GetDirectoryName(_engine?.BatPath) ?? AppContext.BaseDirectory, "HWID-Reports");
+    private string DefaultReportsFolder => InstallationLayout.ReportsFolder(Path.GetDirectoryName(_engine?.BatPath) ?? AppContext.BaseDirectory);
     private string LocalReportsFolder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HWID Checker", "HWID-Reports");
     private string? VerificationSharedSettingsPath =>
         IsVerification && Argument("--shared-settings") is { } path && !string.IsNullOrWhiteSpace(path) ? path : null;
@@ -99,17 +99,17 @@ public partial class MainWindow : Window
         InitializeComponent();
         PreviewMouseWheel += OnPageMouseWheel;
         PreviewKeyDown += OnPageScrollKey;
-        var work = SystemParameters.WorkArea;
-        var availableWidth = Math.Max(1, work.Width - 16);
-        var availableHeight = Math.Max(1, work.Height - 16);
-        MinWidth = Math.Min(MinWidth, availableWidth);
-        MinHeight = Math.Min(MinHeight, availableHeight);
-        Width = Math.Min(Width, availableWidth);
-        Height = Math.Min(Height, availableHeight);
+        // WindowBounds fits the actual monitor after native placement, and
+        // rechecks when DPI/work area changes. Primary-monitor dimensions are
+        // not reliable for a laptop plus an external display.
         if (Argument("--size") is { } size)
         {
             var dimensions = size.Split('x');
-            if (dimensions.Length == 2 && double.TryParse(dimensions[0], out var width) && double.TryParse(dimensions[1], out var height)) { Width = width; Height = height; }
+            if (dimensions.Length == 2 && double.TryParse(dimensions[0], out var width) && double.TryParse(dimensions[1], out var height))
+            {
+                if (IsVerification && width >= 520 && height >= 320) { MinWidth = Math.Min(MinWidth, width); MinHeight = Math.Min(MinHeight, height); }
+                Width = width; Height = height;
+            }
         }
         Dashboard.SizeChanged += (_, _) =>
         {
@@ -555,6 +555,7 @@ public partial class MainWindow : Window
             button.SetResourceReference(ForegroundProperty, active ? "AccentBrush" : "MutedBrush");
             System.Windows.Automation.AutomationProperties.SetItemStatus(button, active ? "Current page" : "");
         }
+        if (_page != page) PageViewport.ScrollToTop();
         _page = page;
         (PageTitle.Text, PageSubtitle.Text) = page switch
         {
@@ -709,6 +710,7 @@ public partial class MainWindow : Window
         OpenConsoleButton.IsEnabled = !_busy && !_startupConnecting;
         SnapshotFolderSettingsButton.IsEnabled = !_busy && (!IsVerification || VerificationSharedSettingsPath != null);
         UpdatesButton.IsEnabled = !IsVerification;
+        MaintenanceButton.IsEnabled = !_busy && !_startupConnecting && !IsVerification;
         UpdateEmptyStates();
         CommandManager.InvalidateRequerySuggested();
     }
@@ -732,8 +734,8 @@ public partial class MainWindow : Window
             if (_snapshot != null && findings > 0)
             {
                 ReviewEmptyTitle.Text = "No findings match this search";
-                ReviewEmptyText.Text = "Clear the search to show all review items, or try another word.";
-                ReviewEmptyAction.Content = "Clear search";
+                ReviewEmptyText.Text = "Clear the search and type filter to show all review items, or try another word.";
+                ReviewEmptyAction.Content = "Clear filters";
                 ReviewEmptyAction.Tag = "ClearReview";
             }
             else if (scanning)
@@ -829,7 +831,7 @@ public partial class MainWindow : Window
         if (sender is not Button { Tag: string action }) return;
         switch (action)
         {
-            case "ClearReview": ReviewSearch.Clear(); break;
+            case "ClearReview": ReviewSearch.Clear(); ReviewFilter.SelectedIndex = 0; break;
             case "ClearHardware": HardwareSearch.Clear(); break;
             case "Save": await SaveSnapshotAsync(); break;
             case "RefreshSnapshots": await RefreshSnapshotsAsync(); break;
@@ -1007,7 +1009,13 @@ public partial class MainWindow : Window
         if (!_initialized) return;
         var needle = ReviewSearch.Text.Trim();
         var selected = ReviewGrid.SelectedItem as ReviewRow;
-        var rows = _snapshot?.FindReview(needle) ?? Array.Empty<ReviewRow>();
+        var kind = ReviewFilter.SelectedIndex;
+        IReadOnlyList<ReviewRow> rows = _snapshot?.FindReview(needle) ?? Array.Empty<ReviewRow>();
+        if (kind > 0) rows = rows.Where(row => kind switch
+        {
+            1 => row.Kind == "Read error", 2 => row.Kind == "ID review",
+            3 => row.Kind == "Conflict" || row.Kind == "Parent link", 4 => row.Kind == "Device status", _ => true
+        }).ToArray();
         ReplaceFilteredRows(ReviewGrid, rows);
         ReviewGrid.SelectedItem = selected != null && rows.Contains(selected) ? selected : null;
         UpdateEmptyStates();
@@ -1031,14 +1039,17 @@ public partial class MainWindow : Window
     }
     private void OnIdSelected(object sender, SelectionChangedEventArgs e)
     {
-        IdDetail.Text = IdentifiersGrid.SelectedItem is IdentifierRow row ? row.Device + "\n" + row.Field + ": " + (row.Value.Length > 0 ? row.Value : "(not supplied)") : "";
+        IdDetail.Text = IdentifiersGrid.SelectedItem is IdentifierRow row ? ValueExplanation.Identifier(row) : "";
+        IdDetail.ScrollToHome();
+        IdDetailLabel.SetResourceReference(TextBlock.ForegroundProperty,
+            IdentifiersGrid.SelectedItem is IdentifierRow { Status: "Reported" } ? "SuccessBrush" : "MutedBrush");
         if (_initialized) CopyIdButton.IsEnabled = IdentifiersGrid.SelectedItem is IdentifierRow selected && selected.Value.Length > 0;
     }
     private void OnIdDoubleClicked(object sender, MouseButtonEventArgs e)
     {
         if (e.OriginalSource is DependencyObject source &&
-            ItemsControl.ContainerFromElement(IdentifiersGrid, source) is DataGridRow { Item: IdentifierRow row } && row.Value.Length > 0)
-            Copy(row.Value);
+            ItemsControl.ContainerFromElement(IdentifiersGrid, source) is DataGridRow { Item: IdentifierRow row })
+            ShowSelectedValue(row.Field, ValueExplanation.Identifier(row), row.Value);
     }
     private void OnCopyAllIds(object sender, RoutedEventArgs e)
     {
@@ -1056,7 +1067,7 @@ public partial class MainWindow : Window
         try
         {
             Clipboard.SetText(text);
-            ShowStatus("Copied to clipboard", text.Length > 90 ? text[..90] + "\u2026" : text, kind: UiStatusKind.Success);
+            ShowStatus("Copied to clipboard", text.Length + " characters copied. Full identifiers may be included; review before sharing. Windows clipboard history or sync may retain them.", kind: UiStatusKind.Success);
         }
         catch (Exception ex) { ShowError("Could not copy this value", ex); }
     }
@@ -1129,7 +1140,12 @@ public partial class MainWindow : Window
             : "Select a field for the full value.";
     }
     private void OnCopyField(object sender, RoutedEventArgs e) { if (HardwareFields.SelectedItem is FieldRow field) Copy(field.RawValue ?? field.Value); }
-    private void OnReviewSelected(object sender, SelectionChangedEventArgs e) { ReviewDetail.Text = ReviewGrid.SelectedItem is ReviewRow row ? row.Message + "\n\n" + row.Detail : ""; }
+    private void OnReviewSelected(object sender, SelectionChangedEventArgs e)
+    {
+        ReviewDetail.Text = ReviewGrid.SelectedItem is ReviewRow row ? ValueExplanation.Review(row) : "";
+        ReviewDetail.ScrollToHome();
+    }
+    private void OnReviewKindChanged(object sender, SelectionChangedEventArgs e) { if (_initialized) FilterReview(); }
 
     private SnapshotLibrarySettings ReadSharedLibrary() =>
         IsVerification && VerificationSharedSettingsPath == null
@@ -1362,7 +1378,8 @@ public partial class MainWindow : Window
                 (result.Text("currentComputer").Length > 0 ? " · " + result.Text("currentComputer") + " · " + J.Date(result.Text("currentCaptured")) : "");
         var changed = rows.Count(x => x.Kind == "Changed"); var added = rows.Count(x => x.Kind == "Current only"); var removed = rows.Count(x => x.Kind == "Previous only");
         _comparisonHasFields = result.Number("previousCount") > 0 && result.Number("currentCount") > 0;
-        _comparisonHasGaps = result.Number("skippedFields") > 0 || result.Get("skippedSections").Rows().Length > 0 || result.Get("scopeWarnings").Rows().Length > 0;
+        _comparisonHasGaps = result.Number("skippedFields") > 0 || result.Get("skippedSections").Rows().Length > 0 || result.Get("scopeWarnings").Rows().Length > 0
+            || result.Get("unkeyedSections").Rows().Length > 0 || result.Get("ambiguousDevices").Rows().Length > 0;
         _comparisonSameFile = !liveCurrent && savedCurrentPath != null &&
             Path.GetFullPath(previousPath).Equals(Path.GetFullPath(savedCurrentPath), StringComparison.OrdinalIgnoreCase);
         _lastComparisonSummary = rows.Length > 0 ? $"{changed} changed · {added} current only · {removed} previous only" :
@@ -1373,11 +1390,7 @@ public partial class MainWindow : Window
         CompareSummaryText.Text = _lastComparisonSummary;
         SetSummary(CompareBaselineText, _lastComparisonBaseline, _lastComparisonBaseline + "\n" + previousPath);
         SetSummary(CompareCurrentText, _lastComparisonCurrent, _lastComparisonCurrent + (liveCurrent ? "\nCompleted scan in this window" : "\n" + savedCurrentPath));
-        var notes = new List<string> { $"Identifier fields available for comparison · {result.Number("previousCount")} in the previous capture, {result.Number("currentCount")} in the current capture.", $"Not compared · {result.Number("skippedFields")} fields." };
-        if (_comparisonSameFile) notes.Add("Both sides were read from the same JSON file path.");
-        var skipped = result.Get("skippedSections").Rows().Select(x => x.Text()).ToArray();
-        if (skipped.Length > 0) notes.Add("Unread sections: " + string.Join(", ", skipped) + ".");
-        foreach (var scope in result.Get("scopeWarnings").Rows()) notes.Add("Reader coverage differs: " + scope.Text("PreviousReader") + " → " + scope.Text("CurrentReader") + "; " + scope.Number("SkippedDevices") + " unmatched device records not compared.");
+        var notes = ComparisonNotes(result, _comparisonSameFile);
         _lastComparisonNotes = string.Join(Environment.NewLine, notes);
         SetSummary(CompareSkippedText, string.Join(" ", notes), _lastComparisonNotes);
         CompareDetail.Text = rows.Length == 0 ? _lastComparisonNotes : "Select a change to inspect the old and new values and the exact difference.";
@@ -1721,8 +1734,8 @@ public partial class MainWindow : Window
 
         var overlap = Rect.Intersect(Bounds(HeaderText), Bounds(HeaderActions));
         if ((!overlap.IsEmpty && overlap.Width > 1 && overlap.Height > 1) ||
-            StatusDetail.ActualHeight > 25 || PageHost.ActualHeight < 140 ||
-            Bounds(PageHost).Bottom > Dashboard.ActualHeight)
+            StatusDetail.ActualHeight > 25 || PageViewport.ActualHeight < 100 ||
+            Bounds(PageViewport).Bottom > Dashboard.ActualHeight)
         {
             throw new InvalidOperationException("Dashboard layout: header, status, or page bounds conflict.");
         }
@@ -1738,6 +1751,20 @@ public partial class MainWindow : Window
         };
         if (table.ActualHeight < 80 || table.ActualWidth < 200)
             throw new InvalidOperationException($"Dashboard layout: the {_page} table only has {table.ActualWidth:0} × {table.ActualHeight:0} DIPs.");
+
+        // Small high-DPI work areas scroll the page instead of clipping its
+        // table and details. Measure visible bounds, not just layout size.
+        if (_page != "Overview")
+        {
+            var withinPage = table.TransformToAncestor(PageHost).TransformBounds(new Rect(table.RenderSize));
+            if (withinPage.Bottom > PageHost.ActualHeight + 1)
+                throw new InvalidOperationException("Dashboard layout: the table extends beyond its page.");
+            PageViewport.ScrollToVerticalOffset(withinPage.Top);
+            UpdateLayout();
+            var visible = Rect.Intersect(Bounds(table), Bounds(PageViewport));
+            if (visible.IsEmpty || visible.Height < table.ColumnHeaderHeight + table.RowHeight)
+                throw new InvalidOperationException("Dashboard layout: the table header and one full row are not reachable.");
+        }
 
         if (_page == "Hardware" && (HardwareRecord.ActualHeight > 43 || HardwareRecord.SelectedItem is not HwidDesktop.HardwareRecord))
             throw new InvalidOperationException("Dashboard layout: the hardware picker is oversized or lost its record.");

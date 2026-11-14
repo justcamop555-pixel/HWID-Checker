@@ -32,6 +32,7 @@ $result=if(-not $cancelled){Get-Content (Join-Path $folder 'result.json') -Raw|C
 if($p.ExitCode -ne 0 -or (-not $cancelled -and -not $result.success)){throw 'Synthetic startup did not complete successfully.'}
 if($cancelled -and (Test-Path (Join-Path $folder 'result.json'))){throw 'Closing the loading window must not continue into the dashboard.'}
 if($StartupFlow -and -not $cancelled){
+ if([IO.Path]::GetFileName($Exe) -ceq 'HWID Checker.exe' -and [IO.File]::Exists((Join-Path ([IO.Path]::GetDirectoryName($Exe)) 'HWID Checker.App.exe')) -and -not $result.nativeLauncherValidated){throw 'The managed app did not validate the native parent identity used by updates.'}
  if(-not $result.startupLoadingShown -or $result.phases.loadingRenderedMs -ge $result.phases.preferencesReadMs -or $result.phases.dashboardBuiltMs -gt $result.phases.dashboardRenderedMs){throw 'Startup phases did not paint the loading window before settings and the dashboard.'}
  if($DelayMs -gt 0 -and $elapsed - $firstWindow -lt $DelayMs){throw 'The startup loading window was not visible during the simulated slow preparation.'}
 }

@@ -1,4 +1,4 @@
-# HWID_PACKAGE_VERSION = '1.4.6'
+# HWID_PACKAGE_VERSION = '1.5.0'
 [CmdletBinding()]
 param(
     [ValidateSet('Check','Prepare','Apply')][string]$Mode='Check',
@@ -219,6 +219,9 @@ function Assert-UpdateRelativePath([string]$Path) {
 }
 function Test-UpdateManagedFile([string]$Path) {
     if($Path -cin @('HWID Checker.exe','hwid.bat','Start-HWID.ps1','Update-HWID.ps1','README.md')){return $true}
+    if($Path -cin @('HWID Checker.App.exe','HWID Checker.deps.json','HWID Checker.runtimeconfig.json','createdump.exe')){return $true}
+    if($Path -cmatch '\A[A-Za-z0-9][A-Za-z0-9 ._-]*\.dll\z'){return $true}
+    if($Path -cmatch '\A[a-z]{2}(?:-[A-Za-z0-9]{2,8})?/[A-Za-z0-9][A-Za-z0-9._-]*\.resources\.dll\z'){return $true}
     return $Path.StartsWith('notices/',[StringComparison]::Ordinal) -and ($Path.EndsWith('.txt',[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($Path) -ceq 'LICENSE')
 }
 function Read-UpdateChecksums([string]$Text,[switch]$Installed) {
@@ -313,6 +316,11 @@ function Read-UpdatePackage([string]$Archive,[string]$Payload,[string]$Version) 
         $fileVersion=[version]::new($fileInfo.FileMajorPart,$fileInfo.FileMinorPart,$fileInfo.FileBuildPart)
         if($fileVersion -ne $expected -or $fileInfo.ProductVersion -cnotmatch ('\A'+[regex]::Escape($Version)+'(?:\+[0-9A-Za-z.-]+)?\z')){
             throw [IO.InvalidDataException]::new('The packaged desktop version does not match the release tag.')
+        }
+        if($expected -ge [version]'1.5.0'){
+            foreach($required in @('HWID Checker.App.exe','HWID Checker.dll','HWID Checker.runtimeconfig.json','HWID Checker.deps.json','hostfxr.dll','hostpolicy.dll','coreclr.dll')){
+                if(-not $files.ContainsKey($required)){throw [IO.InvalidDataException]::new('The desktop runtime package is incomplete. Download the complete installer or ZIP.')}
+            }
         }
         $bat=[IO.File]::ReadAllText((Join-Path $Payload 'hwid.bat'),$script:updateUtf8)
         $scanner=[regex]::Match($bat,"(?m)Version\s*=\s*'(?<version>[0-9]+(?:\.[0-9]+)+)'")
@@ -612,9 +620,21 @@ function Get-PreparedUpdateResult([string]$Path,[string]$Installation,[string]$C
         return $ready
     }catch{return $null}
 }
+function Test-SetupManagedDirectory([string]$Directory) {
+    if([IO.File]::Exists((Join-Path $Directory 'HWID-SETUP.ini'))){return $true}
+    foreach($root in @($env:ProgramFiles,${env:ProgramFiles(x86)},$env:ProgramW6432)){
+        if(-not $root){continue}
+        $prefix=[IO.Path]::GetFullPath($root).TrimEnd('\')
+        if($Directory.Equals($prefix,[StringComparison]::OrdinalIgnoreCase) -or $Directory.StartsWith($prefix+'\',[StringComparison]::OrdinalIgnoreCase)){return $true}
+    }
+    return $false
+}
 function Invoke-HwidUpdate {
     $current=ConvertTo-UpdateVersion $CurrentVersion
     $installation=ConvertTo-UpdateDirectory $InstallDirectory
+    $managed=Test-SetupManagedDirectory $installation
+    if($managed -and $Mode -eq 'Apply'){throw 'This all-users installation must be updated or repaired using setup with administrator approval. Saved snapshots are kept.'}
+    if($managed -and $Mode -eq 'Prepare'){$Mode='Check'}
     if($Mode -eq 'Apply'){return Apply-HwidUpdate $installation $current.ToString(3) $Component $StageDirectory $WaitProcessId $WaitProcessStartTicks ([bool]$Relaunch)}
     if($Component -eq 'Package'){
         $installed=Get-InstalledUpdateVersion $installation
@@ -625,7 +645,7 @@ function Invoke-HwidUpdate {
     $cache=Get-UpdateCacheDirectory $installation $Component
     Assert-UpdatePlainPath $cache
     [void][IO.Directory]::CreateDirectory($cache)
-    $prepared=Get-PreparedUpdateResult $ResultPath $installation $current.ToString(3) $Component $cache
+    $prepared=if($managed){$null}else{Get-PreparedUpdateResult $ResultPath $installation $current.ToString(3) $Component $cache}
     $gate=Open-UpdateGate (Join-Path $cache 'update.lock')
     if(-not $gate){
         if($prepared){return $prepared}

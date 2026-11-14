@@ -129,8 +129,9 @@ public partial class MainWindow
         ShowStatus("Checking the console", "Checking scanner files and PowerShell before opening a separate console.", kind: UiStatusKind.Working);
         try
         {
-            var preferred = _engine?.BatPath ?? FindEngine();
-            var prepared = await EngineRecovery.PrepareAsync(preferred, EngineClient.PowerShellCandidates(), _operationCancellation.Token);
+            var preferred = _engine?.BatPath ?? await Task.Run(FindEngine, _operationCancellation.Token)
+                ?? (string.IsNullOrWhiteSpace(_rememberedBat) ? Path.Combine(AppContext.BaseDirectory, "hwid.bat") : _rememberedBat);
+            var prepared = await PrepareConsoleWithConsentAsync(preferred, _operationCancellation.Token);
             using var process = Process.Start(EngineRecovery.StartInfo(prepared, _darkTheme))
                 ?? throw new IOException("Windows did not start the console.");
             // A loader can fail before its separate console opens. Retry the bundled
@@ -139,7 +140,9 @@ public partial class MainWindow
             if (process.HasExited && process.ExitCode != 0)
             {
                 if (prepared.Recovered) throw new IOException("The restored console could not start. Check the PowerShell runtime and local policy.");
-                prepared = await EngineRecovery.PrepareAsync(null, EngineClient.PowerShellCandidates(), _operationCancellation.Token);
+                if (new ConsoleRepairWindow("The console closed before startup completed. Try the bundled scanner and launcher?", preferred) { Owner = this }.ShowDialog() != true)
+                    throw new OperationCanceledException(_operationCancellation.Token);
+                prepared = await EngineRecovery.PrepareAsync(null, EngineClient.PowerShellCandidates(), _operationCancellation.Token, allowRepair: true);
                 using var retry = Process.Start(EngineRecovery.StartInfo(prepared, _darkTheme))
                     ?? throw new IOException("Windows did not start the restored console.");
                 await Task.Delay(800, _operationCancellation.Token);
@@ -159,5 +162,18 @@ public partial class MainWindow
         catch (OperationCanceledException) { ShowStatus("Console check cancelled", "Your current scan and saved snapshots are unchanged."); }
         catch (Exception error) { ShowError("Could not open the BAT console", error); }
         finally { SetBusy(false); _operationCancellation?.Dispose(); _operationCancellation = null; }
+    }
+
+    private async Task<PreparedConsole> PrepareConsoleWithConsentAsync(string? preferred, CancellationToken token)
+    {
+        try { return await Task.Run(() => EngineRecovery.PrepareAsync(preferred, EngineClient.PowerShellCandidates(), token), token); }
+        catch (ConsoleRepairRequiredException error)
+        {
+            token.ThrowIfCancellationRequested();
+            if (new ConsoleRepairWindow(error.Message, error.SourcePath) { Owner = this }.ShowDialog() != true)
+                throw new OperationCanceledException(token);
+            token.ThrowIfCancellationRequested();
+            return await Task.Run(() => EngineRecovery.PrepareAsync(preferred, EngineClient.PowerShellCandidates(), token, allowRepair: true), token);
+        }
     }
 }

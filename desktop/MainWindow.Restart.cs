@@ -26,7 +26,7 @@ public partial class MainWindow
         height = WindowState == WindowState.Normal ? ActualHeight : RestoreBounds.Height,
         maximized = WindowState == WindowState.Maximized,
         idSearch = IdSearch.Text, idFilter = IdFilter.SelectedIndex, idSelection = IdentifiersGrid.SelectedIndex,
-        reviewSearch = ReviewSearch.Text, reviewSelection = ReviewGrid.SelectedIndex, hardwareSearch = HardwareSearch.Text,
+        reviewSearch = ReviewSearch.Text, reviewKind = ReviewFilter.SelectedIndex, reviewSelection = ReviewGrid.SelectedIndex, hardwareSearch = HardwareSearch.Text,
         hardwareSection = (HardwareSections.SelectedItem as HardwareSection)?.Name,
         hardwareRecord = (HardwareRecord.SelectedItem as HardwareRecord)?.Index ?? -1,
         hardwareField = HardwareFields.SelectedIndex, comparisonSelection = CompareGrid.SelectedIndex,
@@ -115,6 +115,7 @@ public partial class MainWindow
             var selection = state.Number("idSelection");
             IdentifiersGrid.SelectedIndex = selection >= 0 && selection < IdentifiersGrid.Items.Count ? selection : -1;
             ReviewSearch.Text = state.Text("reviewSearch");
+            ReviewFilter.SelectedIndex = Math.Clamp(state.Number("reviewKind"), 0, 4);
             ReviewGrid.SelectedIndex = state.Number("reviewSelection") is var reviewIndex && reviewIndex >= 0 && reviewIndex < ReviewGrid.Items.Count ? reviewIndex : -1;
             HardwareSections.SelectedItem = HardwareSections.Items.Cast<HardwareSection>().FirstOrDefault(section => section.Name == state.Text("hardwareSection")) ?? HardwareSections.SelectedItem;
             HardwareSearch.Text = state.Text("hardwareSearch");

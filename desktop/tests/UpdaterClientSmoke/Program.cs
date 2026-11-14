@@ -228,4 +228,14 @@ using (var reopened = new DesktopUpdater(install, cache))
     await reopened.CheckAsync();
     Check(reopened.Status.State == "available", "restart guidance clears when the installed and running versions match again");
 }
+File.WriteAllText(Path.Combine(install, InstallationLayout.MarkerName), "[Installation]\nScope=AllUsers");
+using (var managed = new DesktopUpdater(install, Path.Combine(root, "managed-cache")))
+{
+    Check(managed.RequiresSetup, "machine-wide marker selects installer updates");
+    await managed.DownloadAsync();
+    Check(managed.Status.State == "available" && !managed.IsReady && !managed.ScheduleApply(true), "all-users packages check versions without scheduling a portable write");
+    Check(InstallationLayout.ReportsFolder(install) == Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HWID Checker", "HWID-Reports"), "installed reports default to the current user's writable local data folder");
+}
+Check(InstallationLayout.IsUnder(@"C:\Program Files\HWID Checker", @"C:\Program Files") &&
+    !InstallationLayout.IsUnder(@"C:\Program Files copy\HWID Checker", @"C:\Program Files"), "protected path checks require a directory boundary");
 Console.WriteLine(JsonSerializer.Serialize(new { checks, syntheticOnly = true }));

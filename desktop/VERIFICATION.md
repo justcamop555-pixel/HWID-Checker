@@ -1,5 +1,44 @@
 # Desktop verification
 
+## Desktop 1.5.0 and BAT 3.94 (2026-11-14)
+
+This update changes Desktop startup and window sizing; the BAT's scanning behavior is unchanged.
+
+- The native launcher passed 13 lifecycle checks: loading/error windows, exact Unicode and quoted arguments, parent identity, child exit status, cancellation and missing payloads. The packaged app separately verified its parent PID/start time/path binding used by updates.
+- With an empty bundle-cache directory on this Windows host, the final native window appeared in 59 ms; WPF loading painted in 744 ms. The check completed in 2,365 ms including an intentional 1,000 ms preparation delay. A prior paired test measured 75 ms versus 1,475 ms for the old single-file package. The new package extracted zero runtime files; the old one extracted five files (7.8 MB). These are synthetic local measurements, not fresh-Windows or laptop benchmarks. OS caches were not flushed, and security checks were not bypassed. Parent-only memory readings are not comparable to total application memory.
+- Six stressed pages passed at 683 × 360 DIPs and at 1024 × 640 in Daylight. Table assertions check reachable visible headers and rows, rather than layout height alone. IDs and Compare images were inspected. DPI conversion checks cover 100%, 125%, 150%, 200% and 250%; physical mixed-DPI monitors and the user's laptop remain untested.
+- Library 86, scrolling 31, interactions 80, readability 14, welcome 50 and real-process restart 1 passed. Restart ran outside the sandbox's same-user named-pipe restriction.
+- The updater validated all 408 real payload files and rejected a package with a missing runtime DLL even when its checksum list was consistent. Existing updater tests passed 104 checks on each PowerShell runtime; UpdaterClientSmoke passed 55 checks.
+- The NuGet audit reported no vulnerable packages. That does not establish that the application or every bundled native component is vulnerability-free.
+- The isolated TEST installer passed 23 install/repair/uninstall checks, including replacement of a deleted runtime DLL and damaged runtime configuration. Reports and custom files remained byte-identical, and the temporary uninstall registration was removed. The production all-users setup compiled with Inno Setup 7.1.1; actual administrator/UAC, HKLM and multiple-user installation were not exercised. The initial sandbox test failed at its restricted HKCU registry write and rolled back; the same test passed outside that restriction.
+
+The 1.4.x updater does not understand the new folder layout. That upgrade requires the complete installer or a newly extracted ZIP. Historical single-file measurements below describe earlier builds.
+
+## Local candidate — Desktop 1.4.8 and BAT 3.93 (2026-11-13)
+
+These pre-release setup and privacy checks cover changes included in Desktop 1.5.0 / BAT 3.94.
+
+- 866 checks per runtime passed on Windows PowerShell 5.1 and PowerShell 7: core, managed-install paths, updater, console updates, snapshot sync/catalog/storage, device identification and comparison coverage.
+- Desktop model/search/export: 140 checks. Updater client: 55 checks, including per-user installed report paths and blocking portable updates for installed copies. Offline recovery: 24 checks.
+- Desktop verification: Library 80, Interactions 80, Welcome 50, Readability 14, Scrolling 31, shared Workflow 24 and ScanUI 22. Real process restart passed outside the sandbox's named-pipe restriction. Six compact, stressed page renders passed and IDs/Review images were inspected.
+- A separately identified, per-user TEST setup passed 11 install/repair/uninstall checks. It restored a deleted BAT and a corrupted launcher, kept the exact offline setup, and preserved synthetic reports and custom files byte-for-byte through uninstall.
+- Production setup compiled with Inno Setup 7.1.1; the production script sets `PrivilegesRequired=admin`. Actual UAC interaction, HKLM registration and installation across multiple Windows accounts were not exercised. The TEST setup does not replace those checks and must not be shipped.
+- The dependency audit completed against NuGet without reporting vulnerable packages. The earlier sandbox build could not access the vulnerability feed; that warning was not treated as a completed audit.
+
+## Local candidate — Desktop 1.4.7 and BAT 3.92
+
+The repair, identification and comparison checks below cover changes included in Desktop 1.5.0 / BAT 3.94.
+
+- **973 checks per runtime** passed on Windows PowerShell 5.1 and PowerShell 7: 603 core, 104 updater, 49 console update, 49 desktop bridge, 18 targeted identification, 4 comparison coverage, 33 PnP refresh, 66 extended refresh and 47 hidden-device checks.
+- **25 offline recovery checks** cover consent before writes, blocked/missing runtimes, cancellation, exact bundled bytes, missing/corrupt files, concurrent repair and healthy custom-scanner preservation.
+- Packaged Desktop passed **71 library/dialog/comparison checks**, **80 interactions**, **22 scan UI**, **24 shared save/compare checks** and a real process restart. Compact repair prompts retained scrollable details and reachable accept/decline actions in both themes.
+- Two actual read-only scans finished at scan number 2, with all 18 sections read, 178 known device records and 56 responsiveness ticks. Diagnostics stored counts/status only.
+- The sandboxed build reported NU1900. A subsequent network-enabled NuGet package vulnerability check completed and reported no vulnerable packages from the configured sources.
+
+Tested executable SHA-256: `E41BE9F6F5F05CE63AAD89922683F1573E8786EF06E9486CB421B2A98D9E4446`. The packaged documentation was updated without changing the tested EXE or BAT.
+
+Targeted supplementary reads preserve primary device records when an optional property lookup fails. They do not infer a fault from a readable name such as "Unknown", turn a model ID into a serial number, or clear a reported driver problem. Microsoft documents [hardware-ID meaning](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/hardware-ids), [hardware-ID properties](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/devpkey-device-hardwareids), and [device problem codes](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/device-manager-error-messages).
+
 ## Desktop 1.4.6 and BAT 3.91
 
 The checks below cover the changes in [Desktop 1.4.6 / BAT 3.91](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.4.6). Executable hashes recorded in each follow-up identify its tested development build. The release asset has its own attached SHA-256 manifest.

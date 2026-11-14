@@ -16,7 +16,92 @@ public partial class MainWindow
         if (!IsVerification || _snapshot == null) throw new InvalidOperationException("Library verification requires a synthetic capture.");
         var checks = new List<string>();
         void Check(bool value, string name) { if (!value) throw new InvalidOperationException("Dashboard layout: library: " + name); checks.Add(name); }
+        var originalReviewFilter = ReviewFilter.SelectedIndex;
+        foreach (var dpi in new[] { 96.0, 120, 144, 192, 240 })
+        {
+            var available = WindowBounds.AvailableDip(1920, 1040, dpi);
+            Check(Math.Abs((available.Width + 16) * dpi / 96 - 1920) < 0.01 &&
+                Math.Abs((available.Height + 16) * dpi / 96 - 1040) < 0.01,
+                "monitor work area converts pixels to DIPs exactly once at " + dpi + " DPI");
+        }
+        var laptop = WindowBounds.AvailableDip(1366, 720, 192);
+        Check(laptop.Width == 667 && laptop.Height == 344, "200 percent laptop work area can lower the normal 640 by 480 minimum");
+        ReviewSearch.Clear(); ReviewFilter.SelectedIndex = 2;
+        Check(ReviewGrid.Items.Cast<ReviewRow>().All(row => row.Kind == "ID review"), "ID review filtering excludes read failures and conflicts");
+        ReviewFilter.SelectedIndex = 1;
+        Check(ReviewGrid.Items.Cast<ReviewRow>().All(row => row.Kind == "Read error"), "read error filter does not label missing identifiers as failed reads");
+        ReviewSearch.Text = "SYNTHETIC-NOTHING-MATCHES";
+        OnEmptyStateAction(ReviewEmptyAction, new RoutedEventArgs());
+        Check(ReviewFilter.SelectedIndex == 0 && ReviewSearch.Text.Length == 0 && ReviewGrid.Items.Count == _snapshot.Findings.Count,
+            "clear review restores both search and kind filters");
+        ReviewFilter.SelectedIndex = originalReviewFilter;
+        var exactValue = "000123\n" + new string('X', 2400);
+        Check(ValueExplanation.Identifier(new("CPU", "CPU identifier", exactValue, "Reported", "CPU0")).Contains(exactValue), "long selected values retain newlines and leading zeros");
+        Check(ValueExplanation.Review(new("Conflict", "CPU", "Readings disagree", "Details")).Contains("does not prove spoofing"), "conflict explanations avoid declaring hardware spoofing");
+        foreach (var dark in new[] { true, false })
+        {
+            ApplyTheme(dark);
+            var detail = new DetailWindow("Synthetic long value", exactValue, exactValue) { Owner = this, Width = 340, Height = 280 };
+            Exception? detailFailure = null;
+            detail.Loaded += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+            {
+                try
+                {
+                    detail.UpdateLayout();
+                    var root = (FrameworkElement)detail.Content;
+                    var bounds = detail.CloseButton.TransformToAncestor(root).TransformBounds(new Rect(detail.CloseButton.RenderSize));
+                    Check(bounds.Bottom <= root.ActualHeight + 1 && bounds.Right <= root.ActualWidth + 1, "detail close button stays visible in compact " + (dark ? "Midnight" : "Daylight"));
+                    Check(detail.Details.Text == exactValue && detail.CopyButton.IsEnabled && detail.Details.ActualHeight > 20, "full value remains selectable without hiding actions");
+                }
+                catch (Exception error) { detailFailure = error; }
+                finally { detail.Close(); }
+            }));
+            detail.ShowDialog(); if (detailFailure != null) throw detailFailure;
+        }
         var original = _snapshot;
+        using (var coverage = JsonDocument.Parse("""
+        {"previousCount":0,"currentCount":0,"skippedFields":2,"skippedSections":["Memory modules"],
+         "unkeyedSections":["Memory modules"],"ambiguousDevices":[{"Section":"CPU","DeviceKey":"DeviceID=CPU0","Count":2,"Sources":["Previous"]}],
+         "previousComputer":"OLD-PC","currentComputer":"NEW-PC","previousCaptured":"2026-11-12T13:00:00Z","currentCaptured":"2026-11-11T13:00:00Z","changes":[]}
+        """))
+        {
+            RenderComparison(coverage.RootElement, @"C:\Synthetic\before.json", false, @"C:\Synthetic\after.json");
+            Check(_lastComparisonNotes.Contains("Missing device matching keys: Memory modules") && !_lastComparisonNotes.Contains("Unread sections:"),
+                "missing device matching keys are explained without claiming that readable data was unread");
+            Check(_lastComparisonNotes.Contains("Ambiguous device match: CPU / DeviceID=CPU0 / 2 records / Previous") && _comparisonHasGaps,
+                "duplicate device keys retain their source, key and count in comparison details and exports");
+            Check(_lastComparisonNotes.Contains("Different computer names") && _lastComparisonNotes.Contains("Previous is newer than Current"),
+                "cross-computer and reversed-time comparisons explain the chosen direction");
+            Check(_lastComparisonSummary == "No identifier fields could be compared.", "zero comparable fields cannot claim that IDs are unchanged");
+        }
+        foreach (var dark in new[] { true, false })
+        {
+            ApplyTheme(dark);
+            foreach (var approve in new[] { false, true })
+            {
+                var prompt = new ConsoleRepairWindow("The scanner or launcher is missing.", @"C:\Synthetic\" + new string('a', 240) + @"\hwid.bat")
+                    { Owner = this, Width = 360, Height = 300 };
+                Exception? promptFailure = null;
+                prompt.Loaded += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+                {
+                    try
+                    {
+                        prompt.UpdateLayout();
+                        var root = (FrameworkElement)prompt.Content;
+                        var box = prompt.RepairButton.TransformToAncestor(root).TransformBounds(new Rect(prompt.RepairButton.RenderSize));
+                        Check(box.Bottom <= root.ActualHeight + 1 && box.Right <= root.ActualWidth + 1 && prompt.RepairButton.ActualHeight > 20,
+                            "repair actions stay inside the compact " + (dark ? "Midnight" : "Daylight") + " dialog");
+                        Check(prompt.DetailsScroll.ScrollableHeight > 0, "long repair details scroll separately from the buttons");
+                        var button = approve ? prompt.RepairButton : prompt.CancelButton;
+                        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    }
+                    catch (Exception error) { promptFailure = error; prompt.Close(); }
+                }));
+                var accepted = prompt.ShowDialog();
+                if (promptFailure != null) throw promptFailure;
+                Check(accepted == approve, approve ? "only Repair and open accepts recovery" : "Not now declines recovery");
+            }
+        }
         _refreshAgain = false; _snapshotCatalogRefreshing = true;
         await RefreshSnapshotsAsync(automatic: true);
         Check(!_refreshAgain, "idle polling cannot queue another catalog read while a refresh is pending");

@@ -7,6 +7,10 @@ using System.Text.RegularExpressions;
 namespace HwidDesktop;
 
 internal sealed record PreparedConsole(string BatPath, string Launcher, string Runtime, bool Recovered);
+internal sealed class ConsoleRepairRequiredException(string? sourcePath, string reason) : IOException(reason)
+{
+    internal string? SourcePath { get; } = sourcePath;
+}
 
 /// <summary>Uses the embedded, build-matched scanner when a companion is missing or invalid.
 /// Custom files are never overwritten; restored files live in a separate user-owned folder.</summary>
@@ -16,6 +20,7 @@ internal static class EngineRecovery
     private const string Probe = """
         $ErrorActionPreference='Stop'
         if($PSVersionTable.PSVersion -lt [version]'5.1' -or $ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage'){exit 20}
+        if(-not $env:HWID_PROBE_BAT){exit 0}
         try {
           $reader=[IO.StreamReader]::new($env:HWID_PROBE_BAT)
           try {
@@ -103,7 +108,7 @@ internal static class EngineRecovery
             && new FileInfo(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!, "Start-HWID.ps1")).Length is > 0 and <= MaximumSourceBytes));
 
     internal static async Task<PreparedConsole> PrepareAsync(string? preferred, IEnumerable<string> runtimes,
-        CancellationToken token, string? recoveryRoot = null)
+        CancellationToken token, string? recoveryRoot = null, bool allowRepair = false)
     {
         token.ThrowIfCancellationRequested();
         string? source = null;
@@ -111,30 +116,37 @@ internal static class EngineRecovery
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException) { }
         var candidates = runtimes.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (candidates.Length == 0) throw new IOException("PowerShell is unavailable. Install or enable an approved Windows PowerShell 5.1 or PowerShell 7 runtime.");
-        foreach (var recovered in source == null ? new[] { true } : new[] { false, true })
+        var usableRuntimes = new List<string>();
+        foreach (var runtime in candidates)
         {
-            if (recovered) source = await Task.Run(() => Restore(recoveryRoot), token);
-            var launcher = Path.Combine(Path.GetDirectoryName(source!)!, "Start-HWID.ps1");
-            foreach (var runtime in candidates)
-            {
-                token.ThrowIfCancellationRequested();
-                var result = await ProbeAsync(runtime, source!, launcher, token);
-                if (result == 0) return new(source!, launcher, runtime, recovered);
-                // Syntax can be runtime-specific. Try every installed runtime
-                // before deciding the selected source needs the bundled fallback.
-            }
+            token.ThrowIfCancellationRequested();
+            var launcher = source == null ? "" : Path.Combine(Path.GetDirectoryName(source)!, "Start-HWID.ps1");
+            var result = await ProbeAsync(runtime, source, launcher, token);
+            if (result == 0 && source != null) return new(source, launcher, runtime, false);
+            if (result is 0 or 21) usableRuntimes.Add(runtime);
         }
+        if (usableRuntimes.Count == 0)
+            throw new IOException("PowerShell could not run the console check. Repairing BAT files cannot fix an unavailable or restricted runtime. Check an approved Windows PowerShell 5.1 or PowerShell 7 installation.");
+        if (!allowRepair) throw new ConsoleRepairRequiredException(preferred, source == null
+            ? "The BAT scanner or its required launcher is missing, unreadable or incomplete."
+            : "The BAT scanner or its required launcher did not pass the available PowerShell syntax checks.");
+        token.ThrowIfCancellationRequested();
+        source = await Task.Run(() => Restore(recoveryRoot), token);
+        var restoredLauncher = Path.Combine(Path.GetDirectoryName(source)!, "Start-HWID.ps1");
+        foreach (var runtime in usableRuntimes)
+            if (await ProbeAsync(runtime, source, restoredLauncher, token) == 0)
+                return new(source, restoredLauncher, runtime, true);
         throw new IOException("The console could not pass its startup check. Check that an approved PowerShell runtime can run. No security settings were changed; custom scanner files were kept.");
     }
 
-    private static async Task<int> ProbeAsync(string runtime, string bat, string launcher, CancellationToken token)
+    private static async Task<int> ProbeAsync(string runtime, string? bat, string launcher, CancellationToken token)
     {
         var start = new ProcessStartInfo(runtime) { UseShellExecute = false, CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var arg in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
             "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(Probe)) }) start.ArgumentList.Add(arg);
-        start.Environment["HWID_PROBE_BAT"] = bat;
-        start.Environment["HWID_PROBE_LOADER"] = NeedsLauncher(bat) ? launcher : "";
+        start.Environment["HWID_PROBE_BAT"] = bat ?? "";
+        start.Environment["HWID_PROBE_LOADER"] = bat != null && NeedsLauncher(bat) ? launcher : "";
         using var process = new Process { StartInfo = start };
         try
         {

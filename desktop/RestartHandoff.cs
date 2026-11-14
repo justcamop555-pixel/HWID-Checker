@@ -38,6 +38,7 @@ internal sealed class RestartHandoff : IAsyncDisposable
         try
         {
             var start = new ProcessStartInfo(executable) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(executable)! };
+            foreach (var variable in new[] { "HWID_DESKTOP_READY_EVENT", "HWID_LAUNCHER_PID", "HWID_LAUNCHER_START_TICKS" }) start.Environment.Remove(variable);
             start.ArgumentList.Add("--restart-pipe"); start.ArgumentList.Add(name);
             foreach (var argument in extraArguments ?? []) start.ArgumentList.Add(argument);
             cancellation.ThrowIfCancellationRequested();

@@ -113,7 +113,7 @@ Write-Host ('Building desktop '+$desktopVersion+' with scanner '+$engineVersion+
 $publishArguments=@(
     'publish',$project,'--configuration','Release','--runtime','win-x64',
     '--self-contained','true','--output',$publishRoot,
-    '-p:PublishSingleFile=true','-p:IncludeNativeLibrariesForSelfExtract=true',
+    '-p:PublishSingleFile=false','-p:IncludeNativeLibrariesForSelfExtract=false',
     '-p:PublishReadyToRun=false','-p:PublishReadyToRunComposite=false',
     '-p:EnableCompressionInSingleFile=false',
     '-p:PublishTrimmed=false','-p:DebugType=None','-p:DebugSymbols=false',
@@ -130,6 +130,13 @@ if($launcherHash -and (Get-FileHash -LiteralPath $launcherPath -Algorithm SHA256
 # Preserve the complete SDK publish output, including any runtime notices or
 # dependencies the SDK leaves beside the bundled executable.
 foreach($item in Get-ChildItem -LiteralPath $publishRoot -Force){Copy-Item -LiteralPath $item.FullName -Destination $packageRoot -Recurse}
+$applicationExe=Join-Path $packageRoot 'HWID Checker.App.exe'
+[IO.File]::Move((Join-Path $packageRoot 'HWID Checker.exe'),$applicationExe)
+$launcherOutput=Join-Path $buildRoot 'launcher'
+$launcherLog=@(& (Join-Path $PSScriptRoot 'build-launcher.ps1') -OutputDirectory $launcherOutput -Version $desktopVersion)
+$launcher=Join-Path $launcherOutput 'HWID Checker.exe'
+if(-not [IO.File]::Exists($launcher)){throw 'The native startup launcher was not built.'}
+[IO.File]::Copy($launcher,(Join-Path $packageRoot 'HWID Checker.exe'))
 Copy-Item -LiteralPath $batchPath -Destination (Join-Path $packageRoot 'hwid.bat') -Force
 if($launcherHash){Copy-Item -LiteralPath $launcherPath -Destination (Join-Path $packageRoot 'Start-HWID.ps1') -Force}
 Copy-Item -LiteralPath $readmePath -Destination (Join-Path $packageRoot 'README.md') -Force
@@ -139,8 +146,8 @@ $runtimeNoticeFiles=@(Copy-RuntimePackageNotices (Join-Path $PSScriptRoot 'obj\p
 if((Get-FileHash -LiteralPath (Join-Path $packageRoot 'hwid.bat') -Algorithm SHA256).Hash -ne $batchHash){throw 'Packaged BAT verification failed.'}
 if($launcherHash -and (Get-FileHash -LiteralPath (Join-Path $packageRoot 'Start-HWID.ps1') -Algorithm SHA256).Hash -ne $launcherHash){throw 'Packaged alternative launcher verification failed.'}
 $packageExe=Join-Path $packageRoot 'HWID Checker.exe'
-$exeHash=(Get-FileHash -LiteralPath $publishedExe -Algorithm SHA256).Hash
-if((Get-FileHash -LiteralPath $packageExe -Algorithm SHA256).Hash -ne $exeHash){throw 'Packaged executable verification failed.'}
+$exeHash=(Get-FileHash -LiteralPath $packageExe -Algorithm SHA256).Hash
+if((Get-FileHash -LiteralPath $applicationExe -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $publishedExe -Algorithm SHA256).Hash){throw 'Packaged application verification failed.'}
 $checksumLines=@(Get-ChildItem -LiteralPath $packageRoot -File -Recurse | Sort-Object FullName | ForEach-Object {
     $relative=$_.FullName.Substring($packageRoot.Length).TrimStart([char[]]@('\','/')).Replace('\','/')
     (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()+'  '+$relative
@@ -177,6 +184,9 @@ if((Get-FileHash -LiteralPath $updaterPath -Algorithm SHA256).Hash -ne $updaterH
     ReadyToRun=$false
     CompositeReadyToRun=$false
     SingleFileCompression=$false
+    SingleFile=$false
+    NativeStartup=$true
+    ApplicationExecutable=$applicationExe
     PackageDirectory=$packageRoot
     Executable=$packageExe
     Archive=$archivePath

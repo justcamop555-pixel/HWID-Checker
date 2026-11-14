@@ -46,6 +46,8 @@
                                     HorizontalContentAlignment="Left" Padding="8,6" Margin="0,6,0,0"/>
                             <Button x:Name="UpdatesButton" Content="Updates…" Click="OnOpenUpdates" FontSize="13" Style="{StaticResource SidebarActionButton}"
                                     HorizontalContentAlignment="Left" Padding="8,6" Margin="0,6,0,0"/>
+                            <Button x:Name="MaintenanceButton" Content="Setup &amp; repair…" Click="OnMaintenance" FontSize="13" Style="{StaticResource SidebarActionButton}"
+                                    HorizontalContentAlignment="Left" Padding="8,6" Margin="0,6,0,0"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -101,7 +103,10 @@
                                  Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource BorderBrush}" BorderThickness="0"/>
                 </Grid>
             </Border>
-            <Grid x:Name="PageHost" Grid.Row="2" ClipToBounds="True">
+            <ScrollViewer x:Name="PageViewport" Grid.Row="2" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+            <Grid x:Name="PageHost" ClipToBounds="True" MinHeight="360"
+                  Height="{Binding ViewportHeight,ElementName=PageViewport}">
 
                 <ScrollViewer x:Name="OverviewPage" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
@@ -233,7 +238,7 @@
                     </StackPanel>
                     <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0">
                         <Grid>
-                        <DataGrid x:Name="IdentifiersGrid" Style="{StaticResource PageGrid}" SelectionChanged="OnIdSelected" MouseDoubleClick="OnIdDoubleClicked">
+                        <DataGrid x:Name="IdentifiersGrid" Style="{StaticResource PageGrid}" SelectionChanged="OnIdSelected" MouseDoubleClick="OnIdDoubleClicked" PreviewKeyDown="OnDetailsKeyDown" ToolTip="Select a row to read it. Double-click or press Enter for full details. Copy value copies the original identifier.">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Section" Binding="{Binding Section}" Width="*" MinWidth="86" ElementStyle="{StaticResource CellText}"/>
                                 <DataGridTextColumn x:Name="IdDeviceColumn" Header="Device" Binding="{Binding Device}" Width="1.25*" MinWidth="110" ElementStyle="{StaticResource CellText}"/>
@@ -247,7 +252,7 @@
                         </Grid>
                     </Border>
                     <DockPanel Grid.Row="2" Margin="0,8,0,0">
-                        <TextBlock x:Name="IdDetailLabel" DockPanel.Dock="Top" Text="SELECTED VALUE" Style="{StaticResource Eyebrow}" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="IdDetailLabel" DockPanel.Dock="Top" Text="SELECTED VALUE · Enter on a row opens details" TextWrapping="Wrap" Style="{StaticResource Eyebrow}" Margin="0,0,0,4"/>
                         <TextBox x:Name="IdDetail" Style="{StaticResource DetailBox}" FontFamily="Consolas" AutomationProperties.Name="Selected identifier value"/>
                     </DockPanel>
                 </Grid>
@@ -311,7 +316,7 @@
                         </Grid>
                         <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0">
                             <Grid>
-                            <DataGrid x:Name="HardwareFields" Style="{StaticResource PageGrid}" SelectionChanged="OnHardwareFieldSelected">
+                            <DataGrid x:Name="HardwareFields" Style="{StaticResource PageGrid}" SelectionChanged="OnHardwareFieldSelected" MouseDoubleClick="OnDetailsDoubleClick" PreviewKeyDown="OnDetailsKeyDown" ToolTip="Double-click a field or press Enter for full details.">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Field" Binding="{Binding Field}" Width="*" MinWidth="92" ElementStyle="{StaticResource CellText}"/>
                                     <DataGridTextColumn Header="Windows-reported value" Binding="{Binding Value}" Width="2*" MinWidth="140" ElementStyle="{StaticResource CellText}"/>
@@ -333,7 +338,8 @@
 
                 <Grid x:Name="ReviewPage" Visibility="Collapsed">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition x:Name="ReviewDetailRow" Height="0.52*" MinHeight="66" MaxHeight="166"/></Grid.RowDefinitions>
-                    <Grid Margin="0,0,0,10">
+                    <StackPanel Margin="0,0,0,10">
+                    <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <Grid>
                             <TextBox x:Name="ReviewSearch" TextChanged="OnReviewFilterChanged" AutomationProperties.Name="Search review findings"
@@ -351,13 +357,21 @@
                                 </TextBlock.Style>
                             </TextBlock>
                         </Grid>
-                        <TextBlock x:Name="ReviewResultsText" Grid.Column="1" Text="No scan yet" Style="{StaticResource TrimmedText}"
+                        <ComboBox x:Name="ReviewFilter" Grid.Column="1" Width="140" Margin="8,0,0,0" SelectionChanged="OnReviewKindChanged" AutomationProperties.Name="Filter review type">
+                            <ComboBoxItem Content="All findings" IsSelected="True"/>
+                            <ComboBoxItem Content="Read errors"/>
+                            <ComboBoxItem Content="Missing / default IDs"/>
+                            <ComboBoxItem Content="Conflicts"/>
+                            <ComboBoxItem Content="Device status"/>
+                        </ComboBox>
+                    </Grid>
+                        <TextBlock x:Name="ReviewResultsText" Text="No scan yet" Style="{StaticResource TrimmedText}"
                                    Foreground="{DynamicResource MutedBrush}" Margin="8,0,0,0" VerticalAlignment="Center"
                                    ToolTip="Missing identifiers can be normal. Review explains the information Windows reported."/>
-                    </Grid>
+                    </StackPanel>
                     <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0">
                         <Grid>
-                        <DataGrid x:Name="ReviewGrid" Style="{StaticResource PageGrid}" SelectionChanged="OnReviewSelected">
+                        <DataGrid x:Name="ReviewGrid" Style="{StaticResource PageGrid}" SelectionChanged="OnReviewSelected" MouseDoubleClick="OnDetailsDoubleClick" PreviewKeyDown="OnDetailsKeyDown" ToolTip="Double-click a finding or press Enter for the explanation and next step.">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="*" MinWidth="81" ElementStyle="{StaticResource CellText}"/>
                                 <DataGridTextColumn Header="Section / device" Binding="{Binding Section}" Width="1.5*" MinWidth="108" ElementStyle="{StaticResource CellText}"/>
@@ -513,6 +527,7 @@
                 </Grid>
             </Grid>
 
+            </ScrollViewer>
             <Grid x:Name="FooterPanel" Grid.Row="3" Margin="0,9,0,0">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="FooterText" Text="Windows-reported inventory" Style="{StaticResource TrimmedText}"

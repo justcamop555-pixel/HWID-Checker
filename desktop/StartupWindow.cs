@@ -29,7 +29,8 @@ internal sealed class StartupWindow : Window
         panel.Children.Add(progress);
         var note = new TextBlock { Text = "Slower PCs may take longer on the first launch. You can close this window to cancel. Scanning starts when you choose Scan this PC.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
         note.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush"); panel.Children.Add(note);
-        var frame = new Border { Child = panel }; frame.SetResourceReference(BackgroundProperty, "CanvasBrush"); Content = frame;
+        var frame = new Border { Child = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled } }; frame.SetResourceReference(BackgroundProperty, "CanvasBrush"); Content = frame;
         Closed += (_, _) => { _cancellation.Cancel(); _cancellation.Dispose(); };
     }
     internal void SetStep(string text) => _step.Text = text;

@@ -1,0 +1,13 @@
+HWID Checker - setup and repair
+
+This setup installs the Desktop application, BAT scanner and companion files for all Windows users. Administrator approval is required. The .NET desktop runtime is included; Windows PowerShell 5.1 must be present. Windows policy may still restrict scanning. Setup does not loosen those policies or repair Windows components.
+
+Run the same setup again to replace missing or damaged application files. A copy of setup is kept with the application for offline repair. Save any current scan and close the Desktop and BAT windows before repair or updates.
+
+Normal scans can run as a standard user. Hardware scanning is read-only. Results may include serial numbers, device IDs, MAC addresses and computer names. Full identifiers remain in saved files and clipboard copies. Review them before sharing.
+
+Each Windows user keeps separate settings and a default report folder under LocalAppData. Existing shared-folder choices remain in effect. A cloud-synced folder may upload reports through that service.
+
+Setup does not move or delete existing portable copies, snapshots or settings. Uninstall removes the installed application files and shortcuts but keeps saved reports and per-user settings.
+
+Update checks contact GitHub. All-users updates require running the newer setup with administrator approval; the portable ZIP updater will not overwrite this installation on exit.

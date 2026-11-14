@@ -4,8 +4,8 @@
 
 **Inspect Windows hardware identifiers, save snapshots, and see what changed.**
 
-[![Version: 3.91](https://img.shields.io/badge/version-3.91-2563eb?style=flat-square)](docs/CHANGELOG.md)
-[![Desktop: 1.4.6](https://img.shields.io/badge/desktop-1.4.6-238579?style=flat-square)](desktop/README.md)
+[![Version: 3.94](https://img.shields.io/badge/version-3.94-2563eb?style=flat-square)](docs/CHANGELOG.md)
+[![Desktop: 1.5.0](https://img.shields.io/badge/desktop-1.5.0-238579?style=flat-square)](desktop/README.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square)](#compatibility)
 [![Language: PowerShell + Batch](https://img.shields.io/badge/language-PowerShell%20%2B%20Batch-5391fe?style=flat-square)](hwid.bat)
 [![Desktop: C# + WPF](https://img.shields.io/badge/desktop-C%23%20%2B%20WPF-5965b0?style=flat-square)](desktop/HwidDesktop.csproj)
@@ -34,7 +34,7 @@
 
 HWID Checker is a local, read-only Windows hardware inventory tool with a desktop interface and a PowerShell/Batch console. Both interfaces use the scanning and report functions in `hwid.bat`. They bring hardware information and identifiers from Windows providers into one inventory, then let you save it and compare selected ID fields with an earlier capture.
 
-**Desktop 1.4.6** and **BAT 3.91** share a local snapshot library and a package updater. The desktop overview presents the PC name, model and capture time, and uses square controls with a responsive layout. [Desktop guide and source build](desktop/README.md)
+**Desktop 1.5.0** and **BAT 3.94** share a local snapshot library and a package updater. The desktop overview presents the PC name, model and capture time, and uses square controls with a responsive layout. [Desktop guide and source build](desktop/README.md)
 
 It is intended for PC owners, support technicians, and developers troubleshooting missing identifiers, documenting a system, or checking changes after hardware or Windows updates. It reports what Windows exposes; it does not certify hardware health, authenticity, or identifier uniqueness.
 
@@ -118,7 +118,9 @@ Comparison results show OLD/NEW values and character differences. A difference r
 
 ### Desktop EXE
 
-Download and extract a [desktop ZIP for Windows x64](https://github.com/justcamop555-pixel/HWID-Checker/releases). Keep **HWID Checker.exe** beside **hwid.bat**, open the EXE, and choose **Scan this PC**. Use **Connect BAT…** to select the scanner when it is stored elsewhere. **Open BAT console** opens the connected scanner.
+Download the [Windows x64 release](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.5.0): choose the **Setup EXE** for an all-users installation with repair/uninstall, or extract the **complete portable ZIP**. Setup requires administrator approval; normal scans can run as a standard user. Keep every ZIP companion file together, including **HWID Checker.App.exe**, DLLs and language folders. Open **HWID Checker.exe**, then choose **Scan this PC**. **Open BAT console** opens the connected scanner.
+
+**Upgrading from 1.4.x:** use the full installer or extract the new ZIP into a new folder. The old updater cannot install the 1.5.0 runtime layout. Keep saved snapshots and reconnect their folder through Snapshots if needed. [Setup and repair guide](desktop/installer/README.md)
 
 The current package is a self-contained **Windows x64** build; its .NET runtime is included. PowerShell and the hardware providers listed below are still required. The source repository contains the desktop project and [build/packaging instructions](desktop/README.md#build-from-source).
 
@@ -132,7 +134,7 @@ The current package is a self-contained **Windows x64** build; its .NET runtime 
 | Local components | CIM/WMI and the .NET APIs supplied by the PowerShell runtime; optional Windows device/network/storage providers affect scan coverage |
 | File access | A writable report destination when exporting; a standard user can start the checker |
 
-The console requires no build step or third-party package installation. Building the desktop EXE from source requires the .NET 10 SDK; running the self-contained package does not require a separate .NET installation. Git is optional and only needed for cloning. The checker does not install missing runtimes or providers.
+The console requires no build step or third-party package installation. Building the desktop from source requires the .NET 10 SDK and Visual Studio C++ Build Tools with a Windows SDK. Running the complete self-contained package does not require a separate .NET installation. Git is optional and only needed for cloning. The checker does not install missing runtimes or providers.
 
 ### Download or clone
 

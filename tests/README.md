@@ -1,5 +1,7 @@
 # Developer checks
 
+`test-device-identification.ps1` runs 18 synthetic direct/worker checks for targeted property recovery, exact values, unrelated-node rejection, retained driver problems, optional lookup failures and conflicting observations. `test-compare-coverage.ps1` checks missing/duplicate matching keys and an empty comparable set without claiming unchanged IDs. Run both under Windows PowerShell 5.1 and PowerShell 7.
+
 `test-scan-display-cache.ps1` verifies retained-line cache invalidation for exact text, resizing, indentation, Unicode and legacy callers. It includes a synthetic wrapping benchmark without a timing pass/fail threshold. Run it under both Windows PowerShell 5.1 and PowerShell 7; it does not scan hardware.
 
 [Back to the main README](../README.md)
@@ -79,3 +81,6 @@ Tests may leave synthetic reports, temporary launcher cases and diagnostic scrip
 The tests locate `hwid.bat` and `Start-HWID.ps1` in the repository root. Keep the folder structure when moving the repository.
 
 The scan-completion suite also checks live read/not-read counts, catalog outcomes, compact progress widths, clamping and per-scan state reset. Calls without timing metadata retain the original progress formatter.
+
+
+test-managed-install.ps1 checks portable versus machine-wide report defaults, preserved shared folders, protected-path boundaries and rejection of portable updater Apply in managed installations. Uses synthetic paths only.

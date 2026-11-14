@@ -2,17 +2,27 @@
 
 A Windows desktop interface for the existing HWID Checker scanner. The application launches the PowerShell scanner embedded in the adjacent `hwid.bat`, then presents its results in a graphical dashboard.
 
-Desktop **1.4.6** includes BAT **3.91**. Download the complete Windows x64 package from [GitHub Releases](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.4.6).
+Desktop **1.5.0** includes BAT **3.94**. Download the complete ZIP or all-users installer from [GitHub Releases](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.5.0).
 
 The update adds clearer ID search counts and empty states, responsive ID controls, device-aware list copying, accurate coverage for older captures, and staged CSV/HTML and comparison exports. The BAT retains scan text through resizing and can fall back to normal text output if native drawing remains unavailable. Published release history is in the [changelog](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/CHANGELOG.md).
+
+## Install or repair for all users
+
+The new all-users setup requires administrator approval and installs the app under Program Files. It provides Start menu shortcuts, offline repair and Windows uninstall registration. Saved snapshots and per-user settings are kept during repair and uninstall. See the [setup guide](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/desktop/installer/README.md) for requirements, build instructions and validation limits. The portable ZIP remains supported.
+
+IDs, Hardware and Review rows now open a larger detail window with a double-click or Enter. ID details explain the value's status and preserve leading zeros. Review can filter read errors, missing/default IDs, conflicts and device status separately. **Clear filters** resets both search and type. Copy success messages show a count instead of repeating the sensitive value; clipboard contents still contain the full original text.
 
 ## Start the application
 
 Download and **extract the complete ZIP** before launching `HWID Checker.exe`. Keep its companion files together in a local folder. Starting from inside an archive or waiting for a cloud-only file to download can add delays before the application can run.
 
-Normal launches show **Starting HWID Checker** while local settings load, then open the dashboard. Settings and saved scanner-file checks run away from the UI thread, so slow storage or an unavailable scanner path can no longer block the entire window. Close the loading window to cancel; no hardware scan starts automatically. On a first launch, Windows file verification and runtime preparation can still take time before any application window appears.
+Normal launches first show a small native **Starting HWID Checker** window, before the .NET desktop runtime loads. The desktop then shows its preparation window while reading settings and checking the scanner off the UI thread. Close the loading window to cancel; no hardware scan starts automatically. Windows must still verify the launcher before it can display anything, so startup time depends on storage and system load.
 
-Release builds keep the single-file bundle uncompressed and retain the existing self-contained/update-package format. Startup performance is measured before changing compilation settings; there is no fixed launch-time guarantee on every PC.
+Version 1.5.0 packages the self-contained runtime as ordinary files, removing first-use bundle extraction. Run **HWID Checker.exe** and keep **HWID Checker.App.exe**, the DLLs, configuration files and language folders beside it. Do not copy just the EXE. No separate .NET or Visual C++ runtime installation is required.
+
+**Upgrading from 1.4.x:** its updater expects the old single-file package and cannot install this new layout. Use the complete 1.5.0 setup or extract the complete ZIP into a new folder. Keep your saved reports and reconnect their folder in Snapshots if needed. Version 1.5.0 supports subsequent updates in the new format.
+
+Windows fit the work area of their current monitor and respond to DPI changes. On short screens, the dashboard page gains its own scrollbar so tables and selected values remain reachable. Text stays at the normal readable size.
 
 1. Extract the complete portable package to a local folder.
 2. Keep **HWID Checker.exe** and **hwid.bat** together.
@@ -41,7 +51,7 @@ The Desktop-only **Welcome to HWID Checker** message explains the read-only hard
 | Share folders with the BAT | Open **Snapshots → Folder settings…** to choose a shared save folder and manage the folders both apps watch. |
 | Compare snapshots | Compare an older JSON snapshot with the current scan, or choose two saved JSON snapshots without starting a scan. Results show old/new values and exact identifier differences. |
 | Export comparison results | Save the complete comparison and coverage notes as text, including rows hidden by search or filters. |
-| Open BAT console | Check the scanner, open a separate console, and recover missing or invalid companions from the bundled offline copy. |
+| Open BAT console | Check the scanner, ask before restoring missing or invalid companions, then open the separate console. |
 | Theme and restart | Switch between **Midnight** and **Daylight**. **Restart app** restores the current scan, filters, selections, page and comparison in a fresh desktop process. The original stays open if the replacement cannot become ready. |
 | Updates | Check newer packages, download a verified update, and install it after closing or with **Install and restart**. |
 
@@ -93,9 +103,19 @@ The application reads the companion `hwid.bat` at runtime. It does not convert o
 
 Use **Connect BAT…** to select an existing checker when it is stored elsewhere. The EXE uses your saved connection if that file is available, then checks for an adjacent BAT. The scanning bridge loads collection/report functions from that file and runs them in a separate, hidden PowerShell process. The desktop window presents progress and results.
 
-Use **Connect BAT…** to select the `hwid.bat` supplied with this desktop package when upgrading an older scanner. This release includes BAT **3.91**. Earlier BAT versions can still compare a JSON report by path.
+Use **Connect BAT…** to select the `hwid.bat` supplied with this desktop package when upgrading an older scanner. This release includes BAT **3.94**. Earlier BAT versions can still compare a JSON report by path.
 
-**Open BAT console** checks the selected scanner with available PowerShell runtimes before opening a separate console. It tries the other installed runtimes before replacing a source rejected by one parser. The standard `hwid.bat` requires its sibling launcher; a renamed BAT is launched directly and ignores an unused missing or invalid launcher. A missing, oversized or syntactically invalid companion falls back to the scanner and launcher embedded in this desktop build. The offline copy is restored under `%LOCALAPPDATA%\HWID Checker\RecoveredScanner` and verified against the embedded bytes; custom files are kept. The restored connection is remembered when settings can be saved. When recovery changes the scanner folder, its earlier default report folder is registered in an existing shared library so old captures remain discoverable. Registration failures show the earlier path and a Folder settings action. A renamed valid BAT is launched by its explicit path. Missing or restricted PowerShell still requires an approved runtime; recovery does not change system policy or download a scanner.
+**Open BAT console** checks the selected scanner with available PowerShell runtimes before opening a separate console. A source accepted by either installed runtime is kept. The standard `hwid.bat` requires its sibling launcher; a renamed BAT ignores an unused missing or invalid launcher.
+
+If repair is needed, **Repair BAT console** explains the problem and checked location. **Not now** keeps files and the current scan unchanged. **Repair and open** restores the scanner and launcher embedded in this Desktop build under `%LOCALAPPDATA%\HWID Checker\RecoveredScanner`, verifies their bytes, connects the restored copy and opens it. It does not overwrite custom files or download a scanner. An early loader failure also requires confirmation before this fallback. An unavailable or restricted PowerShell runtime gets a runtime error instead of an ineffective file-repair prompt.
+
+The restored connection is remembered when settings can be saved. Earlier report folders remain discoverable through the shared library; registration failures identify the old folder and offer Folder settings.
+
+### Incomplete device identification and comparison
+
+For present devices missing a name or model ID, both interfaces use the BAT's targeted, serialized Windows-property lookup. Recovered values identify their source. Empty or failed optional lookups retain the primary records and explain what Windows did not supply. Existing IDs and driver problem codes are kept; a recovered name does not mean a driver fault is fixed.
+
+Comparison notes distinguish unread/absent sections from missing device matching keys and duplicate keys. Desktop retains the matching key, affected record count and previous/current source in its details and exported comparison. It also flags different computer names and reversed capture times. A result with no comparable IDs says so; it does not claim that the IDs are unchanged.
 
 Connection checks reject empty, truncated or larger-than-8-MB BAT files before displaying a connected state. A failed connection clears stale scanner names and paths.
 
@@ -141,7 +161,7 @@ The current portable build targets Windows x64. Other architectures are not pack
 
 ## Build from source
 
-Install the **.NET 10 SDK** on Windows. From the repository root:
+Install the **.NET 10 SDK** and **Visual Studio Build Tools with Desktop development with C++** (MSVC x64 tools and a Windows SDK) on Windows. The C compiler builds the small native startup launcher. From the repository root:
 
 ```powershell
 .\desktop\build-desktop.ps1 -EngineDirectory .

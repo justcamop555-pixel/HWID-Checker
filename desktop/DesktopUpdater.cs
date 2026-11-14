@@ -48,8 +48,9 @@ internal sealed class DesktopUpdater : IDisposable
     public event EventHandler? Changed;
     public UpdateStatus Status { get; private set; } = new("idle", "Updates have not been checked yet.");
     public bool IsBusy => _cancellation != null;
+    public bool RequiresSetup => InstallationLayout.IsManaged(_directory);
     public bool AutomaticEnabled { get; private set; }
-    public bool IsReady => CanApply(Status);
+    public bool IsReady => !RequiresSetup && CanApply(Status);
 
     private static bool CanApply(UpdateStatus status)
     {
@@ -94,14 +95,14 @@ internal sealed class DesktopUpdater : IDisposable
         {
             var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(_resultPath);
             var interval = Status.State == "error" ? TimeSpan.FromHours(1) : TimeSpan.FromDays(1);
-            if (age >= TimeSpan.Zero && age < interval && Status.State is "current" or "ready" or "error")
+            if (age >= TimeSpan.Zero && age < interval && (Status.State is "current" or "ready" or "error" || RequiresSetup && Status.State == "available"))
                 return;
         }
-        await RunAsync("Prepare");
+        await RunAsync(RequiresSetup ? "Check" : "Prepare");
     }
 
     public Task CheckAsync() => RunAsync("Check");
-    public Task DownloadAsync() => RunAsync("Prepare");
+    public Task DownloadAsync() => RunAsync(RequiresSetup ? "Check" : "Prepare");
     public void RefreshAutomaticPreference() => AutomaticEnabled = ReadAutomaticPreference();
 
     public void SetAutomatic(bool enabled)
@@ -228,6 +229,11 @@ internal sealed class DesktopUpdater : IDisposable
     private UpdateStatus NormalizeStatus(UpdateStatus status, bool cached)
     {
         var current = Version.Parse(CurrentVersion);
+        if (RequiresSetup && status.State is "ready" or "repair")
+            return TryPackageVersion(status.LatestVersion, out var setupVersion) && setupVersion > current
+                ? status with { State = "available", StageDirectory = "", SourceVersion = CurrentVersion,
+                    Message = "A newer version is available. Run its all-users setup with administrator approval." }
+                : RunningStatus();
         if (status.State == "ready")
         {
             if (!TryPackageVersion(status.LatestVersion, out var next)) return RunningStatus();
@@ -318,7 +324,7 @@ internal sealed class DesktopUpdater : IDisposable
         var helper = Path.Combine(helperFolder, "Update-HWID.ps1");
         File.Copy(_script, helper);
         var start = CreateStart(helper, "Apply", Status.SourceVersion);
-        using var current = Process.GetCurrentProcess();
+        using var current = NativeStartup.TryGetLauncher() ?? Process.GetCurrentProcess();
         AddArguments(start, "-StageDirectory", Status.StageDirectory,
             "-WaitProcessId", current.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "-WaitProcessStartTicks", current.StartTime.ToUniversalTime().Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture),

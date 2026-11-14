@@ -1,6 +1,30 @@
 # Recent changes
 
+## Desktop 1.5.0 / BAT 3.94 — November 14, 2026
+
+- Show a lightweight native loading window before loading .NET, with elapsed time, cancellation and readable missing-file errors.
+- Package the runtime as ordinary files to remove first-launch self-extraction. Keep the entire extracted folder together. Upgrading from 1.4.x requires the complete setup or a new extracted ZIP folder.
+- Fit windows to their current monitor's work area, including DPI changes and smaller laptop displays. Scroll dashboard pages when controls cannot fit vertically.
+- Wait for both the native launcher and managed app before portable updates; clear inherited launcher state during restart. Validate required runtime files before installing updates or building setup.
+- Extend startup, cancellation, argument forwarding, DPI/layout and setup repair/uninstall checks. BAT scanner behavior is unchanged in this packaging update.
+
+### Included setup, privacy and review improvements
+
+- Added an all-users Windows setup with administrator approval, offline repair, Start menu entries and a data-preserving uninstaller. Portable packages remain supported.
+- Fixed installed report defaults to use each user's LocalAppData and retained shared folder preferences. Setup-managed apps use setup updates; portable replacement cannot write into Program Files.
+- Added readable full-value dialogs for IDs, hardware fields and Review, with exact-value copying and clearer missing/default/read-error explanations.
+- Added Review type filters, preserved them across restart, and cleared stale selections when filtered out.
+- Removed copied identifiers from success banners and clarified clipboard, file access, sync and uninstall privacy behavior.
+
+
 [Back to the main README](../README.md)
+
+### Included scanner repair and comparison improvements
+
+- Ask before recovering a missing, unreadable or invalid BAT/launcher after Open BAT console. Repair and open uses the bundled offline files; Not now leaves files and the current scan unchanged. Runtime failures no longer suggest that restoring files will repair PowerShell.
+- Supplement incomplete present-device names and model IDs through bounded, serialized Windows-property reads in both scan paths. Keep primary records and reported driver problems when optional lookup fails; retain exact recovered values, source labels, malformed observations and conflicting readings.
+- Send missing-key and duplicate-key comparison diagnostics through the Desktop bridge. Explain unmatched sections accurately, preserve conflict details in exports and flag different computer names or reversed capture times.
+- Keep the BAT comparison report readable when no identifiers can be compared, including its skipped-field reasons instead of aborting before those explanations.
 
 ## Desktop 1.4.6 and BAT 3.91 — November 12, 2026
 

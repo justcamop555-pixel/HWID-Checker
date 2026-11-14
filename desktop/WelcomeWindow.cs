@@ -65,6 +65,8 @@ internal sealed class WelcomeWindow : Window
         notices.Children.Add(Notice("Keep identifiers private", "Reports can include serial numbers, device IDs, MAC addresses and your PC name. Review or redact them before sharing.", "WarningBrush"));
         notices.Children.Add(Notice("Review before sharing", "Saved snapshots, exports and copied values contain full identifiers. Saving does not redact them. Keep an original JSON baseline for comparison and redact a separate copy before sharing.", "WarningBrush"));
         notices.Children.Add(Notice("Know where your files go", "Hardware scanning runs locally. Update checks contact GitHub without sending your scan reports. Files saved in OneDrive or another synced folder may be uploaded by that service.", "AccentBrush"));
+        notices.Children.Add(Notice("Clipboard and saved files", "Copy actions use the Windows clipboard. Clipboard history or sync may retain that text. Reports are not encrypted by HWID Checker. A Windows account with access to their folder may read them.", "WarningBrush"));
+        notices.Children.Add(Notice("Installation and removal", "All-users setup needs administrator approval; normal scans can run as a standard user. Each user keeps separate folder settings and a local default report folder. Repair and uninstall keep saved snapshots and user settings.", "AccentBrush"));
         notices.Children.Add(reminder);
         NoticeScroll = new ScrollViewer { Content = notices, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto };

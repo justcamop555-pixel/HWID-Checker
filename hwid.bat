@@ -1209,7 +1209,7 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.91' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.94' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
@@ -2171,8 +2171,8 @@ function Get-PresentDeviceRecords {
         if(-not $devices.Count){throw 'No present device records returned by the fallback reader.'}
         Assert-DeviceRecords $devices -Raw
         $rows=@(foreach($device in $devices){
-            $name=if(-not [string]::IsNullOrWhiteSpace([string]$device.Name)){$device.Name}else{$device.FriendlyName}
-            $class=if(-not [string]::IsNullOrWhiteSpace([string]$device.PNPClass)){$device.PNPClass}else{$device.Class}
+            $name=if(Test-DeviceDisplayText $device.Name){$device.Name}elseif(Test-DeviceDisplayText $device.FriendlyName){$device.FriendlyName}else{$null}
+            $class=if(Test-DeviceDisplayText $device.PNPClass){$device.PNPClass}elseif(Test-DeviceDisplayText $device.Class){$device.Class}else{$null}
             $instance=Get-DeviceInstanceInfo $device
             [pscustomobject]@{Name=$name;Manufacturer=$device.Manufacturer;PNPClass=$class;ClassGuid=$device.ClassGuid;Service=$device.Service;Present=$true;PNPDeviceID=$instance.Value;InstanceIdSource=$instance.Source;HardwareID=$device.HardwareID;CompatibleID=$device.CompatibleID;ConfigManagerErrorCode=$device.ConfigManagerErrorCode;CollectionSource='Get-PnpDevice present-only fallback'}
         })
@@ -2186,7 +2186,7 @@ function Get-PresentDeviceRecords {
 }
 function Get-DriverHardwareIds {
     # All present device classes, including physical, virtual, system and peripheral nodes.
-    foreach($device in (Get-PresentDeviceRecords | Sort-Object PNPClass,Name,PNPDeviceID)){
+    $rows=@(foreach($device in (Get-PresentDeviceRecords | Sort-Object PNPClass,Name,PNPDeviceID)){
         $hardware=Get-DeviceIdListInfo $device.HardwareID;$compatible=Get-DeviceIdListInfo $device.CompatibleID
         $instance=Get-DeviceInstanceInfo $device
         $instanceSource=if($device.InstanceIdSource){$device.InstanceIdSource}else{$instance.Source}
@@ -2195,6 +2195,71 @@ function Get-DriverHardwareIds {
         if($compatible.InvalidCount){$row['CompatibleIDReadStatus']="Invalid entries ignored: $($compatible.InvalidCount)";$row['RawCompatibleID']=$compatible.Raw}
         if($device.CollectionSource){$row['CollectionSource']=$device.CollectionSource}
         [pscustomobject]$row
+    })
+    Complete-PresentDeviceIdentification $rows
+}
+function Complete-PresentDeviceIdentification($Rows) {
+    # Supplement only incomplete present nodes. An optional property failure must
+    # never discard the primary inventory or turn a missing ID into a hardware fault.
+    $wanted=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach($row in $Rows){
+        $key=Normalize-IdentifierText $row.DeviceInstanceId
+        if($key -and (-not @($row.HardwareID).Count -or -not (Test-DeviceDisplayText $row.Name))){[void]$wanted.Add($key)}
+    }
+    if(-not $wanted.Count){return $Rows}
+    $keys=@('DEVPKEY_Device_HardwareIds','DEVPKEY_Device_CompatibleIds','DEVPKEY_Device_FriendlyName','DEVPKEY_Device_DeviceDesc')
+    $properties=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
+    $errors=@();$unavailable=$false
+    try {
+        if(-not (Get-Command Get-PnpDeviceProperty -ErrorAction SilentlyContinue)){$unavailable=$true}
+        else {
+            $read=Read-DevicePropertyBatches @($wanted) $keys
+            $errors=@($read.Errors)
+            foreach($property in $read.Rows){
+                if($property.InstanceId -isnot [string] -or $property.KeyName -isnot [string] -or $property.KeyName -notin $keys){continue}
+                $key=Normalize-IdentifierText $property.InstanceId
+                if(-not $wanted.Contains($key)){continue}
+                if(-not $properties.ContainsKey($key)){$properties[$key]=@{}}
+                if(-not $properties[$key].ContainsKey($property.KeyName)){$properties[$key][$property.KeyName]=New-Object 'System.Collections.Generic.List[object]'}
+                $properties[$key][$property.KeyName].Add($property.Data)
+            }
+        }
+    }catch{$errors+=@($_)}
+    foreach($row in $Rows){
+        $key=Normalize-IdentifierText $row.DeviceInstanceId
+        if(-not $wanted.Contains($key)){$row;continue}
+        $readings=if($properties.ContainsKey($key)){$properties[$key]}else{@{}}
+        $recovered=New-Object 'System.Collections.Generic.List[string]'
+        foreach($pair in @(@('HardwareID','DEVPKEY_Device_HardwareIds'),@('CompatibleID','DEVPKEY_Device_CompatibleIds'))){
+            $field=$pair[0];$propertyKey=$pair[1]
+            if(@($row.$field).Count -or -not $readings.ContainsKey($propertyKey)){continue}
+            $raw=@($readings[$propertyKey].ToArray())
+            $info=Get-DevicePropertyIdListInfo $raw
+            if($info.Values.Count){$row.$field=$info.Values;$recovered.Add($field);$row.PSObject.Properties.Add([psnoteproperty]::new($field+'Source','Device properties'))}
+            $row.PSObject.Properties.Add([psnoteproperty]::new($field+'PropertyReadings',$raw))
+            $row.PSObject.Properties.Add([psnoteproperty]::new($field+'PropertyConflict',$info.DifferentReadings))
+            if($info.InvalidCount){
+                $statusField=$field+'ReadStatus';$statusText='Invalid property entries ignored: '+$info.InvalidCount
+                if($row.PSObject.Properties[$statusField]){$row.$statusField=[string]$row.$statusField+' / '+$statusText}
+                else{$row.PSObject.Properties.Add([psnoteproperty]::new($statusField,$statusText))}
+            }
+        }
+        if(-not (Test-DeviceDisplayText $row.Name)){
+            if($null -ne $row.Name){$row.PSObject.Properties.Add([psnoteproperty]::new('RawName',$row.Name))}
+            $row.Name=$null
+            foreach($field in @('DEVPKEY_Device_FriendlyName','DEVPKEY_Device_DeviceDesc')){
+                if(-not $readings.ContainsKey($field)){continue}
+                $name=@($readings[$field].ToArray() | Where-Object {Test-DeviceDisplayText $_} | Select-Object -First 1)
+                if($name.Count){$row.Name=$name[0];$row.PSObject.Properties.Add([psnoteproperty]::new('NameSource',$field));$recovered.Add('Name');break}
+            }
+        }
+        $status=if($recovered.Count){'Recovered from device properties: '+($recovered -join ', ')}
+            elseif($unavailable){'Device-property reader unavailable; primary record kept'}
+            elseif($errors.Count){'Device-property lookup incomplete; primary record kept'}
+            else{'No additional identification supplied by Windows'}
+        $row.PSObject.Properties.Add([psnoteproperty]::new('IdentificationReadStatus',$status))
+        if($errors.Count){$row.PSObject.Properties.Add([psnoteproperty]::new('IdentificationReadErrors',@($errors | Select-Object -First 3 | ForEach-Object {[string]$_})))}
+        $row
     }
 }
 function Get-ClassHiddenState($ClassGuid) {
@@ -2741,6 +2806,9 @@ function Get-PnpIssues($Devices) {
         if($device.HardwareIDReadStatus -match '^Invalid' -or $device.CompatibleIDReadStatus -match '^Invalid'){
             [pscustomobject]@{Device=$device.Name;InstanceId=$device.DeviceInstanceId;Code=$null;Message='Some model/compatible ID entries were invalid. Valid strings were retained; raw entries are in Main [5].';Kind='InvalidIdList'}
         }
+        if($device.HardwareIDPropertyConflict -eq $true -or $device.CompatibleIDPropertyConflict -eq $true){
+            [pscustomobject]@{Device=$device.Name;InstanceId=$device.DeviceInstanceId;Code=$null;Message='Device-property ID readings disagreed. Combined values are for inspection; review the raw readings in the full inventory.';Kind='IdSourceConflict'}
+        }
         $status=Get-PnpStatus $device.ConfigManagerErrorCode
         if($status.Quality -eq 'Review') {
             [pscustomobject]@{Device=$device.Name;InstanceId=$device.DeviceInstanceId;Code=$status.Code;Message=$status.Text;Kind=$(if($status.Code -in @(6,30)){'ResourceConflict'}else{'Status'})}
@@ -3199,7 +3267,7 @@ function New-ScanQueryWorker {
         $setup=New-Object Text.StringBuilder
         [void]$setup.AppendLine('$ErrorActionPreference="Stop"')
         # Only collection helpers run here; UI and snapshot state stay on the main thread.
-        foreach($name in @('GiB','Test-ScanScalarValue','Get-ScanUInt64Info','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Format-NetworkStatus','Get-NetworkAddressInfo','Assert-NetworkReaderRecords','Get-NetworkIdentifiers','Get-DeviceIdListInfo','Get-DeviceInstanceInfo','Get-DevicePropertyIdListInfo','Test-DeviceIdSourceConflict','Get-DeviceGuidReadings','Get-DeviceParentReadings','Get-PresentDeviceRecords','Get-DriverHardwareIds','Get-ScanFailureInfo','Get-HwidExceptionStatuses','Test-ProjectionReadFailure','Invoke-BufferedHardwareRead','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Test-ScanValuePresent','Test-DeviceDisplayText','Normalize-IdentifierText','Assert-DeviceRecords','Get-DeviceUInt32Info','Get-BatteryStatusName','Get-BatteryIdentifiers','Read-DevicePropertyBatches','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Confirm-SecureBootUEFI','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
+        foreach($name in @('GiB','Test-ScanScalarValue','Get-ScanUInt64Info','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Format-NetworkStatus','Get-NetworkAddressInfo','Assert-NetworkReaderRecords','Get-NetworkIdentifiers','Get-DeviceIdListInfo','Get-DeviceInstanceInfo','Get-DevicePropertyIdListInfo','Test-DeviceIdSourceConflict','Get-DeviceGuidReadings','Get-DeviceParentReadings','Get-PresentDeviceRecords','Get-DriverHardwareIds','Complete-PresentDeviceIdentification','Get-ScanFailureInfo','Get-HwidExceptionStatuses','Test-ProjectionReadFailure','Invoke-BufferedHardwareRead','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Test-ScanValuePresent','Test-DeviceDisplayText','Normalize-IdentifierText','Assert-DeviceRecords','Get-DeviceUInt32Info','Get-BatteryStatusName','Get-BatteryIdentifiers','Read-DevicePropertyBatches','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Confirm-SecureBootUEFI','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
             $function=Get-Item -LiteralPath ('Function:\'+$name) -ErrorAction SilentlyContinue
             if($null -ne $function -and -not $function.ModuleName){[void]$setup.AppendLine(('function '+$name+' {'+$function.Definition+'}'))}
         }
@@ -3509,7 +3577,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-PnpLine '  Hardware identity and Windows inventory. Read-only scan.' $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.91'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.94'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-PnpLine "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" $palette.Muted
@@ -4252,11 +4320,22 @@ function Write-SnapshotLibraryWarning($Locations) {
         Write-PnpValue 'Settings file' $Locations.Library.Path $palette.Muted
     }
 }
+function Test-CheckerManagedInstall([string]$Directory) {
+    $full=[IO.Path]::GetFullPath($Directory).TrimEnd('\')
+    if([IO.File]::Exists((Join-Path $full 'HWID-SETUP.ini'))){return $true}
+    foreach($root in @($env:ProgramFiles,${env:ProgramFiles(x86)},$env:ProgramW6432)){
+        if(-not $root){continue}
+        $prefix=[IO.Path]::GetFullPath($root).TrimEnd('\')
+        if($full.Equals($prefix,[StringComparison]::OrdinalIgnoreCase) -or $full.StartsWith($prefix+'\',[StringComparison]::OrdinalIgnoreCase)){return $true}
+    }
+    return $false
+}
 function Get-ReportLocations([string]$ScriptPath=$env:HWID_SCRIPT,[string]$LocalRoot=$env:LOCALAPPDATA) {
     $base=Split-Path -Parent ([IO.Path]::GetFullPath($ScriptPath))
     $default=Join-Path $base 'HWID-Reports'
     if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}
     $fallback=if($LocalRoot){Join-Path $LocalRoot 'HWID Checker\HWID-Reports'}else{$null}
+    if($fallback -and (Test-CheckerManagedInstall $base)){$default=$fallback}
     $library=Get-SnapshotLibrary $LocalRoot
     $primary=if($library.Primary){$library.Primary}else{$default}
     $folders=New-Object 'System.Collections.Generic.List[string]'
@@ -4596,12 +4675,13 @@ function Show-ComparisonResult($Previous,$Current,$Comparison,$SourcePath) {
     }
     Write-PnpValue 'Comparable fields' ("$($Comparison.PreviousCount) previous / $($Comparison.CurrentCount) current") $palette.Text
     if($Comparison.UnkeyedSections.Count){Write-PnpValue 'Missing device keys' (($Comparison.UnkeyedSections -join ', ')+'. Records cannot be matched reliably; these sections are skipped.') $palette.Warn}
-    if(-not $Comparison.PreviousCount -and -not $Comparison.CurrentCount -and -not $Comparison.ScopeWarnings.Count){throw 'No usable IDs in sections readable in both reports.'}
+    $noComparableFields=-not $Comparison.PreviousCount -and -not $Comparison.CurrentCount
     $details=@(Get-ComparisonDetails $Comparison)
     $incomplete=$Comparison.SkippedSections.Count -or $Comparison.SkippedFields
     Add-ReportBookmark '2'
     if(-not $details.Count) {
-        if($incomplete){Write-PnpValue 'RESULT' 'No differences found in available data. Some IDs could not be checked.' $palette.Warn}
+        if($noComparableFields){Write-PnpValue 'RESULT' 'No identifiers could be compared. Read the reasons below; this does not mean the IDs are unchanged.' $palette.Warn}
+        elseif($incomplete){Write-PnpValue 'RESULT' 'No differences found in available data. Some IDs could not be checked.' $palette.Warn}
         else {Write-PnpValue 'RESULT' 'No identifier differences found in the saved scan.' $palette.Good}
     } else {
         $changed=@($details | Where-Object Kind -eq 'Changed').Count
@@ -4839,7 +4919,7 @@ function Start-ChangeWatch {
         $script:checkerPhase='Main menu'
     }
 }
-function Get-CheckerPackageVersion {return '1.4.6'}
+function Get-CheckerPackageVersion {return '1.5.0'}
 function Get-CheckerUpdatePaths([string]$ScriptPath=$env:HWID_SCRIPT,[string]$LocalRoot=$env:LOCALAPPDATA) {
     $install=[IO.Path]::GetFullPath((Split-Path -Parent ([IO.Path]::GetFullPath($ScriptPath))))
     if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}
@@ -4968,6 +5048,7 @@ function Start-CheckerUpdateOperation([ValidateSet('Check','Prepare')][string]$M
     if($env:HWID_NO_UPDATE -eq '1'){throw 'Update checks are disabled by HWID_NO_UPDATE.'}
     if(Test-CheckerUpdateRunning){return 'An update check is already running. Refresh the status shortly.'}
     $paths=Get-CheckerUpdatePaths
+    if(Test-CheckerManagedInstall (Split-Path -Parent $paths.UpdaterPath)){$Mode='Check'}
     if(-not [IO.File]::Exists($paths.UpdaterPath)){throw 'Keep Update-HWID.ps1 beside hwid.bat to use update controls.'}
     $result=Read-CheckerUpdateResult $paths
     if($result.repair){return 'A prepared interrupted update is ready to finish after normal Exit from the standalone launcher.'}
@@ -4995,6 +5076,7 @@ function Start-CheckerExitUpdate {
     try {
         if(Test-CheckerUpdateRunning){return}
         $paths=Get-CheckerUpdatePaths
+        if(Test-CheckerManagedInstall (Split-Path -Parent $paths.UpdaterPath)){return}
         if(-not (Get-CheckerUpdatePreferences $paths).Enabled){return}
         $result=Read-CheckerUpdateResult $paths
         if($null -eq $result -or $result.state -ne 'ready'){return}
@@ -5076,7 +5158,7 @@ function Start-CheckerRestart {
         $paths=Get-CheckerUpdatePaths
         if([IO.File]::Exists($paths.ResultPath)){
             $result=Read-CheckerUpdateResult $paths
-            if($result -and $result.state -eq 'ready'){$pending=$true}
+            if($result -and $result.state -eq 'ready' -and -not (Test-CheckerManagedInstall (Split-Path -Parent $paths.UpdaterPath))){$pending=$true}
         }
     }catch{}
     if($pending){
@@ -5101,14 +5183,17 @@ function Show-CheckerUpdates {
         Reset-UiPage;Start-UiReport
         Write-Heading 'UPDATES / BAT & DESKTOP PACKAGE'
         $paths=Get-CheckerUpdatePaths
+        $managedInstall=Test-CheckerManagedInstall (Split-Path -Parent $paths.UpdaterPath)
         $preferences=Get-CheckerUpdatePreferences $paths
-        Write-PnpValue 'Installed' ('Scanner 3.91 / package '+(Get-CheckerPackageVersion)) $palette.Text
-        Write-PnpValue 'Automatic updates' $(if($preferences.Enabled){'On. Standalone-launcher sessions prepare updates and install after normal Exit.'}else{'Off. Enable this setting to install a prepared update after normal Exit.'}) $palette.Muted
+        Write-PnpValue 'Installed' ('Scanner 3.94 / package '+(Get-CheckerPackageVersion)) $palette.Text
+        Write-PnpValue 'Automatic updates' $(if($managedInstall){'All-users setup: automatic version checks only. Install updates using the new setup with administrator approval.'}elseif($preferences.Enabled){'On. Standalone-launcher sessions prepare updates and install after normal Exit.'}else{'Off. Enable this setting to install a prepared update after normal Exit.'}) $palette.Muted
+        if($managedInstall){Write-PnpValue 'Download setup' 'https://github.com/justcamop555-pixel/HWID-Checker/releases/latest' $palette.Heading}
         if($preferences.Warning){Write-PnpValue 'Preferences' $preferences.Warning $palette.Warn}
         $result=Read-CheckerUpdateResult $paths
         if(Test-CheckerUpdateRunning){Write-PnpValue 'Status' 'Checking or preparing an update in the background. Choose Refresh status shortly.' $palette.Heading}
         elseif(-not [IO.File]::Exists($paths.UpdaterPath)){Write-PnpValue 'Update unavailable' 'Keep Update-HWID.ps1 beside hwid.bat to use this page.' $palette.Warn}
         elseif($result) {
+            if($managedInstall -and $result.state -eq 'ready'){$result.state='available';$result.message='A newer package was prepared. Download and run the all-users setup; portable updates are not applied to this installation.'}
             $color=if($result.state -eq 'ready'){$palette.Good}elseif($result.state -eq 'error'){$palette.Warn}else{$palette.Text}
             Write-PnpValue 'Status' $result.message $color
             if($result.latestVersion -and $result.state -in @('available','ready')){Write-PnpValue 'Update package' $result.latestVersion $palette.Text}
@@ -5119,7 +5204,7 @@ function Show-CheckerUpdates {
         }else{Write-PnpValue 'Status' 'No update status has been recorded yet.' $palette.Muted}
         if($script:checkerUpdateLaunchFailure){Write-PnpValue 'Update deferred' $script:checkerUpdateLaunchFailure $palette.Warn}
         if($notice){Write-PnpValue 'Action' $notice $palette.Heading}
-        Show-MenuItem '1' 'Check and prepare an update' ''
+        Show-MenuItem '1' $(if($managedInstall){'Check for a newer setup'}else{'Check and prepare an update'}) ''
         Show-MenuItem '2' 'Check the published version' ''
         Show-MenuItem '3' $(if($preferences.Enabled){'Turn automatic updates off'}else{'Turn automatic updates on'}) ''
         Show-MenuItem '4' 'Refresh status' ''
