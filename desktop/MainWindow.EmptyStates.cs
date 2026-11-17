@@ -25,7 +25,7 @@ public partial class MainWindow
             _snapshot == null ? "Captured components and their Windows-reported fields will appear here after the scan finishes." :
             "Windows supplied no fields for this selection. Choose another section or rescan after your devices change.";
         HardwareEmptyAction.Content = filtered ? "Clear search" : _busy && _operation == "Scan" ? "View scan progress" :
-            _engine == null ? "Connect BAT…" : "Scan this PC";
+            _engine == null ? "Connect BAT..." : "Scan this PC";
         HardwareEmptyAction.Tag = filtered ? "ClearHardware" : _busy && _operation == "Scan" ? "Overview" : _engine == null ? "Connect" : "Scan";
         HardwareEmptyAction.IsEnabled = !_busy || (string?)HardwareEmptyAction.Tag is "ClearHardware" or "Overview";
     }
@@ -60,7 +60,7 @@ public partial class MainWindow
             "Save a completed scan as TXT + JSON. Captures in your shared report folders appear here for comparison.");
         var scanning = _busy && _operation == "Scan";
         SnapshotEmptyAction.Content = _snapshotCatalogError != null ? "Try again" : scanning ? "View scan progress" :
-            _engine == null ? "Connect BAT…" : _snapshot == null ? "Scan this PC" : "Save snapshot";
+            _engine == null ? "Connect BAT..." : _snapshot == null ? "Scan this PC" : "Save snapshot";
         SnapshotEmptyAction.Tag = _snapshotCatalogError != null ? "RefreshSnapshots" : scanning ? "Overview" :
             _engine == null ? "Connect" : _snapshot == null ? "Scan" : "Save";
         SnapshotEmptyAction.Visibility = _snapshotCatalogLoaded ? Visibility.Visible : Visibility.Collapsed;

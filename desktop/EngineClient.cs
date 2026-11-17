@@ -454,7 +454,7 @@ internal sealed class EngineClient : IDisposable
     {
         if (string.IsNullOrWhiteSpace(text)) return fallback;
         text = text.Replace('\0', ' ').Trim();
-        return text.Length <= DiagnosticLimit ? text : text[..DiagnosticLimit] + "…";
+        return text.Length <= DiagnosticLimit ? text : text[..DiagnosticLimit] + "...";
     }
 
     private bool IsDisposed() { lock (sync) return disposed; }

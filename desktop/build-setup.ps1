@@ -49,4 +49,4 @@ $name='HWID-Checker-Setup-'+$version+'-win-x64'+$(if($TestInstall){'-TEST'}else{
 $setup=Join-Path $output $name
 $hash=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
 [IO.File]::WriteAllText(($setup+'.sha256'),$hash.ToLowerInvariant()+'  '+$name+"`n",[Text.UTF8Encoding]::new($false))
-[pscustomobject]@{Setup=$setup;Version=$version;Sha256=$hash;AllUsers=(-not $TestInstall);TestOnly=[bool]$TestInstall} | ConvertTo-Json
+[pscustomobject]@{Setup=$setup;Version=$version;Sha256=$hash;AllUsers=(-not $TestInstall);CurrentUser=$true;ScopeChoice=(-not $TestInstall);DefaultScope='CurrentUser';TestOnly=[bool]$TestInstall} | ConvertTo-Json

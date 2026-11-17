@@ -22,6 +22,9 @@ function Get-PnpDevice {
     [pscustomobject]@{FriendlyName='Fallback device';Class='USB';InstanceId='USB\LIVE';HardwareID=@('MODEL-0001');CompatibleID=@('COMPAT-0001');ConfigManagerErrorCode=0}
     [pscustomobject]@{FriendlyName='Disconnected';Class='USB';InstanceId='USB\OLD';Present=$false;HardwareID=@('OLD-MODEL');ConfigManagerErrorCode=45}
 }
+# Keep optional identification synthetic as well. In Windows PowerShell 5.1,
+# auto-importing the real property module can replace this suite's device mock.
+function Get-PnpDeviceProperty {param($InstanceId,$KeyName,$ThrottleLimit)}
 $script:scanQueryWorker=$null;$failure=$null;$rows=@()
 try{$rows=@(Get-DriverHardwareIds)}catch{$failure=$_}
 Assert ($null -eq $failure -and $rows.Count -eq 1 -and $rows[0].DeviceInstanceId -ceq 'USB\LIVE') 'An unsupported Win32 present query recovers through a present-only reader'

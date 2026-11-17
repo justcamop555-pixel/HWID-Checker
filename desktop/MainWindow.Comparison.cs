@@ -8,8 +8,8 @@ public partial class MainWindow
     {
         var notes = new List<string>
         {
-            $"Identifier fields available for comparison · {result.Number("previousCount")} in the previous capture, {result.Number("currentCount")} in the current capture.",
-            $"Not compared · {result.Number("skippedFields")} fields."
+            $"Identifier fields available for comparison - {result.Number("previousCount")} in the previous capture, {result.Number("currentCount")} in the current capture.",
+            $"Not compared - {result.Number("skippedFields")} fields."
         };
         if (sameFile) notes.Add("Both sides were read from the same JSON file path.");
         var skipped = result.Get("skippedSections").Rows().Select(x => x.Text()).ToArray();
@@ -24,7 +24,7 @@ public partial class MainWindow
                 + ". These IDs were not compared.");
         }
         foreach (var scope in result.Get("scopeWarnings").Rows())
-            notes.Add("Reader coverage differs: " + scope.Text("PreviousReader") + " → " + scope.Text("CurrentReader") + "; " + scope.Number("SkippedDevices") + " unmatched device records not compared.");
+            notes.Add("Reader coverage differs: " + scope.Text("PreviousReader") + " to " + scope.Text("CurrentReader") + "; " + scope.Number("SkippedDevices") + " unmatched device records not compared.");
         var previousComputer = result.Text("previousComputer"); var currentComputer = result.Text("currentComputer");
         if (previousComputer.Length > 0 && currentComputer.Length > 0 && !previousComputer.Equals(currentComputer, StringComparison.OrdinalIgnoreCase))
             notes.Add("Different computer names: verify that these are the captures you intended to compare.");

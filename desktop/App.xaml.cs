@@ -10,9 +10,11 @@ public partial class App : Application
     private readonly Stopwatch _startupClock = Stopwatch.StartNew();
     private readonly long _startupEpoch = Stopwatch.GetTimestamp();
     private readonly Dictionary<string, long> _startupPhases = [];
+    private Mutex? _setupSession;
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        _setupSession = SetupSession.Hold(AppContext.BaseDirectory);
         DispatcherUnhandledException += (_, args) =>
         {
             if (WriteAutomationFailure(e.Args, args.Exception)) { args.Handled = true; Shutdown(1); return; }
@@ -63,7 +65,7 @@ public partial class App : Application
         try
         {
             await Dispatcher.Yield(DispatcherPriority.Background);
-            loading.SetStep("Reading local settings…");
+            loading.SetStep("Reading local settings...");
             var test = Value(args, "--startup-test") != null;
             if (test && int.TryParse(Value(args, "--startup-delay-ms"), out var delay) && delay is > 0 and <= 5000)
                 await Task.Delay(delay, loading.Cancellation);
@@ -72,7 +74,7 @@ public partial class App : Application
             var preferences = await StartupPreparation.ReadPreferencesAsync(path, loading.Cancellation);
             if (loading.Cancellation.IsCancellationRequested) return;
             _startupPhases["preferencesReadMs"] = _startupClock.ElapsedMilliseconds;
-            loading.SetStep("Opening your dashboard…");
+            loading.SetStep("Opening your dashboard...");
             await Dispatcher.Yield(DispatcherPriority.Background);
             if (loading.Cancellation.IsCancellationRequested) return;
             var window = new MainWindow(args, preferences);

@@ -13,7 +13,7 @@ internal sealed class DetailWindow : Window
     internal DetailWindow(string title, string details, string? rawValue)
     {
         SetResourceReference(StyleProperty, typeof(Window));
-        Title = title + " — HWID Checker"; ShowInTaskbar = false;
+        Title = title + " - HWID Checker"; ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Width = Math.Min(720, Math.Max(1, SystemParameters.WorkArea.Width - 24));
         Height = Math.Min(520, Math.Max(1, SystemParameters.WorkArea.Height - 24));

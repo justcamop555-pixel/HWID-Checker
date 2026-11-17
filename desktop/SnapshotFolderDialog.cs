@@ -14,9 +14,9 @@ internal sealed class SnapshotFolderDialog : Window
     private readonly TextBlock _preferred = new();
     private readonly TextBlock _message = new();
     private readonly ListBox _folders = new();
-    private readonly Button _choose = new() { Content = "Choose save folder…" };
+    private readonly Button _choose = new() { Content = "Choose save folder..." };
     private readonly Button _reset = new() { Content = "Use default folder" };
-    private readonly Button _add = new() { Content = "Watch a folder…" };
+    private readonly Button _add = new() { Content = "Watch a folder..." };
     private readonly Button _remove = new() { Content = "Stop watching selected" };
     private readonly Button _close = new() { Content = "Close", IsCancel = true };
     private bool _saving;
@@ -101,7 +101,7 @@ internal sealed class SnapshotFolderDialog : Window
     private void Reload()
     {
         var selected = SelectedFolder;
-        _preferred.Text = _settings.Primary ?? "Default · " + _defaultFolder;
+        _preferred.Text = _settings.Primary ?? "Default - " + _defaultFolder;
         _folders.Items.Clear();
         foreach (var folder in _settings.Folders)
         {
@@ -147,7 +147,7 @@ internal sealed class SnapshotFolderDialog : Window
         if (_saving) return;
         _saving = true;
         UpdateButtons();
-        ShowMessage("Updating shared folders…");
+        ShowMessage("Updating shared folders...");
         try
         {
             _settings = await SharedSnapshotLibrary.UpdateAsync(action, folder, _settingsPath);

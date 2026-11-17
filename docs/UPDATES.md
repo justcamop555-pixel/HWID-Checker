@@ -4,6 +4,8 @@ Desktop 1.3.0 and BAT 3.85 include a shared updater for Windows x64 packages pub
 
 ## Automatic updates
 
+Copies installed through setup use setup to install updates. Keep the existing mode: **Just for me** without administrator access, or **All users** with administrator approval. Their automatic option checks versions; it does not replace installer-owned files after closing. The portable behavior below applies to extracted ZIP copies.
+
 Automatic updates start enabled. Desktop checks in the background after opening. The BAT starts its check after you continue from the initial scan to the main menu. A check normally runs once per day. An unavailable check is retried after an hour.
 
 A newer package is downloaded and verified in your local application data directory. Desktop applies a ready update after its window closes normally. The BAT applies a ready update after **[0] Exit** in its standalone console.

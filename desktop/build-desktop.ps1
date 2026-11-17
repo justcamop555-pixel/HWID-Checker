@@ -192,6 +192,9 @@ if((Get-FileHash -LiteralPath $updaterPath -Algorithm SHA256).Hash -ne $updaterH
     Archive=$archivePath
     Checksums=$checksumsPath
     EngineSha256=$batchHash
+    LauncherSha256=$exeHash
+    ApplicationExecutableSha256=(Get-FileHash -LiteralPath $applicationExe -Algorithm SHA256).Hash
+    # Keep this legacy native-launcher alias for existing build consumers.
     ApplicationSha256=$exeHash
     UpdaterSha256=$updaterHash
     OriginalEngineUnchanged=$true

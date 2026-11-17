@@ -49,26 +49,60 @@ function Get-DesktopAbsolutePath($Value,[string]$Description) {
     if($root -in @('\','/') -or $root -match '^[A-Za-z]:$'){throw [IO.InvalidDataException]::new(($Description+' must be an absolute path.'))}
     return [IO.Path]::GetFullPath($Value)
 }
+function Assert-DesktopScanTiming($Timing,[int]$Total,$Groups) {
+    $expected=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach($name in @($Groups.Values | ForEach-Object {$_})+@('PnP hardware IDs')){
+        if($name -isnot [string] -or [string]::IsNullOrWhiteSpace($name) -or -not $expected.Add($name.Trim())){
+            throw 'The BAT engine has invalid expected scan sections.'
+        }
+    }
+    if($expected.Count -ne $Total){throw 'The BAT engine has inconsistent expected scan sections.'}
+    $seen=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach($row in @($Timing)){
+        if($null -eq $row -or ($row -isnot [Collections.IDictionary] -and $row -isnot [pscustomobject]) -or
+            $row.Section -isnot [string] -or [string]::IsNullOrWhiteSpace($row.Section)){
+            throw 'The BAT engine returned invalid scan timing coverage.'
+        }
+        $name=$row.Section.Trim()
+        if(-not $expected.Contains($name) -or -not $seen.Add($name)){
+            throw 'The BAT engine returned duplicate or unexpected scan timing coverage.'
+        }
+        # Unknown terminal outcomes remain available for review. A result that
+        # is still waiting/reading cannot be published as a completed capture.
+        if($row.Status -isnot [string] -or [string]::IsNullOrWhiteSpace($row.Status) -or
+            $row.Status.Trim() -in @('WAITING','READING')){
+            throw 'The BAT engine returned unfinished scan timing coverage.'
+        }
+    }
+    if($seen.Count -ne $expected.Count){throw 'The BAT engine did not finish the expected scan timing coverage.'}
+}
 function ConvertTo-DesktopInventory($Inventory) {
     $copy=[ordered]@{}
     if($Inventory -is [Collections.IDictionary]){foreach($key in $Inventory.Keys){$copy[$key]=$Inventory[$key]}}
     else{foreach($property in $Inventory.PSObject.Properties){$copy[$property.Name]=$property.Value}}
     return $copy
 }
-function Get-DesktopDisplayFields($Inventory) {
-    $labels=[ordered]@{};$values=[ordered]@{}
+function Get-DesktopDisplayFields($Inventory,[switch]$LabelsOnly) {
+    $labels=[ordered]@{};$values=if($LabelsOnly){$null}else{[ordered]@{}}
     foreach($section in $Inventory.Keys){
-        $sectionLabels=[ordered]@{};$sectionValues=New-Object 'System.Collections.Generic.List[object]'
+        $sectionLabels=[ordered]@{}
+        # Labels depend on section and exact field name, not the record value.
+        # Keep ordinal keys so case-varied unknown fields retain their original
+        # last-observation label rather than reusing a differently cased label.
+        $labelCache=New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
+        $sectionValues=if($LabelsOnly){$null}else{New-Object 'System.Collections.Generic.List[object]'}
         foreach($record in @($Inventory[$section])){
-            $fields=[ordered]@{}
+            $fields=if($LabelsOnly){$null}else{[ordered]@{}}
             $properties=if($record -is [Collections.IDictionary]){foreach($key in $record.Keys){[pscustomobject]@{Name=$key;Value=$record[$key]}}}elseif($record -is [pscustomobject]){$record.PSObject.Properties}else{@([pscustomobject]@{Name='Value';Value=$record})}
             foreach($property in $properties){
-                $sectionLabels[$property.Name]=Get-FieldLabel $property.Name $section
-                $fields[$property.Name]=Format-RecordFieldValue $property.Name $property.Value $section
+                if(-not $labelCache.ContainsKey($property.Name)){$labelCache[$property.Name]=Get-FieldLabel $property.Name $section}
+                $sectionLabels[$property.Name]=$labelCache[$property.Name]
+                if(-not $LabelsOnly){$fields[$property.Name]=Format-RecordFieldValue $property.Name $property.Value $section}
             }
-            $sectionValues.Add($fields)
+            if(-not $LabelsOnly){$sectionValues.Add($fields)}
         }
-        $labels[$section]=$sectionLabels;$values[$section]=@($sectionValues.ToArray())
+        $labels[$section]=$sectionLabels
+        if(-not $LabelsOnly){$values[$section]=@($sectionValues.ToArray())}
     }
     return [pscustomobject]@{Labels=$labels;Values=$values}
 }
@@ -103,7 +137,7 @@ try {
     $display=[pscustomobject]@{Mode='Desktop companion'}
     $palette=@{Heading='Cyan';Text='White';Muted='Gray';Border='DarkGray';Good='Green';Warn='Yellow';Error='Red'}
     $script:bridgeCurrentSection='Preparing';$script:bridgeProgressStatus='READING';$script:bridgeSectionClock=$null
-    $script:bridgeLastPulse=[datetime]::UtcNow
+    $script:bridgePulseClock=[Diagnostics.Stopwatch]::StartNew()
     $script:bridgeSaveError=$null;$script:bridgeSaveCompleted=$false
 
     # The desktop owns rendering. Preserve the original scan/report functions
@@ -124,7 +158,7 @@ try {
         param($Prefix)
         $name='Extended device inventory';$completed=$scanTotal
         if([string]$Prefix -match '\[(\d+)/(\d+)\]\s+(.+?)\s*$'){$name=$matches[3].Trim();$completed=[int]$matches[1]-1}
-        $script:bridgeCurrentSection=$name;$script:bridgeProgressStatus='READING';$script:bridgeLastPulse=[datetime]::UtcNow
+        $script:bridgeCurrentSection=$name;$script:bridgeProgressStatus='READING';$script:bridgePulseClock.Restart()
         $script:bridgeSectionClock=[Diagnostics.Stopwatch]::StartNew()
         Send-DesktopProgress $name $completed ($scanTotal+1) 'READING' 0 'Reading hardware details from Windows.'
         return [pscustomobject]@{Name=$name;Clock=$script:bridgeSectionClock}
@@ -138,7 +172,7 @@ try {
             $failure=$report[$Name]
             $message=Get-DesktopReadMessage $failure
             $code=[string]$failure.FailureCode;$next=[string]$failure.NextStep
-        }elseif($Status -eq 'CHECK'){$next='Review explains missing IDs, generic values, and Windows device messages.'}
+        }elseif($Status -eq 'CHECK'){$next='Review explains identification coverage, missing IDs, generic values, and Windows device messages.'}
         Send-DesktopProgress $Name $script:scanStep ($scanTotal+1) $Status $Count $message $Seconds $code $next
         return $null
     }
@@ -147,9 +181,13 @@ try {
         $status='NOT READ';$count=0;$code=$null;$next=$null
         $seconds=-1
         if($null -ne $State.Clock){$State.Clock.Stop();$seconds=$State.Clock.Elapsed.TotalSeconds}
-        if([string]$Text -match '^\[READ\]\s+(\d+)'){
-            $status='READ';$count=[int]$matches[1]
+        if([string]$Text -match '^\[(READ|CHECK)\]\s+(\d+)'){
+            $status=$matches[1];$count=[int]$matches[2]
             $message="$count Windows-known device records read."
+            if($status -eq 'CHECK'){
+                $message+=' Additional identification coverage needs review; this does not establish a hardware fault.'
+                $next='Open Review > Scan coverage or Hardware > Extended device scan for details.'
+            }
         }else{
             $failure=$report['Extended scan info']
             $message=Get-DesktopReadMessage $failure
@@ -161,8 +199,8 @@ try {
     function Update-ScanWaiting {param($State,[double]$Seconds)}
     function Update-ScanProgress {
         param([int]$Completed=$script:scanStep)
-        if($script:bridgeProgressStatus -ne 'READING' -or ([datetime]::UtcNow-$script:bridgeLastPulse).TotalSeconds -lt 1){return}
-        $script:bridgeLastPulse=[datetime]::UtcNow
+        if($script:bridgeProgressStatus -ne 'READING' -or $script:bridgePulseClock.Elapsed.TotalSeconds -lt 1){return}
+        $script:bridgePulseClock.Restart()
         $seconds=if($null -ne $script:bridgeSectionClock){$script:bridgeSectionClock.Elapsed.TotalSeconds}else{-1}
         Send-DesktopProgress $script:bridgeCurrentSection $Completed ($scanTotal+1) 'READING' 0 'Still waiting for Windows. The scan is running.' $seconds
     }
@@ -196,6 +234,7 @@ try {
             Send-DesktopProgress 'Preparing' 0 ($scanTotal+1) 'READING' 0 'Preparing the hardware scan.'
             $snapshot=Invoke-HardwareScan $scanNumber -UseWorker $true -IncludeExtended $true
             if($null -eq $snapshot -or -not $snapshot.Completed -or $snapshot.Inventory -isnot [Collections.IDictionary] -or @($snapshot.Inventory['Scan timing']).Count -ne $scanTotal){throw 'The BAT engine did not return a completed hardware snapshot.'}
+            Assert-DesktopScanTiming $snapshot.Inventory['Scan timing'] $scanTotal $sectionGroups
             foreach($section in @($sectionGroups.Values | ForEach-Object {$_})+@('PnP hardware IDs')){if(-not $snapshot.Inventory.Contains($section)){throw ('The BAT engine did not return the expected section: '+$section)}}
             $inventory=$snapshot.Inventory
             if(-not (Test-ScanHasReadableData $inventory)){
@@ -218,7 +257,7 @@ try {
             $changes=@(foreach($change in (Get-ComparisonDetails $comparison)){
                 [ordered]@{kind=$change.Kind;section=$change.Section;field=$change.Field;device=$change.Device;previous=$change.Previous;current=$change.Current;difference=$(if($change.Kind -eq 'Changed'){Get-IdentifierChangeText $change.Previous $change.Current}else{''})}
             })
-            $result=[ordered]@{changes=$changes;previousCount=$comparison.PreviousCount;currentCount=$comparison.CurrentCount;skippedSections=@($comparison.SkippedSections);unkeyedSections=@($comparison.UnkeyedSections);ambiguousDevices=@($comparison.AmbiguousDevices);skippedFields=$comparison.SkippedFields;scopeWarnings=@($comparison.ScopeWarnings);previousComputer=[string]$previous.'Report info'.Computer;previousCaptured=[string]$previous.'Report info'.Generated;currentComputer=[string]$current.'Report info'.Computer;currentCaptured=[string]$current.'Report info'.Generated;fieldLabels=(Get-DesktopDisplayFields $previous).Labels;fieldValues=$null}
+            $result=[ordered]@{changes=$changes;previousCount=$comparison.PreviousCount;currentCount=$comparison.CurrentCount;skippedSections=@($comparison.SkippedSections);unkeyedSections=@($comparison.UnkeyedSections);ambiguousDevices=@($comparison.AmbiguousDevices);skippedFields=$comparison.SkippedFields;scopeWarnings=@($comparison.ScopeWarnings);previousComputer=[string]$previous.'Report info'.Computer;previousCaptured=[string]$previous.'Report info'.Generated;currentComputer=[string]$current.'Report info'.Computer;currentCaptured=[string]$current.'Report info'.Generated;fieldLabels=(Get-DesktopDisplayFields $previous -LabelsOnly).Labels;fieldValues=$null}
         }
         'Export' {
             $script:bridgeFailureCode='BRIDGE-03'

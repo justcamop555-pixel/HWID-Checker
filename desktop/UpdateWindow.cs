@@ -35,14 +35,14 @@ internal sealed class UpdateWindow : Window
         heading.Children.Add(new TextBlock { Text = "Application updates", FontSize = 22, FontWeight = FontWeights.SemiBold });
         var versions = new TextBlock
         {
-            Text = $"Running Desktop {DesktopUpdater.CurrentVersion}  ·  {scannerVersion}",
+            Text = $"Running Desktop {DesktopUpdater.CurrentVersion}  -  {scannerVersion}",
             Margin = new Thickness(0, 7, 0, 14), TextWrapping = TextWrapping.Wrap
         };
         versions.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
         heading.Children.Add(versions);
         _automatic.Content = new TextBlock
         {
-            Text = updater.RequiresSetup ? "Check for new versions automatically (setup requires administrator approval)" : "Download new versions automatically and install when I close the app",
+            Text = updater.RequiresSetup ? "Check for new versions automatically (install with setup)" : "Download new versions automatically and install when I close the app",
             TextWrapping = TextWrapping.Wrap
         };
         _automatic.IsChecked = updater.AutomaticEnabled;
@@ -110,11 +110,11 @@ internal sealed class UpdateWindow : Window
     private void Refresh()
     {
         var status = _updater.Status;
-        _download.Content = _updater.RequiresSetup ? "Get setup…" : "Download update";
-        _message.Text = status.Message + (_updater.RequiresSetup ? "\n\nThis is an all-users installation. Download the new setup from Releases and run it with administrator approval. Closing the app will not overwrite Program Files." : "") +
+        _download.Content = _updater.RequiresSetup ? "Get setup..." : "Download update";
+        _message.Text = status.Message + (_updater.RequiresSetup ? "\n\n" + _updater.SetupGuidance : "") +
             (status.LatestVersion.Length > 0 && status.State is "available" or "ready" or "repair"
                 ? "\n\nUpdate package " + status.LatestVersion : "") +
-            (status.BatVersion.Length > 0 ? " · BAT " + status.BatVersion : "") +
+            (status.BatVersion.Length > 0 ? " - BAT " + status.BatVersion : "") +
             (_updater.IsReady ? "\n\nThe verified package is ready. " +
                 (_updater.AutomaticEnabled ? "It will install after the app closes." : "Choose Install and restart to apply it.") : "");
         _message.SetResourceReference(TextBlock.ForegroundProperty, status.State == "error" ? "ErrorBrush" :

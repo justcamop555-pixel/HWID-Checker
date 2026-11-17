@@ -37,7 +37,7 @@ var data = JsonSerializer.SerializeToElement(new
         ["System hardware"] = new[] { new { Manufacturer = "SYNTHETIC", Model = "Readable PC" } },
         ["CPU"] = new[] { new { ProcessorId = exactId, SerialNumber = stamp, Name = "Synthetic CPU" } },
         ["Graphics adapters"] = new { Unavailable = "Synthetic provider denial" },
-        ["Extended device inventory"] = new object[] { new { }, new { Unavailable = "Synthetic provider denial" }, new { Name = "Synthetic device" } },
+        ["Extended device inventory"] = new object[] { new { }, new { Unavailable = "Synthetic provider denial" }, new { Name = "Synthetic device", DeviceInstanceId = "SYNTHETIC\\000123" } },
         ["Scan timing"] = new[]
         {
             new { Section = "CPU", Status = "READ", Results = 1 },
@@ -168,6 +168,48 @@ Check(Snapshot("READ", "CHECK").AllSectionsRead && Snapshot("READ").CatalogRow.S
     "An older capture without a device catalog is distinguished from a failed catalog read");
 Check(model.SectionsChecked == 1 && model.CatalogRow.Status == "READ" && model.CatalogRow.Records == "1",
     "Duplicate timing rows cannot inflate the checked count and catalog counts exclude placeholders");
+foreach (var conflictingStatus in new[] { "NOT READ", "UNAVAILABLE", "WAITING", "READING", "UNKNOWN", "" })
+{
+    var mixed = new DesktopSnapshot(JsonSerializer.SerializeToElement(new
+    {
+        inventory = new Dictionary<string, object>
+        {
+            ["Scan timing"] = new[] { new { Section = "CPU", Status = "READ" }, new { Section = " cpu ", Status = conflictingStatus },
+                new { Section = "BIOS", Status = "CHECK" } }
+        }
+    }));
+    Check(mixed.SectionsChecked == 2 && mixed.SectionsRead == 1 && !mixed.AllSectionsRead,
+        "A contradictory or unfinished duplicate cannot hide behind an earlier successful section read: " + conflictingStatus);
+}
+Check(model.SectionsRead == 1 && model.AllSectionsRead,
+    "Consistent successful duplicates remain one readable section in older captures");
+DesktopSnapshot CatalogMetadata(object? metadata, bool include = true)
+{
+    var inventory = new Dictionary<string, object?>
+    {
+        ["Report info"] = new { ExtendedStatus = "Refreshed" },
+        ["Extended device inventory"] = new[] { new { DeviceInstanceId = "SYNTHETIC\\000123" } }
+    };
+    if (include) inventory["Extended scan info"] = metadata;
+    return new DesktopSnapshot(JsonSerializer.SerializeToElement(new { inventory }));
+}
+foreach (var metadata in new object[] { new { Error = "Synthetic failed refresh" }, new { Unavailable = "Synthetic unavailable" },
+    new { Error = true }, new { Unavailable = true } })
+    Check(CatalogMetadata(metadata).CatalogRow.Status == "NOT READ",
+        "Explicit catalog failure takes precedence over a contradictory Refreshed header");
+foreach (var metadata in new object?[] { null, new { }, new { Error = false, Unavailable = false },
+    new { Error = " \t ", Unavailable = "" } })
+    Check(CatalogMetadata(metadata).CatalogRow.Status == "READ",
+        "Null, empty or non-failure catalog metadata does not invent a failed refresh");
+Check(CatalogMetadata(null, include: false).CatalogRow.Status == "READ",
+    "An older Refreshed capture can omit extended metadata without manufacturing a failure");
+foreach (var metadata in new object[] { "Malformed metadata", 42, new[] { "Malformed list" }, new { Error = new[] { "Malformed error" } } })
+{
+    var malformedCatalog = CatalogMetadata(metadata);
+    Check(malformedCatalog.CatalogRow.Status == "UNKNOWN" && malformedCatalog.DeviceCount == 1 &&
+        malformedCatalog.Inventory.Get("Extended device inventory").Rows()[0].Text("DeviceInstanceId") == "SYNTHETIC\\000123",
+        "Malformed catalog metadata stays unknown without discarding captured identifiers");
+}
 foreach (var status in new[] { "Unavailable", "unavailable", " Unavailable " })
 {
     var failed = new DesktopSnapshot(JsonSerializer.SerializeToElement(new
@@ -178,7 +220,7 @@ foreach (var status in new[] { "Unavailable", "unavailable", " Unavailable " })
             ["Extended device inventory"] = new[] { new { Name = "Saved device" } }
         }
     }));
-    Check(failed.CatalogRow.Status == "NOT READ" && failed.CatalogRow.Records == "—",
+    Check(failed.CatalogRow.Status == "NOT READ" && failed.CatalogRow.Records == "Not read",
         "A failed catalog refresh does not present retained records as newly read");
 }
 var unverified = new DesktopSnapshot(JsonSerializer.SerializeToElement(new
@@ -317,7 +359,105 @@ foreach(var query in new[] { "", "cpu", "000001", "000009", "synthetic", "number
     Check(searchCapture.MatchesSearch(query) == string.Join(" ", searchCapture.Name, searchCapture.Computer, searchCapture.Captured, searchCapture.Path, searchCapture.Version).Contains(query,StringComparison.OrdinalIgnoreCase),
         "Snapshot search preserves path/date/version and cross-field phrase matches: " + query);
 }
+using (var overrides = JsonDocument.Parse("""{"inventory":{"CPU":[{"Name":"raw"}]},"fieldValues":{"CPU":[{"Name":"first"},{"Name":"second"}]}}"""))
+{
+    var display = new DesktopSnapshot(overrides.RootElement);
+    var raw = display.Inventory.Get("CPU")[0].Get("Name");
+    Check(display.FieldValue("CPU", 1, "Name", raw) == "second", "display values retain the original array record index");
+    Check(display.FieldValue("CPU", -1, "Name", raw) == "raw" && display.FieldValue("CPU", 2, "Name", raw) == "raw",
+        "out-of-range display indexes fall back to the exact raw value");
+}
+using (var scalarOverrides = JsonDocument.Parse("""{"inventory":{"CPU":[{"Name":"raw"}]},"fieldValues":{"CPU":{"Name":"single"}}}"""))
+{
+    var display = new DesktopSnapshot(scalarOverrides.RootElement);
+    var raw = display.Inventory.Get("CPU")[0].Get("Name");
+    Check(display.FieldValue("CPU", 0, "Name", raw) == "single" && display.FieldValue("CPU", 1, "Name", raw) == "raw",
+        "single-record display values preserve the prior scalar-object behavior");
+}
+using (var availability = JsonDocument.Parse("""{"inventory":{"Report info":{"Version":"3.97"},"Monitors":[{"RecordKind":"Collection status","IdentificationRecords":0,"IdentificationStatus":"No identification records reported","Scope":"Physical display count undetermined"}],"Windows":[{"Caption":"Synthetic Windows","SecureBoot":null,"SecureBootReadStatus":"Access blocked","SecureBootReadCode":"READ-01","TPM":null,"TPMReadStatus":"Not reported"}]},"identifiers":[],"review":{}}"""))
+{
+    var available = new DesktopSnapshot(availability.RootElement);
+    var status = available.FindHardwareRecords("Monitors", "").Single();
+    Check(available.RecordTitle("Monitors", status.Data, status.Index) == "Monitor identification status - 0 identification records",
+        "a zero-identification status is a readable collection result rather than an invented physical monitor");
+    Check(available.Identifiers.Count == 0 && available.Findings.Count == 0 && status.Data.Number("IdentificationRecords") == 0,
+        "monitor availability metadata does not invent serials, missing-ID findings or physical display counts");
+    Check(available.Label("Windows", "SecureBootReadStatus") == "Secure Boot read status" &&
+        available.Label("Windows", "TPMReadCode") == "TPM read code" && available.Inventory.Get("Windows").Rows()[0].Get("SecureBoot").ValueKind == JsonValueKind.Null,
+        "optional firmware diagnostics keep readable labels and an unknown value instead of a false disabled state");
+}
+DesktopSnapshot CoverageCapture(string? key = null, bool suppliedReview = false)
+{
+    var info = new Dictionary<string, object> { ["PropertyNodesRequested"] = 1, ["PropertyNodesReturned"] = 1,
+        ["PropertyNodesWithoutRows"] = 0, ["PropertyReadErrors"] = 3 };
+    if (key != null) info[key] = 1;
+    return new DesktopSnapshot(JsonSerializer.SerializeToElement(new
+    {
+        inventory = new Dictionary<string, object>
+        {
+            ["Report info"] = new { ExtendedStatus = "Refreshed" }, ["Extended scan info"] = info,
+            ["Extended device inventory"] = new[] { new { DeviceInstanceId = "SYNTHETIC\\000123", HardwareID = new[] { "MODEL-000123" } } }
+        },
+        identifiers = new[] { new { Section = "CPU", Field = "ProcessorId", Value = "000123", Quality = "Reported" } },
+        review = new { CoverageIssues = suppliedReview ? new[] { new { Section = "Extended device inventory", Message = "Additional identification incomplete", Details = "Synthetic property coverage", Action = "Inspect metadata" } } : [] }
+    }));
+}
+foreach (var key in new[] { "PropertyNodesWithoutRows", "PropertyBlockingErrors", "MissingInstanceIds", "InvalidPropertyRows", "IdSourceConflicts", "IdPropertyConflicts", "ContainerIdConflicts" })
+{
+    var coverage = CoverageCapture(key);
+    Check(coverage.CatalogRow.Status == "CHECK" && coverage.CatalogRow.Records == "1" &&
+        coverage.Findings.Count(row => row.Kind == "Scan coverage") == 1 && coverage.Identifiers[0].Value == "000123",
+        key + " keeps readable records/exact IDs while exposing identification coverage instead of plain success");
+}
+Check(CoverageCapture().CatalogRow.Status == "READ" && CoverageCapture().Findings.Count == 0,
+    "generic optional-property errors alone do not invent a fault when every node returned properties");
+Check(CoverageCapture("PropertyNodesWithoutRows", true).Findings.Count(row => row.Kind == "Scan coverage") == 1,
+    "engine-supplied catalog coverage is not duplicated by legacy metadata fallback");
+Check(CoverageCapture().Identifiers[0].Value == CoverageCapture("PropertyNodesWithoutRows").Identifiers[0].Value,
+    "healthy replacement coverage clears the qualifier without rewriting accepted identifiers");
+foreach (var alias in new[] { "DeviceInstanceId", "PNPDeviceID", "InstanceId", "DeviceID" })
+{
+    var legacy = new DesktopSnapshot(JsonSerializer.SerializeToElement(new
+    {
+        inventory = new Dictionary<string, object> { ["Report info"] = new { ExtendedStatus = "Refreshed" },
+            ["Extended device inventory"] = new[] { new Dictionary<string, object> { ["Name"] = "Legacy node", [alias] = "SYNTHETIC\\000123" } } }
+    }));
+    Check(legacy.CatalogRow.Status == "READ", "legacy " + alias + " counts as a supplied instance key without new coverage counters");
+}
+var noInstance = new DesktopSnapshot(JsonSerializer.SerializeToElement(new
+{
+    inventory = new Dictionary<string, object> { ["Report info"] = new { ExtendedStatus = "Refreshed" },
+        ["Extended device inventory"] = new[] { new { Name = "Legacy named node", DeviceInstanceId = " \0 " } } }
+}));
+Check(noInstance.DeviceCount == 1 && noInstance.CatalogRow.Status == "CHECK" && noInstance.Findings.Single().Kind == "Scan coverage",
+    "legacy named records without usable instance keys remain available but cannot imply full identification");
 Console.WriteLine($"All {checks} desktop model, search and export checks passed. Synthetic identifiers only.");
+if (args.Contains("--benchmark-fields"))
+{
+    var report = JsonSerializer.SerializeToElement(new
+    {
+        inventory = new { CPU = new[] { new { Name = "raw" } } },
+        fieldValues = new { CPU = Enumerable.Range(0, 3000).Select(i => new { Name = "display-" + i }).ToArray() }
+    });
+    var display = new DesktopSnapshot(report);
+    var raw = report.Get("inventory").Get("CPU")[0].Get("Name");
+    string Legacy(int index) => report.Get("fieldValues").Get("CPU").Rows()[index].Text("Name");
+    _ = display.FieldValue("CPU", 2999, "Name", raw); _ = Legacy(2999);
+    var allocated = GC.GetAllocatedBytesForCurrentThread();
+    var clock = System.Diagnostics.Stopwatch.StartNew();
+    var length = 0;
+    for (var i = 0; i < 1000; i++) length += display.FieldValue("CPU", 2999, "Name", raw).Length;
+    var directBytes = GC.GetAllocatedBytesForCurrentThread() - allocated;
+    var directMs = clock.Elapsed.TotalMilliseconds;
+    allocated = GC.GetAllocatedBytesForCurrentThread(); clock.Restart();
+    var legacyLength = 0;
+    for (var i = 0; i < 1000; i++) legacyLength += Legacy(2999).Length;
+    var legacyBytes = GC.GetAllocatedBytesForCurrentThread() - allocated;
+    var legacyMs = clock.Elapsed.TotalMilliseconds;
+    if (length != legacyLength) throw new Exception("The field benchmark changed display values.");
+    Console.WriteLine(JsonSerializer.Serialize(new { scenario = "3000 display records / 1000 field lookups", directBytes, legacyBytes, directMs, legacyMs,
+        exactOutputMatched = true, syntheticOnly = true }));
+}
 if (args.Contains("--benchmark-hardware"))
 {
     var large = new DesktopSnapshot(JsonSerializer.SerializeToElement(new

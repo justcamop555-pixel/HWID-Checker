@@ -38,8 +38,8 @@ static void paint(HWND hwnd) {
     SelectObject(dc, bodyFont); SetTextColor(dc, failed ? RGB(255, 200, 100) : RGB(101, 222, 207));
     WCHAR text[280];
     if (failed) StringCchPrintfW(text, 280, L"Startup stopped (code %lu). Repair the installation or extract the complete package again. Keep all its files together.", resultCode);
-    else if (cancelled) StringCchCopyW(text, 280, L"Cancelling startup. Waiting for Windows to finish opening the application process…");
-    else StringCchPrintfW(text, 280, L"Opening the desktop… %llu s\nWindows may take longer to verify files on the first launch.", (GetTickCount64() - started) / 1000);
+    else if (cancelled) StringCchCopyW(text, 280, L"Cancelling startup. Waiting for Windows to finish opening the application process...");
+    else StringCchPrintfW(text, 280, L"Opening the desktop... %llu s\nWindows may take longer to verify files on the first launch.", (GetTickCount64() - started) / 1000);
     r.top = px(65); r.bottom = px(129); DrawTextW(dc, text, -1, &r, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
     SetTextColor(dc, RGB(166, 190, 211)); r.top = px(139); r.bottom = px(180); r.right -= px(106);
     DrawTextW(dc, L"No scan starts automatically. Close to cancel before the desktop opens.", -1, &r, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);

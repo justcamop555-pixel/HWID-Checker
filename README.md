@@ -4,8 +4,8 @@
 
 **Inspect Windows hardware identifiers, save snapshots, and see what changed.**
 
-[![Version: 3.94](https://img.shields.io/badge/version-3.94-2563eb?style=flat-square)](docs/CHANGELOG.md)
-[![Desktop: 1.5.0](https://img.shields.io/badge/desktop-1.5.0-238579?style=flat-square)](desktop/README.md)
+[![Scanner: 3.98](https://img.shields.io/badge/scanner-3.98-2563eb?style=flat-square)](docs/CHANGELOG.md)
+[![Desktop: 1.5.8](https://img.shields.io/badge/desktop-1.5.8-238579?style=flat-square)](desktop/README.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square)](#compatibility)
 [![Language: PowerShell + Batch](https://img.shields.io/badge/language-PowerShell%20%2B%20Batch-5391fe?style=flat-square)](hwid.bat)
 [![Desktop: C# + WPF](https://img.shields.io/badge/desktop-C%23%20%2B%20WPF-5965b0?style=flat-square)](desktop/HwidDesktop.csproj)
@@ -25,6 +25,7 @@
 - [Privacy and security](#privacy-and-security)
 - [Compatibility](#compatibility)
 - [FAQ](#faq)
+- [Full FAQ: 38 questions](docs/FAQ.md)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [Documentation and repository layout](#documentation-and-repository-layout)
@@ -34,7 +35,7 @@
 
 HWID Checker is a local, read-only Windows hardware inventory tool with a desktop interface and a PowerShell/Batch console. Both interfaces use the scanning and report functions in `hwid.bat`. They bring hardware information and identifiers from Windows providers into one inventory, then let you save it and compare selected ID fields with an earlier capture.
 
-**Desktop 1.5.0** and **BAT 3.94** share a local snapshot library and a package updater. The desktop overview presents the PC name, model and capture time, and uses square controls with a responsive layout. [Desktop guide and source build](desktop/README.md)
+**Current release: Desktop 1.5.8 and BAT 3.98.** Download the [Windows x64 installer or complete portable ZIP](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.5.8). Both interfaces share a local snapshot library and a package updater. The desktop overview presents the PC name, model and capture time, and uses square controls with a responsive layout. [Desktop guide and source build](desktop/README.md)
 
 It is intended for PC owners, support technicians, and developers troubleshooting missing identifiers, documenting a system, or checking changes after hardware or Windows updates. It reports what Windows exposes; it does not certify hardware health, authenticity, or identifier uniqueness.
 
@@ -68,6 +69,7 @@ Each full scan reads **18 hardware/system sections**, followed by an **all-known
 - **Accurate scan errors:** query cleanup problems retain their own diagnostics. They preserve validated hardware results and the original provider failure code, including during extended-device refreshes.
 - **Native CIM error handling:** named Windows error codes identify blocked access, timeouts and unavailable providers even when the message is localized. Rejected optional-property queries can recover through one compatible read.
 - **Scan recovery:** compatible property reads and alternative readers where implemented, with timing, source details, explicit failures, and rescan support. Empty/malformed adapter records and container-shaped scalar IDs trigger a compatible reader before acceptance. Query diagnostics retain earlier recovery attempts even if a later read fails; incomplete records stay rejected. Full reports and exports keep the details.
+- **Model-dependent results:** a successful monitor-identification query with no records is shown as zero identification records, rather than a failed read or proof that no display is connected. Optional Secure Boot and TPM readings keep their own availability status and code. Malformed primary present-device inventories can use one fully validated compatible reader.
 - **Warnings and conflicts:** review missing/default IDs, unread sections, device-status findings, duplicate keys, and conflicting storage serial readings separately. Resource shortages and reported conflicts have separate categories. A readable device name alone does not imply a fault; the extended scan can recover usable name/class aliases while retaining malformed raw labels.
 - **ID-source checks:** preserve exact hardware/compatible-ID observations, flag disagreement between native and property readers, and report distinct-node property coverage. Property reads use bounded batches with one concurrent operation to avoid duplicate-node results observed with parallel Windows queries.
 - **TXT and JSON exports:** save a new report pair with scan/save timestamps and final-content verification. Existing snapshots are not overwritten.
@@ -118,7 +120,7 @@ Comparison results show OLD/NEW values and character differences. A difference r
 
 ### Desktop EXE
 
-Download the [Windows x64 release](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.5.0): choose the **Setup EXE** for an all-users installation with repair/uninstall, or extract the **complete portable ZIP**. Setup requires administrator approval; normal scans can run as a standard user. Keep every ZIP companion file together, including **HWID Checker.App.exe**, DLLs and language folders. Open **HWID Checker.exe**, then choose **Scan this PC**. **Open BAT console** opens the connected scanner.
+Download a Windows x64 package from [GitHub Releases](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.5.8). Choose its **Setup EXE** or extract the **complete portable ZIP**. The 1.5.8 setup offers **Just for me** without administrator access by default, or **All users** with administrator approval; older installers may offer only an all-users installation. Follow the guide included with your release. Normal scans can run as a standard user. Keep every ZIP companion file together, including **HWID Checker.App.exe**, DLLs and language folders. Open **HWID Checker.exe**, then choose **Scan this PC**. **Open BAT console** opens the connected scanner.
 
 **Upgrading from 1.4.x:** use the full installer or extract the new ZIP into a new folder. The old updater cannot install the 1.5.0 runtime layout. Keep saved snapshots and reconnect their folder through Snapshots if needed. [Setup and repair guide](desktop/installer/README.md)
 
@@ -234,12 +236,12 @@ Treat reports as identifying information. Review and redact them before posting 
 
 ## Compatibility
 
-The current local validation environment is **Windows 11 Pro, build 26300**. Regression checks cover Windows PowerShell **5.1** and PowerShell **7.6.5**; console and live scan/rescan diagnostics have also been run on that PC. This is not a certification of every Windows edition, build, or hardware configuration.
+The current local validation environment is **Windows 11 Pro, build 26300**. Regression checks cover Windows PowerShell **5.1** and PowerShell **7.6.9**; console and live scan/rescan diagnostics have also been run on that PC. This is not a certification of every Windows edition, build, or hardware configuration.
 
 | Environment | Verification status |
 | --- | --- |
 | Windows 11 Pro, build 26300 | Locally validated with synthetic regressions, console checks, and read-only scan/rescan diagnostics |
-| Windows PowerShell 5.1 / PowerShell 7.6.5 | Both used for regression validation; runtime selection and launchers have separate checks |
+| Windows PowerShell 5.1 / PowerShell 7.6.9 | Both used for regression validation; runtime selection and launchers have separate checks |
 | Desktop, Windows x64 | Self-contained .NET 10 package. See [desktop verification](desktop/VERIFICATION.md) for tested versions and Windows builds. |
 | Other Windows builds and Windows Server | Not verified by the current validation record; runtime and provider availability must be checked |
 | Linux / macOS | Unsupported; collection and console behavior depend on Windows APIs |
@@ -247,6 +249,8 @@ The current local validation environment is **Windows 11 Pro, build 26300**. Reg
 Missing optional commands/providers can reduce coverage while other sections remain usable. Windows PowerShell below 5.1 and restricted language modes are rejected. See [compatibility and common problems](docs/USAGE.md#compatibility-and-common-problems) for `COMPAT` and `READ` guidance.
 
 ## FAQ
+
+The [full FAQ has 38 questions](docs/FAQ.md), including differences between PC models, optional hardware, read failures, false positives, saved snapshots, setup and privacy. Common starting points are below.
 
 ### Is there one HWID for the entire PC?
 
@@ -309,6 +313,7 @@ See [developer checks](tests/README.md) for focused suites and diagnostics. Synt
 | Document | Purpose |
 | --- | --- |
 | [Usage and troubleshooting](docs/USAGE.md) | Scan status, warning codes, saving, comparison, navigation, and compatibility |
+| [FAQ: 38 questions](docs/FAQ.md) | PC-model differences, missing IDs, optional hardware, scan results, saving, comparison, setup and privacy |
 | [Identifier reference](docs/IDENTIFIERS.md) | Identifier meanings, scope, and limitations |
 | [Graphics and network field audit](docs/GRAPHICS-NETWORK.md) | Corrected labels, Windows sources, reader coverage, and validation limits |
 | [Changelog](docs/CHANGELOG.md) | Version history and validation notes |

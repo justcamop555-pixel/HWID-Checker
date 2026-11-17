@@ -1,4 +1,4 @@
-# HWID_PACKAGE_VERSION = '1.5.0'
+# HWID_PACKAGE_VERSION = '1.5.8'
 [CmdletBinding()]
 param(
     [ValidateSet('Check','Prepare','Apply')][string]$Mode='Check',
@@ -622,6 +622,10 @@ function Get-PreparedUpdateResult([string]$Path,[string]$Installation,[string]$C
 }
 function Test-SetupManagedDirectory([string]$Directory) {
     if([IO.File]::Exists((Join-Path $Directory 'HWID-SETUP.ini'))){return $true}
+    if($env:LOCALAPPDATA){
+        $personal=[IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\HWID Checker')).TrimEnd('\')
+        if($Directory.Equals($personal,[StringComparison]::OrdinalIgnoreCase) -or $Directory.StartsWith($personal+'\',[StringComparison]::OrdinalIgnoreCase)){return $true}
+    }
     foreach($root in @($env:ProgramFiles,${env:ProgramFiles(x86)},$env:ProgramW6432)){
         if(-not $root){continue}
         $prefix=[IO.Path]::GetFullPath($root).TrimEnd('\')
@@ -633,7 +637,7 @@ function Invoke-HwidUpdate {
     $current=ConvertTo-UpdateVersion $CurrentVersion
     $installation=ConvertTo-UpdateDirectory $InstallDirectory
     $managed=Test-SetupManagedDirectory $installation
-    if($managed -and $Mode -eq 'Apply'){throw 'This all-users installation must be updated or repaired using setup with administrator approval. Saved snapshots are kept.'}
+    if($managed -and $Mode -eq 'Apply'){throw 'This setup-managed installation must be updated or repaired using setup in the same installation mode. Only All users requires administrator approval. Saved snapshots are kept.'}
     if($managed -and $Mode -eq 'Prepare'){$Mode='Check'}
     if($Mode -eq 'Apply'){return Apply-HwidUpdate $installation $current.ToString(3) $Component $StageDirectory $WaitProcessId $WaitProcessStartTicks ([bool]$Relaunch)}
     if($Component -eq 'Package'){

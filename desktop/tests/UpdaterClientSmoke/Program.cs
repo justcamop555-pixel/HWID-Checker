@@ -238,4 +238,37 @@ using (var managed = new DesktopUpdater(install, Path.Combine(root, "managed-cac
 }
 Check(InstallationLayout.IsUnder(@"C:\Program Files\HWID Checker", @"C:\Program Files") &&
     !InstallationLayout.IsUnder(@"C:\Program Files copy\HWID Checker", @"C:\Program Files"), "protected path checks require a directory boundary");
+File.WriteAllText(Path.Combine(install, InstallationLayout.MarkerName), "[Installation]\nScope=CurrentUser");
+using (var personal = new DesktopUpdater(install, Path.Combine(root, "personal-cache")))
+{
+    Check(InstallationLayout.Scope(install) == InstallationScope.CurrentUser && personal.RequiresSetup,
+        "current-user setup markers select installer updates without claiming an all-users install");
+    var repair = InstallationLayout.RepairStartInfo(install);
+    Check(repair.Arguments == "/CURRENTUSER" && repair.Verb.Length == 0 && repair.UseShellExecute,
+        "personal repair preserves current-user mode without forced elevation");
+    Check(personal.SetupGuidance.Contains("not required"), "personal setup guidance explains that administrator approval is not required");
+    await personal.DownloadAsync();
+    Check(personal.Status.State == "available" && !personal.ScheduleApply(true), "personal installations retain setup-managed update ownership");
+}
+File.WriteAllText(Path.Combine(install, InstallationLayout.MarkerName), "[Installation]\nScope=AllUsers");
+Check(InstallationLayout.RepairStartInfo(install).Arguments == "/ALLUSERS", "all-users repair preserves machine installation mode");
+File.WriteAllText(Path.Combine(install, InstallationLayout.MarkerName), "[Installation]\nScope=CurrentUser\nScope=AllUsers");
+Check(InstallationLayout.Scope(install) == InstallationScope.SetupManaged && InstallationLayout.RepairStartInfo(install).Arguments == "",
+    "ambiguous markers retain setup ownership and ask for scope instead of guessing");
+var personalRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "HWID Checker");
+Check(InstallationLayout.IsManaged(personalRoot) && InstallationLayout.Scope(personalRoot) == InstallationScope.CurrentUser &&
+    !InstallationLayout.IsManaged(personalRoot + " copy"), "personal default paths retain their scope if the marker is missing, with a path boundary");
+var sessionDirectory = Path.Combine(root, "session-install");
+Check(SetupSession.MutexName(sessionDirectory) == SetupSession.MutexName(sessionDirectory.ToUpperInvariant() + "\\"),
+    "setup session names ignore ASCII path case and a trailing separator");
+Check(SetupSession.MutexName(sessionDirectory) != SetupSession.MutexName(sessionDirectory + "-other"),
+    "different installation folders have independent running-app guards");
+using (var session = SetupSession.Hold(sessionDirectory))
+using (var secondSession = SetupSession.Hold(sessionDirectory))
+{
+    Mutex? observed = null;
+    Check(session != null && secondSession != null && Mutex.TryOpenExisting(SetupSession.MutexName(sessionDirectory), out observed),
+        "the existence guard supports simultaneous app instances and restart overlap");
+    if (observed != null) observed.Dispose();
+}
 Console.WriteLine(JsonSerializer.Serialize(new { checks, syntheticOnly = true }));

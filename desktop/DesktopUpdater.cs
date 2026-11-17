@@ -49,6 +49,7 @@ internal sealed class DesktopUpdater : IDisposable
     public UpdateStatus Status { get; private set; } = new("idle", "Updates have not been checked yet.");
     public bool IsBusy => _cancellation != null;
     public bool RequiresSetup => InstallationLayout.IsManaged(_directory);
+    public string SetupGuidance => InstallationLayout.SetupGuidance(InstallationLayout.Scope(_directory));
     public bool AutomaticEnabled { get; private set; }
     public bool IsReady => !RequiresSetup && CanApply(Status);
 
@@ -170,7 +171,7 @@ internal sealed class DesktopUpdater : IDisposable
         }
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(5));
         _cancellation = cancellation;
-        Status = new("checking", mode == "Prepare" ? "Checking and preparing a newer package…" : "Checking published versions…");
+        Status = new("checking", mode == "Prepare" ? "Checking and preparing a newer package..." : "Checking published versions...");
         Notify();
         Process? process = null;
         try
@@ -232,7 +233,7 @@ internal sealed class DesktopUpdater : IDisposable
         if (RequiresSetup && status.State is "ready" or "repair")
             return TryPackageVersion(status.LatestVersion, out var setupVersion) && setupVersion > current
                 ? status with { State = "available", StageDirectory = "", SourceVersion = CurrentVersion,
-                    Message = "A newer version is available. Run its all-users setup with administrator approval." }
+                    Message = "A newer version is available. " + SetupGuidance }
                 : RunningStatus();
         if (status.State == "ready")
         {
@@ -305,7 +306,11 @@ internal sealed class DesktopUpdater : IDisposable
     private ProcessStartInfo CreateStart(string script, string mode, string? sourceVersion = null)
     {
         var runtime = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
-        if (!File.Exists(runtime)) runtime = "pwsh.exe";
+        if (!File.Exists(runtime))
+        {
+            runtime = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell", "7", "pwsh.exe");
+            if (!File.Exists(runtime)) runtime = "pwsh.exe";
+        }
         var start = new ProcessStartInfo(runtime)
         {
             UseShellExecute = false, CreateNoWindow = true,

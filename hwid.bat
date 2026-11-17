@@ -1191,7 +1191,8 @@ function Show-CompactDeck($Width) {
     $size=[math]::Max(8,$Width-1)
     Write-Host (Limit-TableText '  HWID / MAIN MENU' $size) -ForegroundColor $palette.Heading
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
-    $review=(Get-ReviewSummary $report $identifiers $warnings).Total
+    $reviewInfo=Get-ReviewSummary $report $identifiers $warnings
+    $review=$reviewInfo.Total
     Write-Host (Limit-TableText ("  Found: $found / Review: $review") $size) -ForegroundColor $palette.Text
     Write-Host ''
     foreach($entry in @(@('1','Summary'),@('2','ID numbers'),@('3','Browse devices'),@('4','Check warnings'),@('5','Full inventory'),@('6','Save reports'),@('7','Compare IDs'),@('8','Snapshot library'),@('9','Rescan / updates'),@('0','Exit'))) {
@@ -1209,16 +1210,17 @@ function Show-ControlDeck {
         }
     } catch {}
     Write-Heading 'MAIN MENU / HWID CHECKER'
-    Write-Host '  HWID CHECKER  /  v3.94' -ForegroundColor $palette.Text
+    Write-Host '  HWID CHECKER  /  v3.98' -ForegroundColor $palette.Text
     $access=if($admin){'Administrator'}else{'Standard user'}
     Write-Host ("  "+$report['Report info'].Computer+"  /  $access  /  Read-only scan") -ForegroundColor $palette.Muted
     $found=@($identifiers | Where-Object Quality -eq 'Reported').Count
-    $review=(Get-ReviewSummary $report $identifiers $warnings).Total
+    $reviewInfo=Get-ReviewSummary $report $identifiers $warnings
+    $review=$reviewInfo.Total
     Write-Host ''
     $read=(Get-ScanCoverage $report | Measure-Object Read -Sum).Sum
     $complete=$read -eq $scanTotal -and $report['Report info'].ExtendedStatus -ne 'Unavailable'
-    $status=if($complete){'SCAN COMPLETE'}else{'SCAN PARTIAL'}
-    Write-Host ("  [$status]  $found identifier fields / $read of $scanTotal sections read"+$(if($report['Report info'].ExtendedStatus -eq 'Unavailable'){' / extended not read'})) -ForegroundColor $(if($complete){$palette.Good}else{$palette.Warn})
+    $status=if(-not $complete){'SCAN PARTIAL'}elseif($reviewInfo.CoverageCount){'SCAN FINISHED / REVIEW'}else{'SCAN COMPLETE'}
+    Write-Host ("  [$status]  $found identifier fields / $read of $scanTotal sections read"+$(if($report['Report info'].ExtendedStatus -eq 'Unavailable'){' / extended not read'})) -ForegroundColor $(if($complete -and -not $reviewInfo.CoverageCount){$palette.Good}else{$palette.Warn})
     Write-Host "  [REVIEW]  $review items  /  [4] explains missing IDs and conflicts" -ForegroundColor $(if($review){$palette.Warn}else{$palette.Muted})
     $captured=Format-ScanTime $report['Report info'].Generated
     Write-Host ("  Captured: $captured  /  [9] Rescan when devices change") -ForegroundColor $palette.Muted
@@ -1258,6 +1260,14 @@ function Get-FieldLabel($Name,$SectionName='') {
         if($metadata.ContainsKey($Name)){return $metadata[$Name]}
     }
     if($SectionName -eq 'Extended scan info' -and $Name -eq 'Captured'){return 'Captured at'}
+    if($SectionName -eq 'Windows'){
+        $firmwareLabels=@{SecureBootReadStatus='Secure Boot read status';SecureBootReadCode='Secure Boot read code';TPMReadStatus='TPM read status';TPMReadCode='TPM read code'}
+        if($firmwareLabels.ContainsKey($Name)){return $firmwareLabels[$Name]}
+    }
+    if($SectionName -eq 'Monitors'){
+        $monitorLabels=@{RecordKind='Entry type';IdentificationRecords='Monitor identification records returned';IdentificationStatus='Monitor identification read result';Scope='Read scope'}
+        if($monitorLabels.ContainsKey($Name)){return $monitorLabels[$Name]}
+    }
     if($SectionName -eq 'Network adapters' -and $Name -eq 'Speed'){return 'Reported network bandwidth (bits/s)'}
     if($SectionName -eq 'Memory modules' -and $Name -eq 'Speed'){return 'Memory speed (Windows-reported raw)'}
     $labels = @{
@@ -1405,6 +1415,7 @@ function Get-QuickIds($Inventory) {
         $records=@($records | Where-Object {$null -ne $_})
         $index = 0
         foreach ($record in $records) {
+            if($section -eq 'Monitors' -and $record.RecordKind -eq 'Collection status' -and $record.IdentificationRecords -eq 0 -and [string]::IsNullOrWhiteSpace((Normalize-IdentifierText $record.InstanceName)) -and [string]::IsNullOrWhiteSpace((Normalize-IdentifierText $record.SerialNumber))){continue}
             $index++
             # Older snapshots may not contain the permanent-address field at all.
             $hasField=if($record -is [System.Collections.IDictionary]){@($record.Keys) -contains $field}else{$null -ne $record.PSObject.Properties[$field]}
@@ -1584,7 +1595,8 @@ function Get-OverviewSummary($Inventory,$IdRows,$QueryWarnings) {
         if($info.Error -or -not (Test-SectionReadable $Inventory['Extended device inventory'])) {
             $extraState='NOT READ'
         } else {
-            $extraState=if($Inventory['Report info'].ExtendedStatus -eq 'Unavailable'){'STALE'}else{'READ'}
+            $extraCoverage=Get-ExtendedIdentificationCoverage $info $Inventory['Extended device inventory']
+            $extraState=if($Inventory['Report info'].ExtendedStatus -eq 'Unavailable'){'STALE'}elseif($extraCoverage.NeedsReview){'CHECK'}else{'READ'}
             $extra=@($Inventory['Extended device inventory'] | Where-Object {$null -ne $_})
             $known=$extra.Count
             $hidden=@($extra | Where-Object {$_.HiddenByNodeFlag -eq $true -or $_.HiddenByClass -eq $true}).Count
@@ -1597,7 +1609,7 @@ function Get-OverviewSummary($Inventory,$IdRows,$QueryWarnings) {
     }
     if($extraState -eq 'NOT READ' -and $Inventory['Report info'].ExtendedAttempted){$captured=$Inventory['Report info'].ExtendedAttempted}
     [pscustomobject]@{
-        Coverage=$coverage;Read=$read;Total=$total;NotRead=($total-$read);Complete=($read -eq $total -and $extraState -notin @('NOT READ','STALE'))
+        Coverage=$coverage;Read=$read;Total=$total;NotRead=($total-$read);Complete=($read -eq $total -and $extraState -notin @('NOT READ','STALE','CHECK') -and -not $review.CoverageCount)
         Found=@($IdRows | Where-Object Quality -eq 'Reported').Count
         Missing=@($IdRows | Where-Object Quality -eq 'Missing').Count
         Default=@($IdRows | Where-Object Quality -eq 'Placeholder').Count
@@ -1750,6 +1762,84 @@ function Get-ReviewReadFailures($Inventory,$QueryWarnings) {
     }
     $entries.ToArray()
 }
+function Get-PresentIdentificationCoverage($Rows) {
+    $items=@($Rows | Where-Object {$null -ne $_})
+    $unresolved=0;$failed=0;$blocking=0;$affected=0
+    foreach($row in $items){
+        $needsIdentity=[string]::IsNullOrWhiteSpace((Normalize-IdentifierText $row.DeviceInstanceId)) -or
+            -not (Test-DeviceDisplayText $row.Name) -or (Get-DeviceIdListInfo $row.HardwareID).Values.Count -eq 0
+        $codes=@($row.IdentificationReadFailureCodes | Where-Object {$_})
+        $lookupFailed=@($row.IdentificationReadErrors | Where-Object {$_}).Count -gt 0 -or $codes.Count -gt 0 -or
+            $row.IdentificationReadStatus -match '(?i)lookup incomplete|reader unavailable'
+        $blocked=@($codes | Where-Object {$_ -in @('READ-01','READ-02','READ-03')}).Count -gt 0
+        if($needsIdentity){$unresolved++}
+        if($lookupFailed){$failed++}
+        if($blocked){$blocking++}
+        if(($needsIdentity -and $lookupFailed) -or $blocked){$affected++}
+    }
+    $review=$affected -gt 0
+    [pscustomobject]@{
+        NeedsReview=$review;Nodes=$items.Count;UnresolvedNodes=$unresolved;FailedLookups=$failed;BlockingFailures=$blocking;AffectedNodes=$affected
+        Message=$(if($review){"Identification checks incomplete for $affected present device record(s)"}else{'No failed present-device identification checks require review'})
+        Details=("$unresolved records lack a readable name, instance ID or model ID; $failed have failed lookup diagnostics; $blocking have access, timeout or provider failures. Primary records and supplied IDs were retained. Missing optional values alone do not establish a hardware fault.")
+        Action='Inspect identification read status and raw observations in Main [5]. Retry [9] > [1] if appropriate; do not assume the device is faulty.'
+    }
+}
+function Get-ExtendedIdentificationCoverage($Info,$Rows) {
+    $items=@($Rows | Where-Object {$null -ne $_})
+    $requested=Get-DeviceUInt32Info $Info.PropertyNodesRequested
+    $returned=Get-DeviceUInt32Info $Info.PropertyNodesReturned
+    $missingProperties=Get-DeviceUInt32Info $Info.PropertyNodesWithoutRows
+    $without=if($missingProperties.Valid){[long]$missingProperties.Value}elseif($requested.Valid -and $returned.Valid){[math]::Max(0,([long]$requested.Value-[long]$returned.Value))}else{0}
+    $missingIds=0
+    foreach($row in $items){
+        # Older captures may retain a provider's instance-ID field name. Check
+        # typed aliases for coverage only; keep every original value unchanged.
+        $hasInstanceId=$false
+        foreach($field in @('DeviceInstanceId','PNPDeviceID','InstanceId','DeviceID')){
+            $value=$row.$field
+            if($value -is [string] -and -not [string]::IsNullOrWhiteSpace((Normalize-IdentifierText $value))){$hasInstanceId=$true;break}
+        }
+        if(-not $hasInstanceId){$missingIds++}
+    }
+    $sourceConflicts=@($items | Where-Object {$_.HardwareIDSourceConflict -eq $true -or $_.CompatibleIDSourceConflict -eq $true}).Count
+    $propertyConflicts=@($items | Where-Object {$_.HardwareIDPropertyConflict -eq $true -or $_.CompatibleIDPropertyConflict -eq $true}).Count
+    $containerConflicts=@($items | Where-Object {$_.ContainerIdConflict -eq $true -or $_.BaseContainerIdConflict -eq $true}).Count
+    foreach($counter in @(@('MissingInstanceIds','missingIds'),@('IdSourceConflicts','sourceConflicts'),@('IdPropertyConflicts','propertyConflicts'),@('ContainerIdConflicts','containerConflicts'))){
+        $stored=Get-DeviceUInt32Info $Info.($counter[0])
+        if($stored.Valid){Set-Variable -Name $counter[1] -Value ([math]::Max([long]$stored.Value,[long](Get-Variable -Name $counter[1] -ValueOnly)))}
+    }
+    $invalid=Get-DeviceUInt32Info $Info.InvalidPropertyRows
+    $blocked=Get-DeviceUInt32Info $Info.PropertyBlockingErrors
+    $invalidCount=if($invalid.Valid){[long]$invalid.Value}else{0}
+    $blockedCount=if($blocked.Valid){[long]$blocked.Value}else{0}
+    $review=$without -gt 0 -or $missingIds -gt 0 -or $invalidCount -gt 0 -or $blockedCount -gt 0 -or
+        $sourceConflicts -gt 0 -or $propertyConflicts -gt 0 -or $containerConflicts -gt 0
+    [pscustomobject]@{
+        NeedsReview=$review;NodesRequested=$(if($requested.Valid){[long]$requested.Value}else{0});NodesWithoutRows=$without
+        MissingInstanceIds=$missingIds;InvalidPropertyRows=$invalidCount;PropertyBlockingErrors=$blockedCount
+        IdSourceConflicts=$sourceConflicts;IdPropertyConflicts=$propertyConflicts;ContainerIdConflicts=$containerConflicts
+        Message=$(if($review){'Known device records were read; identification coverage needs review'}else{'No failed extended identification checks require review'})
+        Details=("$without requested nodes returned no property rows; $missingIds records lack an instance ID; $invalidCount malformed property rows; $blockedCount access, timeout or provider errors; $sourceConflicts ID-source disagreements; $propertyConflicts conflicting property-ID lists; $containerConflicts conflicting container IDs. A property row does not prove every optional field exists, and these findings do not establish a hardware fault.")
+        Action='Inspect device-property coverage and raw observations in Main [5]. Retry [9] > [4] if appropriate; optional properties may remain unavailable.'
+    }
+}
+function Get-ScanIdentificationIssues($Inventory) {
+    $present=if($Inventory -is [System.Collections.IDictionary]){$Inventory['PnP hardware IDs']}else{$Inventory.'PnP hardware IDs'}
+    if(Test-SectionReadable $present){
+        $coverage=Get-PresentIdentificationCoverage $present
+        if($coverage.NeedsReview){[pscustomobject]@{Section='PnP hardware IDs';Kind='Identification coverage';Message=$coverage.Message;Details=$coverage.Details;Action=$coverage.Action}}
+    }
+    $rows=if($Inventory -is [System.Collections.IDictionary]){$Inventory['Extended device inventory']}else{$Inventory.'Extended device inventory'}
+    $info=if($Inventory -is [System.Collections.IDictionary]){$Inventory['Extended scan info']}else{$Inventory.'Extended scan info'}
+    $reportInfo=if($Inventory -is [System.Collections.IDictionary]){$Inventory['Report info']}else{$Inventory.'Report info'}
+    # Failed refreshes can retain an older capture. Its old property coverage
+    # must not become a new finding alongside the actual failed read.
+    if((Test-SectionReadable $rows) -and $reportInfo.ExtendedStatus -ne 'Unavailable' -and -not $info.Error){
+        $coverage=Get-ExtendedIdentificationCoverage $info $rows
+        if($coverage.NeedsReview){[pscustomobject]@{Section='Extended device inventory';Kind='Identification coverage';Message=$coverage.Message;Details=$coverage.Details;Action=$coverage.Action}}
+    }
+}
 function Get-ReviewSummary($Inventory,$IdRows,$QueryWarnings) {
     $ids=@($IdRows | Where-Object {$null -ne $_ -and $_.Quality -in @('Missing','Placeholder')})
     $disk=@(Get-QuickDisks $Inventory | Where-Object Quality -eq 'Conflict')
@@ -1760,13 +1850,14 @@ function Get-ReviewSummary($Inventory,$IdRows,$QueryWarnings) {
     $devices=@($pnpFindings | Where-Object Kind -notin @('Duplicate','ResourceConflict'))
     $unreadDetails=@(Get-ReviewReadFailures $Inventory $QueryWarnings)
     $unread=@($unreadDetails | ForEach-Object {$_.Section+': '+$_.Message})
+    $coverage=@(Get-ScanIdentificationIssues $Inventory)
     $conflictCount=$disk.Count+$records.Count+$pnpConflicts.Count
     [pscustomobject]@{
         IdIssues=$ids;DiskClashes=$disk;RecordConflicts=$records;PnpConflicts=$pnpConflicts;DeviceIssues=$devices;Unread=$unread;UnreadDetails=$unreadDetails
-        ConflictCount=$conflictCount;UnreadCount=$unread.Count;DeviceCount=$devices.Count
+        ConflictCount=$conflictCount;UnreadCount=$unread.Count;DeviceCount=$devices.Count;CoverageIssues=$coverage;CoverageCount=$coverage.Count
         MissingCount=@($ids | Where-Object Quality -eq 'Missing').Count
         DefaultCount=@($ids | Where-Object Quality -eq 'Placeholder').Count
-        Total=($conflictCount+$unread.Count+$devices.Count+$ids.Count)
+        Total=($conflictCount+$unread.Count+$devices.Count+$ids.Count+$coverage.Count)
     }
 }
 function Get-DeviceReviewAction($Issue) {
@@ -1795,14 +1886,14 @@ function Show-Attention([switch]$Inline) {
     Write-Heading 'ITEMS TO REVIEW'
     $review=Get-ReviewSummary $report $identifiers $warnings
     Write-PnpValue 'Review counts' ("$($review.Total) findings / $($review.ConflictCount) conflicts / $($review.UnreadCount) sections not read") $(if($review.Total){$palette.Warn}else{$palette.Good})
-    Write-PnpValue 'Other findings' ("$($review.DeviceCount) device findings / $($review.MissingCount) missing IDs / $($review.DefaultCount) default IDs") $palette.Text
-    if(-not $Inline){Write-PnpValue 'Jump' '1 Top / 2 Devices / 3 Not read / 4 IDs / 5 Conflicts. 0 or Enter = menu.' $palette.Muted}
+    Write-PnpValue 'Other findings' ("$($review.DeviceCount) device findings / $($review.MissingCount) missing IDs / $($review.DefaultCount) default IDs / $($review.CoverageCount) identification checks") $palette.Text
+    if(-not $Inline){Write-PnpValue 'Jump' '1 Top / 2 Devices / 3 Read coverage / 4 IDs / 5 Conflicts. 0 or Enter = menu.' $palette.Muted}
     if(-not $Inline -and $review.Total) {
-        $first=if($review.ConflictCount){'[5] Conflicts: verify repeated or disagreeing readings first.'}elseif($review.UnreadCount){'[3] Not read: check which readers failed.'}elseif($review.DeviceCount){'[2] Devices: inspect the Windows-reported status.'}else{'[4] IDs: missing/default values can be normal.'}
+        $first=if($review.ConflictCount){'[5] Conflicts: verify repeated or disagreeing readings first.'}elseif($review.UnreadCount){'[3] Not read: check which readers failed.'}elseif($review.CoverageCount){'[3] Identification coverage: some checks could not be completed reliably.'}elseif($review.DeviceCount){'[2] Devices: inspect the Windows-reported status.'}else{'[4] IDs: missing/default values can be normal.'}
         Write-PnpValue 'Start with' $first $palette.Heading
     }
     Write-PnpValue 'Meaning' 'Counts are findings, not unique devices. A finding alone does not prove hardware failure.' $palette.Muted
-    if(-not $review.Total){Write-PnpValue 'OK' 'No missing identifiers, placeholders, failed sections or conflicts detected.' $palette.Good}
+    if(-not $review.Total){Write-PnpValue 'OK' 'No missing identifiers, placeholders, failed sections, incomplete identification checks or conflicts detected.' $palette.Good}
     if(-not $Inline){Add-ReportBookmark '5'}
     Write-Host '';Write-Host ('  CONFLICTS / VERIFY BEFORE COMPARING / '+$review.ConflictCount) -ForegroundColor $palette.Heading
     if(-not $review.ConflictCount){Write-PnpValue 'Result' 'No conflicts detected.' $palette.Muted}
@@ -1840,6 +1931,13 @@ function Show-Attention([switch]$Inline) {
     foreach($failure in $review.UnreadDetails) {
         Write-PnpValue ('NOT READ / '+$failure.Section) ($failure.Reason+' ['+$failure.Code+']') $palette.Warn
         Write-PnpValue 'Next' ($failure.Action -ireplace '(?<!Main )\[5\]','Main [5]') $palette.Muted
+    }
+    Write-Host '';Write-Host ('  IDENTIFICATION COVERAGE / '+$review.CoverageCount) -ForegroundColor $palette.Heading
+    if(-not $review.CoverageCount){Write-PnpValue 'Result' 'No failed identification checks require review.' $palette.Muted}
+    foreach($coverage in $review.CoverageIssues){
+        Write-PnpValue $coverage.Section $coverage.Message $palette.Warn
+        Write-PnpValue 'Read details' $coverage.Details $palette.Text
+        Write-PnpValue 'Next' $coverage.Action $palette.Muted
     }
     if(-not $Inline){Add-ReportBookmark '4'}
     Write-Host '';Write-Host ('  IDENTIFIERS NOT SUPPLIED / DEFAULT / '+$review.IdIssues.Count) -ForegroundColor $palette.Heading
@@ -1953,6 +2051,11 @@ function Show-GraphicsNetworkSummary {
     if(-not (Test-SectionReadable $report.Monitors)){Write-PnpValue 'Not read' 'Monitor data is unavailable; Main [4] explains the read failure.' $palette.Warn}
     else {
         foreach($monitor in @($report.Monitors | Where-Object {$null -ne $_})){
+            if($monitor.RecordKind -eq 'Collection status' -and $monitor.IdentificationRecords -eq 0 -and [string]::IsNullOrWhiteSpace((Normalize-IdentifierText $monitor.InstanceName)) -and [string]::IsNullOrWhiteSpace((Normalize-IdentifierText $monitor.SerialNumber))){
+                Write-PnpValue 'Identification read' $monitor.IdentificationStatus $palette.Muted
+                Write-PnpValue 'Scope' $monitor.Scope $palette.Muted
+                continue
+            }
             Write-PnpValue 'Monitor name (reported)' (Format-FieldValue $monitor.Name) $palette.Heading
             Write-PnpValue 'Manufacturer' (Format-FieldValue $monitor.Manufacturer) $palette.Text
             Write-ReportedIdentifier 'Serial (reported)' 'SerialNumber' $monitor
@@ -2161,7 +2264,7 @@ function Get-PresentDeviceRecords {
         return $devices
     }catch{
         $failure=Get-ScanFailureInfo $_
-        if($failure.Code -notin @('READ-03','READ-04') -and -not (Test-ProjectionReadFailure $_)){throw}
+        if($failure.Code -notin @('READ-03','READ-04','READ-06') -and -not (Test-ProjectionReadFailure $_)){throw}
         $primaryError=$_.Exception.Message
     }
     try{
@@ -2225,6 +2328,7 @@ function Complete-PresentDeviceIdentification($Rows) {
             }
         }
     }catch{$errors+=@($_)}
+    $failureCodes=@(@($(if($unavailable){'READ-03'});foreach($errorRow in $errors){(Get-ScanFailureInfo $errorRow).Code}) | Where-Object {$_} | Select-Object -Unique)
     foreach($row in $Rows){
         $key=Normalize-IdentifierText $row.DeviceInstanceId
         if(-not $wanted.Contains($key)){$row;continue}
@@ -2253,11 +2357,12 @@ function Complete-PresentDeviceIdentification($Rows) {
                 if($name.Count){$row.Name=$name[0];$row.PSObject.Properties.Add([psnoteproperty]::new('NameSource',$field));$recovered.Add('Name');break}
             }
         }
-        $status=if($recovered.Count){'Recovered from device properties: '+($recovered -join ', ')}
+        $status=if($recovered.Count){'Recovered from device properties: '+($recovered -join ', ')+$(if($errors.Count){' / lookup incomplete'})}
             elseif($unavailable){'Device-property reader unavailable; primary record kept'}
             elseif($errors.Count){'Device-property lookup incomplete; primary record kept'}
             else{'No additional identification supplied by Windows'}
         $row.PSObject.Properties.Add([psnoteproperty]::new('IdentificationReadStatus',$status))
+        if(@($failureCodes).Count){$row.PSObject.Properties.Add([psnoteproperty]::new('IdentificationReadFailureCodes',@($failureCodes)))}
         if($errors.Count){$row.PSObject.Properties.Add([psnoteproperty]::new('IdentificationReadErrors',@($errors | Select-Object -First 3 | ForEach-Object {[string]$_})))}
         $row
     }
@@ -2410,7 +2515,7 @@ function Read-DevicePropertyBatches([string[]]$InstanceIds,[string[]]$KeyNames) 
     for($start=0;$start -lt $InstanceIds.Count;$start+=32){
         $last=[math]::Min($start+31,$InstanceIds.Count-1)
         $batch=@($InstanceIds[$start..$last]);$batches++
-        $batchErrors=@();$terminal=$null
+        $batchErrors=@();$terminal=$null;$rowStart=$rows.Count;$errorStart=$errors.Count
         try {
             # Concurrent provider calls can duplicate node results and omit others
             # without errors. Serialize calls while keeping bounded input batches.
@@ -2419,11 +2524,33 @@ function Read-DevicePropertyBatches([string[]]$InstanceIds,[string[]]$KeyNames) 
             }
         }catch{$terminal=$_}
         foreach($errorRow in @($batchErrors)+@($terminal)){if($null -ne $errorRow -and -not $errors.Contains($errorRow)){$errors.Add($errorRow)}}
-        # A disappearing node can stop a whole call. Retry a failed batch once per
-        # device, preserving earlier rows. Access, timeout and provider failures
-        # stay explicit and cannot expand into a series of per-device retries.
-        if($null -ne $terminal -and $batch.Count -gt 1 -and (Get-ScanFailureInfo $terminal).Code -notin @('READ-01','READ-02','READ-03')){
-            foreach($id in $batch){
+        # A disappearing node can stop a whole call or emit a non-terminating
+        # error after partial rows. Keep legacy whole-batch recovery for a
+        # terminating failure; otherwise retry only nodes with no requested
+        # property row. An absent optional field alone is not a retry reason.
+        $retryIds=@();$blocked=$false
+        for($errorIndex=$errorStart;$errorIndex -lt $errors.Count;$errorIndex++){
+            if((Get-ScanFailureInfo $errors[$errorIndex]).Code -in @('READ-01','READ-02','READ-03')){$blocked=$true;break}
+        }
+        if($batch.Count -gt 1 -and -not $blocked){
+            if($null -ne $terminal){$retryIds=$batch}
+            elseif($errors.Count -gt $errorStart){
+                $batchReturned=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+                for($rowIndex=$rowStart;$rowIndex -lt $rows.Count;$rowIndex++){
+                    $row=$rows[$rowIndex]
+                    if($row.InstanceId -is [string] -and $row.KeyName -is [string] -and $row.KeyName -in $KeyNames){
+                        [void]$batchReturned.Add((Normalize-IdentifierText $row.InstanceId))
+                    }
+                }
+                $retryKeys=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+                $retryIds=@(foreach($id in $batch){
+                    $key=Normalize-IdentifierText $id
+                    if(-not $batchReturned.Contains($key) -and $retryKeys.Add($key)){$id}
+                })
+            }
+        }
+        if($retryIds.Count){
+            foreach($id in $retryIds){
                 $retried++;$deviceErrors=@();$deviceFailure=$null
                 try {
                     Get-PnpDeviceProperty -InstanceId @($id) -KeyName $KeyNames -ThrottleLimit 1 -ErrorAction SilentlyContinue -ErrorVariable deviceErrors 2>&1 | ForEach-Object {
@@ -2431,7 +2558,13 @@ function Read-DevicePropertyBatches([string[]]$InstanceIds,[string[]]$KeyNames) 
                     }
                 }catch{$deviceFailure=$_}
                 foreach($errorRow in @($deviceErrors)+@($deviceFailure)){if($null -ne $errorRow -and -not $errors.Contains($errorRow)){$errors.Add($errorRow)}}
-                if($null -ne $deviceFailure -and (Get-ScanFailureInfo $deviceFailure).Code -in @('READ-01','READ-02','READ-03')){break}
+                # ErrorAction SilentlyContinue keeps non-terminating provider
+                # errors out of catch. They must stop this recovery pass too.
+                $stopRetry=$false
+                foreach($retryError in @($deviceErrors)+@($deviceFailure)){
+                    if($null -ne $retryError -and (Get-ScanFailureInfo $retryError).Code -in @('READ-01','READ-02','READ-03')){$stopRetry=$true;break}
+                }
+                if($stopRetry){break}
             }
         }
     }
@@ -2439,7 +2572,7 @@ function Read-DevicePropertyBatches([string[]]$InstanceIds,[string[]]$KeyNames) 
     $returned=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach($id in $InstanceIds){[void]$known.Add((Normalize-IdentifierText $id))}
     foreach($row in $rows){
-        if($row.InstanceId -isnot [string] -or $row.KeyName -notin $KeyNames){continue}
+        if($row.InstanceId -isnot [string] -or $row.KeyName -isnot [string] -or $row.KeyName -notin $KeyNames){continue}
         $id=Normalize-IdentifierText $row.InstanceId
         if($known.Contains($id)){[void]$returned.Add($id)}
     }
@@ -2448,6 +2581,9 @@ function Read-DevicePropertyBatches([string[]]$InstanceIds,[string[]]$KeyNames) 
 function Get-ExtendedDeviceInventory {
     $source='Get-PnpDevice / all known nodes'
     $primaryError=$null
+    $identityRecoveryAttempted=$false;$identityRecoveryStatus='Not needed'
+    $identityRecoveryCode=$null;$identityRecoveryDetail=$null
+    $identityPrimaryRecords=@();$identityAlternateRecords=@()
     try {
         $devices=@(Invoke-BufferedHardwareRead {Get-PnpDevice -ErrorAction Stop} | Where-Object {$null -ne $_})
         if(-not $devices.Count){throw 'No device records returned by Get-PnpDevice.'}
@@ -2465,6 +2601,42 @@ function Get-ExtendedDeviceInventory {
             $exception=[Exception]::new($message,$_.Exception)
             $exception.Data['HwidFallbackFailure']=$_.Exception.Message
             throw [System.Management.Automation.ErrorRecord]::new($exception,'Hwid.ExtendedFallbackFailed',$_.CategoryInfo.Category,$_.TargetObject)
+        }
+    }
+    # A named catalog can still lack every instance key needed for property
+    # reads. Try one independent unfiltered reader before accepting that limit.
+    # Mixed catalogs keep their original records; matching anonymous rows by
+    # name would be unreliable. A failed optional recovery never erases them.
+    $hasInstanceKey=$false
+    foreach($device in $devices){if((Get-DeviceInstanceInfo $device).Key){$hasInstanceKey=$true;break}}
+    if($null -eq $primaryError -and -not $hasInstanceKey){
+        $identityRecoveryAttempted=$true
+        $identityFields=@('Name','FriendlyName','Manufacturer','PNPClass','Class','ClassGuid','Service','Present','InstanceId','PNPDeviceID','DeviceID','HardwareID','CompatibleID','ConfigManagerErrorCode')
+        # Keep only device observations, not CIM transport/system metadata.
+        $identityPrimaryRecords=@($devices | Select-Object -Property $identityFields)
+        try {
+            $alternate=@(Get-HwidInstance -ClassName Win32_PnPEntity -OperationTimeoutSec 20 -Property Name,Manufacturer,PNPClass,ClassGuid,Service,Present,PNPDeviceID,DeviceID,HardwareID,CompatibleID,ConfigManagerErrorCode | Where-Object {$null -ne $_})
+            $alternateHasKey=$false
+            if($alternate.Count){
+                Assert-DeviceRecords $alternate -Raw
+                $identityAlternateRecords=@($alternate | Select-Object -Property $identityFields)
+                foreach($device in $alternate){if((Get-DeviceInstanceInfo $device).Key){$alternateHasKey=$true;break}}
+            }
+            if($alternateHasKey -and $alternate.Count -ge $devices.Count){
+                $devices=$alternate;$source='Win32_PnPEntity / unfiltered identity recovery'
+                $primaryError='The primary device reader supplied no usable instance identifiers.'
+                $identityRecoveryStatus='Recovered instance IDs'
+            }elseif($alternateHasKey){
+                $identityRecoveryStatus='Alternate catalog narrower; primary records retained'
+                $identityRecoveryDetail='The alternate reader supplied fewer records. Its validated observations were retained separately without guessing matches.'
+            }else{
+                $identityRecoveryStatus='No usable alternate instance IDs; primary records retained'
+                $identityRecoveryDetail=if($alternate.Count){'Neither reader exposed usable device instance identifiers.'}else{'The alternate reader returned no device records.'}
+            }
+        }catch{
+            $failure=Get-ScanFailureInfo $_
+            $identityRecoveryStatus='Alternate read failed; primary records retained'
+            $identityRecoveryCode=$failure.Code;$identityRecoveryDetail=$failure.Details
         }
     }
     if(-not $devices.Count){throw 'No device records returned by Windows.'}
@@ -2619,6 +2791,9 @@ function Get-ExtendedDeviceInventory {
         Devices=$rows
         Info=[ordered]@{
             Captured=(Get-Date).ToString('o');Source=$source;Records=$rows.Count;FallbackReason=$primaryError
+            IdentityRecoveryAttempted=$identityRecoveryAttempted;IdentityRecoveryStatus=$identityRecoveryStatus
+            IdentityRecoveryFailureCode=$identityRecoveryCode;IdentityRecoveryDetail=$identityRecoveryDetail
+            IdentityRecoveryPrimaryRecords=$identityPrimaryRecords;IdentityRecoveryAlternateRecords=$identityAlternateRecords
             NodeFlagsRead=@($rows | Where-Object {$null -ne $_.HiddenByNodeFlag}).Count
             ClassFlagsRead=@($rows | Where-Object {$null -ne $_.HiddenByClass}).Count
             NativeStatusRecoveries=@($rows | Where-Object NodeStatusSource -eq 'Configuration Manager').Count
@@ -2627,10 +2802,14 @@ function Get-ExtendedDeviceInventory {
             HardwareIdRecoveries=@($rows | Where-Object HardwareIdSource -eq 'Device properties').Count
             CompatibleIdRecoveries=@($rows | Where-Object CompatibleIdSource -eq 'Device properties').Count
             IdSourceConflicts=@($rows | Where-Object {$_.HardwareIDSourceConflict -or $_.CompatibleIDSourceConflict}).Count
+            IdPropertyConflicts=@($rows | Where-Object {$_.HardwareIDPropertyConflict -or $_.CompatibleIDPropertyConflict}).Count
+            ContainerIdConflicts=@($rows | Where-Object {$_.ContainerIdConflict -or $_.BaseContainerIdConflict}).Count
+            MissingInstanceIds=@($rows | Where-Object {[string]::IsNullOrWhiteSpace((Normalize-IdentifierText $_.DeviceInstanceId))}).Count
             ContainerIdsRead=@($rows | Where-Object {$null -ne $_.ContainerId}).Count
             BaseContainerIdsRead=@($rows | Where-Object {$null -ne $_.BaseContainerId}).Count
             PropertyNodesRequested=$propertyRead.NodesRequested;PropertyNodesReturned=$propertyRead.NodesReturned;PropertyNodesWithoutRows=$propertyRead.NodesWithoutRows;PropertyReadConcurrency=1
             PropertyReadErrors=@($propertyErrors).Count
+            PropertyBlockingErrors=@($propertyErrors | Where-Object {(Get-ScanFailureInfo $_).Code -in @('READ-01','READ-02','READ-03')}).Count
             PropertyBatches=$propertyBatches;PropertyRetryDevices=$propertyRetries
             InvalidPropertyRows=$invalidPropertyRows
         }
@@ -2708,7 +2887,9 @@ function Start-ExtendedDeviceScan {
         foreach($field in @('ExtendedAttempted','ExtendedFailureCode','ExtendedFailureReason','ExtendedFailureDetails','ExtendedNextStep')){$report['Report info'].Remove($field)}
         for($i=$warnings.Count-1;$i -ge 0;$i--){if($warnings[$i].StartsWith('Extended device inventory: ')){$warnings.RemoveAt($i)}}
         $report['Warnings']=@($warnings.ToArray())
-        try{Complete-ScanLine $line 'Extended catalog' ("[READ] $(@($result.Devices).Count) known nodes") $palette.Good}
+        $coverage=Get-ExtendedIdentificationCoverage $result.Info $result.Devices
+        $tag=if($coverage.NeedsReview){'CHECK'}else{'READ'}
+        try{Complete-ScanLine $line 'Extended catalog' ("[$tag] $(@($result.Devices).Count) known nodes"+$(if($coverage.NeedsReview){' / identification coverage needs review'})) $(if($coverage.NeedsReview){$palette.Warn}else{$palette.Good})}
         catch{$report['Report info']['ExtendedProgressWarning']=$_.Exception.Message}
     }catch {
         $failure=Get-ScanFailureInfo $_
@@ -3048,18 +3229,26 @@ function Show-Records($Records,$SectionName='') {
     }
 }
 function Get-SectionIdentifierInfo($Name,$Records) {
+    if($Name -eq 'Monitors'){
+        $monitorRows=@($Records | Where-Object {$null -ne $_})
+        if($monitorRows.Count -eq 1 -and $monitorRows[0].RecordKind -eq 'Collection status' -and $monitorRows[0].IdentificationRecords -eq 0 -and [string]::IsNullOrWhiteSpace((Normalize-IdentifierText $monitorRows[0].InstanceName)) -and [string]::IsNullOrWhiteSpace((Normalize-IdentifierText $monitorRows[0].SerialNumber))){
+            return [pscustomobject]@{Text='0 monitor identification records reported; display presence not determined';Tag='READ';Color='Muted';Found=0;Missing=0;Default=0}
+        }
+    }
     if($Name -eq 'PnP hardware IDs') {
         $nodes=@($Records | Where-Object {-not [string]::IsNullOrWhiteSpace((Normalize-IdentifierText $_.DeviceInstanceId))}).Count
         $missingNodes=@($Records | Where-Object {$null -ne $_ -and [string]::IsNullOrWhiteSpace((Normalize-IdentifierText $_.DeviceInstanceId))}).Count
         $models=@($Records | Where-Object {(Get-DeviceIdListInfo $_.HardwareID).Values.Count -gt 0}).Count
         $review=@(Get-PnpIssues $Records).Count
+        $coverage=Get-PresentIdentificationCoverage $Records
         $text="$nodes instance IDs; $models with model IDs"
         if($missingNodes){$text+="; $missingNodes instance IDs missing"}
         $repaired=@($Records | Where-Object {$_.HardwareIDReadStatus -match '^Invalid' -or $_.CompatibleIDReadStatus -match '^Invalid'}).Count
         if($repaired){$text+="; $repaired nodes with invalid ID entries"}
         if($review){$text+="; $review review"}
+        if($coverage.NeedsReview){$text+='; identification checks incomplete'}
         if(@($Records | Where-Object CollectionSource -match 'fallback').Count){$text+=' / fallback reader'}
-        return [pscustomobject]@{Text=$text;Tag=$(if($review){'CHECK'}else{'READ'});Color=$(if($review){'Warn'}else{'Good'});Found=$nodes;Missing=$missingNodes;Default=0}
+        return [pscustomobject]@{Text=$text;Tag=$(if($review -or $coverage.NeedsReview){'CHECK'}else{'READ'});Color=$(if($review -or $coverage.NeedsReview){'Warn'}else{'Good'});Found=$nodes;Missing=$missingNodes;Default=0}
     }
     $found=0;$missing=0;$defaults=0
     foreach($record in $Records) {
@@ -3267,7 +3456,7 @@ function New-ScanQueryWorker {
         $setup=New-Object Text.StringBuilder
         [void]$setup.AppendLine('$ErrorActionPreference="Stop"')
         # Only collection helpers run here; UI and snapshot state stay on the main thread.
-        foreach($name in @('GiB','Test-ScanScalarValue','Get-ScanUInt64Info','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Format-NetworkStatus','Get-NetworkAddressInfo','Assert-NetworkReaderRecords','Get-NetworkIdentifiers','Get-DeviceIdListInfo','Get-DeviceInstanceInfo','Get-DevicePropertyIdListInfo','Test-DeviceIdSourceConflict','Get-DeviceGuidReadings','Get-DeviceParentReadings','Get-PresentDeviceRecords','Get-DriverHardwareIds','Complete-PresentDeviceIdentification','Get-ScanFailureInfo','Get-HwidExceptionStatuses','Test-ProjectionReadFailure','Invoke-BufferedHardwareRead','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Test-ScanValuePresent','Test-DeviceDisplayText','Normalize-IdentifierText','Assert-DeviceRecords','Get-DeviceUInt32Info','Get-BatteryStatusName','Get-BatteryIdentifiers','Read-DevicePropertyBatches','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Confirm-SecureBootUEFI','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
+        foreach($name in @('GiB','Test-ScanScalarValue','Get-ScanUInt64Info','Get-MonitorTextResult','Convert-MonitorText','Get-MonitorIdentifiers','Get-StorageCodeName','Get-StorageIdentifiers','Get-PartitionLetterInfo','Get-PartitionIdentifiers','Format-NetworkLinkSpeed','Format-NetworkStatus','Get-NetworkAddressInfo','Assert-NetworkReaderRecords','Get-NetworkIdentifiers','Get-DeviceIdListInfo','Get-DeviceInstanceInfo','Get-DevicePropertyIdListInfo','Test-DeviceIdSourceConflict','Get-DeviceGuidReadings','Get-DeviceParentReadings','Get-PresentDeviceRecords','Get-DriverHardwareIds','Complete-PresentDeviceIdentification','Get-ScanFailureInfo','Get-HwidExceptionStatuses','Test-ProjectionReadFailure','Invoke-BufferedHardwareRead','Get-HwidInstance','Get-ClassHiddenState','Get-NativeNodeStatus','Test-ScanValuePresent','Test-DeviceDisplayText','Normalize-IdentifierText','Assert-DeviceRecords','Get-DeviceUInt32Info','Get-BatteryStatusName','Get-BatteryIdentifiers','Get-WindowsInventory','Read-DevicePropertyBatches','Get-ExtendedDeviceInventory','Get-CimInstance','Get-NetAdapter','Get-ItemProperty','Confirm-SecureBootUEFI','Get-PnpDevice','Get-PnpDeviceProperty','Get-WmiObject')) {
             $function=Get-Item -LiteralPath ('Function:\'+$name) -ErrorAction SilentlyContinue
             if($null -ne $function -and -not $function.ModuleName){[void]$setup.AppendLine(('function '+$name+' {'+$function.Definition+'}'))}
         }
@@ -3481,8 +3670,14 @@ function Convert-MonitorText($Codes) {return (Get-MonitorTextResult $Codes).Text
 function Get-MonitorIdentifiers {
     # Some providers reject a projected query containing an optional length field.
     # Read this small class as exposed and use length metadata only when present.
-    foreach($monitor in (Get-HwidInstance -OperationTimeoutSec 20 -Namespace 'root\wmi' -ClassName WmiMonitorID)) {
-        if($null -eq $monitor){continue}
+    $monitors=@(Get-HwidInstance -OperationTimeoutSec 20 -Namespace 'root\wmi' -ClassName WmiMonitorID | Where-Object {$null -ne $_})
+    if(-not $monitors.Count){
+        # A successful empty identification query is not a failed read and does
+        # not prove that no physical displays are connected (for example, remote
+        # sessions and virtual/headless configurations may expose no EDID rows).
+        return [pscustomobject][ordered]@{RecordKind='Collection status';IdentificationRecords=0;IdentificationStatus='No monitor identification records reported by Windows';CollectionSource='WmiMonitorID';Scope='Display presence and physical monitor count were not determined by this query.'}
+    }
+    foreach($monitor in $monitors) {
         $serial=Get-MonitorTextResult $monitor.SerialNumberID
         $name=Get-MonitorTextResult $monitor.UserFriendlyName $monitor.UserFriendlyNameLength
         [pscustomobject][ordered]@{
@@ -3519,6 +3714,51 @@ function GiB($Bytes) {
     if(-not $parsed.Valid){return $null}
     return [math]::Round($parsed.Value / 1GB,2)
 }
+function Get-WindowsInventory {
+    # Optional firmware reads must explain why a value is unknown without
+    # changing an unread value into Disabled or failing readable Windows data.
+    $secureBoot=$null;$secureBootStatus='Reader not available';$secureBootCode='READ-03'
+    try {
+        if(Get-Command Confirm-SecureBootUEFI -ErrorAction SilentlyContinue){
+            $states=@(Invoke-BufferedHardwareRead {Confirm-SecureBootUEFI -ErrorAction Stop})
+            if($states.Count -ne 1){throw [IO.InvalidDataException]::new('The Secure Boot reader did not return one state.')}
+            $state=$states[0]
+            if($state -isnot [bool]){throw [IO.InvalidDataException]::new('The Secure Boot reader returned a non-boolean state.')}
+            $secureBoot=if($state){'Enabled'}else{'Disabled'}
+            $secureBootStatus='Read';$secureBootCode=$null
+        }
+    }catch{$failure=Get-ScanFailureInfo $_;$secureBootStatus=$failure.Reason;$secureBootCode=$failure.Code}
+    $tpm=$null;$tpmStatus='Not reported';$tpmCode=$null
+    try {
+        $nodes=@(Get-HwidInstance -Namespace 'root/cimv2/Security/MicrosoftTpm' -ClassName Win32_Tpm -OperationTimeoutSec 10 -Property IsEnabled_InitialValue,IsActivated_InitialValue,SpecVersion | Where-Object {$null -ne $_} | Select-Object -First 1)
+        if($nodes.Count){
+            $node=$nodes[0]
+            $hasSpec=$node.SpecVersion -is [string] -and -not [string]::IsNullOrWhiteSpace($node.SpecVersion)
+            if(-not $hasSpec -and $node.IsEnabled_InitialValue -isnot [bool] -and $node.IsActivated_InitialValue -isnot [bool]){
+                throw [IO.InvalidDataException]::new('The TPM reader returned no usable state or specification fields.')
+            }
+            $tpm='Present';$tpmStatus='Read'
+            if($hasSpec){$tpm+=' / SpecVersion '+$node.SpecVersion}
+            if($node.IsEnabled_InitialValue -is [bool]){$tpm+=if($node.IsEnabled_InitialValue){' / Enabled'}else{' / Disabled'}}
+            if($node.IsActivated_InitialValue -is [bool]){$tpm+=if($node.IsActivated_InitialValue){' / Activated'}else{' / Not activated'}}
+        }
+    }catch{$failure=Get-ScanFailureInfo $_;$tpm=$null;$tpmStatus=$failure.Reason;$tpmCode=$failure.Code}
+    Get-HwidInstance -OperationTimeoutSec 20 Win32_OperatingSystem -Property Caption,Version,BuildNumber,OSArchitecture,InstallDate,LastBootUpTime |
+        ForEach-Object {
+        $os=$_;$hasWindowsData=$false
+        if($null -eq $os -or $os -is [string] -or $os -is [ValueType] -or $os -is [System.Collections.IList]){
+            throw [IO.InvalidDataException]::new('Windows returned an invalid operating-system record.')
+        }
+        foreach($field in @('Caption','Version','BuildNumber','OSArchitecture','InstallDate','LastBootUpTime')){
+            if(Test-ScanValuePresent $os.$field){$hasWindowsData=$true;break}
+        }
+        if(-not $hasWindowsData){throw [IO.InvalidDataException]::new('Windows returned no usable operating-system fields.')}
+        $os | Select-Object Caption,Version,BuildNumber,OSArchitecture,InstallDate,LastBootUpTime,
+            @{n='SecureBoot';e={$secureBoot}},@{n='TPM';e={$tpm}},
+            @{n='SecureBootReadStatus';e={$secureBootStatus}},@{n='SecureBootReadCode';e={$secureBootCode}},
+            @{n='TPMReadStatus';e={$tpmStatus}},@{n='TPMReadCode';e={$tpmCode}}
+        }
+}
 function Get-ScanDeviceScope($Inventory) {
     $present='not available'
     if(Test-SectionReadable $Inventory['PnP hardware IDs']){$present=[string]@($Inventory['PnP hardware IDs']).Count}
@@ -3535,15 +3775,16 @@ function Show-ScanCompletion($Inventory,$Identifiers,[int]$Read,[int]$Total,[boo
         $info=$Inventory['Report info']
         Ensure-ScanBuffer 10
         $hasData=Test-ScanHasReadableData $Inventory
-        Write-Heading $(if($Complete){'SCAN COMPLETE'}elseif($hasData){'SCAN FINISHED / SOME DATA NOT READ'}else{'SCAN FINISHED / NO DATA READ'})
+        $review=Get-ReviewSummary $Inventory $Identifiers $Inventory['Warnings']
+        Write-Heading $(if(-not $hasData){'SCAN FINISHED / NO DATA READ'}elseif(-not $Complete){'SCAN FINISHED / SOME DATA NOT READ'}elseif($review.CoverageCount){'SCAN FINISHED / IDENTIFICATION REVIEW'}else{'SCAN COMPLETE'})
         $checks=$Total+$(if($ExtendedNote){1}else{0})
         Write-PnpValue 'Finished' ("$checks/$checks checks finished / $Read/$Total areas read / $($Total-$Read) not read$ExtendedNote / $($info.ScanSeconds)s") $(if($Complete){$palette.Good}else{$palette.Warn})
         $found=@($Identifiers | Where-Object Quality -eq 'Reported').Count
         Write-PnpValue 'Selected IDs' ("$found identifier fields filled by Windows") $(if($found){$palette.Good}else{$palette.Muted})
         Write-PnpValue 'Device scope' (Get-ScanDeviceScope $Inventory) $palette.Muted
         Write-PnpValue 'Meaning' '100% means all checks finished. ID counts measure fields and can include repeated values.' $palette.Muted
-        $review=Get-ReviewSummary $Inventory $Identifiers $Inventory['Warnings']
         Write-PnpValue 'Review' ("$($review.Total) items to review. Choose [4] from the main menu for explanations.") $(if($review.Total){$palette.Warn}else{$palette.Good})
+        if($review.CoverageCount){Write-PnpValue 'Identification coverage' ("$($review.CoverageCount) collection findings; readable device records were kept. Main [4] explains.") $palette.Warn}
         if(-not $hasData){Write-PnpValue 'Next step' 'Try rescan [9] > [1]. Choose [4] to see the Windows read errors.' $palette.Warn}
         if($info.ProgressHeaderFallback){Write-PnpValue 'Scan progress' 'The live progress row became unavailable. Progress continued between queries.' $palette.Muted}
         if($info.CompatibleReadSections){Write-PnpValue 'Compatible reads' ("$($info.CompatibleReadSections) sections recovered through a compatible reader/query. Main [5] shows details.") $palette.Good}
@@ -3577,7 +3818,7 @@ function Invoke-HardwareScan([int]$ScanNumber=1,[bool]$UseWorker=($ownedConsole 
     Write-Heading ('PC SCAN / SNAPSHOT #'+$ScanNumber)
 Write-PnpLine '  Hardware identity and Windows inventory. Read-only scan.' $palette.Text
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.94'; Display=$display.Mode; ScanNumber=$ScanNumber }
+$report['Report info'] = [ordered]@{ Generated = (Get-Date).ToString('o'); Computer = $env:COMPUTERNAME; Administrator = $admin; Version = '3.98'; Display=$display.Mode; ScanNumber=$ScanNumber }
 $report['Compatibility']=Get-CompatibilityInfo
 $permissionLabel = if ($admin) { 'Administrator' } else { 'Standard user' }
 Write-PnpLine "  Computer: $env:COMPUTERNAME  |  Access: $permissionLabel" $palette.Muted
@@ -3650,24 +3891,7 @@ Section 'Battery' {
     Get-BatteryIdentifiers
 }
 Section 'Windows' {
-    $secureBoot=$null
-    try {
-        if(Get-Command Confirm-SecureBootUEFI -ErrorAction SilentlyContinue){
-            $secureBoot=if(Confirm-SecureBootUEFI -ErrorAction Stop){'Enabled'}else{'Disabled'}
-        }
-    }catch{$secureBoot=$null}
-    $tpm=$null
-    try {
-        $tpmNode=@(Get-HwidInstance -Namespace 'root/cimv2/Security/MicrosoftTpm' -ClassName Win32_Tpm -OperationTimeoutSec 10 -Property IsEnabled_InitialValue,IsActivated_InitialValue,SpecVersion | Where-Object {$null -ne $_} | Select-Object -First 1)
-        if($tpmNode.Count){
-            $tpm='Present'
-            if($null -ne $tpmNode[0].SpecVersion){$tpm+=' / SpecVersion '+$tpmNode[0].SpecVersion}
-            if($tpmNode[0].IsEnabled_InitialValue -is [bool]){$tpm+=if($tpmNode[0].IsEnabled_InitialValue){' / Enabled'}else{' / Disabled'}
-                if($tpmNode[0].IsActivated_InitialValue -is [bool]){$tpm+=if($tpmNode[0].IsActivated_InitialValue){' / Activated'}else{' / Not activated'}}
-            }
-        }
-    }catch{$tpm=$null}
-    Get-HwidInstance -OperationTimeoutSec 20 Win32_OperatingSystem -Property Caption,Version,BuildNumber,OSArchitecture,InstallDate,LastBootUpTime | Select-Object Caption, Version, BuildNumber, OSArchitecture, InstallDate, LastBootUpTime,@{n='SecureBoot';e={$secureBoot}},@{n='TPM';e={$tpm}}
+    Get-WindowsInventory
 }
 Section 'Windows Machine GUID' {
     [pscustomobject]@{ MachineGuid = (Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Cryptography' -Name MachineGuid).MachineGuid }
@@ -3685,7 +3909,9 @@ if($IncludeExtended) {
         $report['Extended device inventory']=@($extra.Devices)
         $report['Extended scan info']=$extra.Info
         $report['Report info']['ExtendedStatus']='Refreshed'
-        try {Complete-ScanLine $extraLine 'Extended catalog' ("[READ] $(@($extra.Devices).Count) known nodes") $palette.Good}catch{$extraResultWarning=$_.Exception.Message}
+        $extraCoverage=Get-ExtendedIdentificationCoverage $extra.Info $extra.Devices
+        $extraTag=if($extraCoverage.NeedsReview){'CHECK'}else{'READ'}
+        try {Complete-ScanLine $extraLine 'Extended catalog' ("[$extraTag] $(@($extra.Devices).Count) known nodes"+$(if($extraCoverage.NeedsReview){' / identification coverage needs review'})) $(if($extraCoverage.NeedsReview){$palette.Warn}else{$palette.Good})}catch{$extraResultWarning=$_.Exception.Message}
     }catch {
         $message=$_.Exception.Message
         $warnings.Add('Extended device inventory: '+$message)
@@ -3695,7 +3921,9 @@ if($IncludeExtended) {
         try {Complete-ScanLine $extraLine 'Extended catalog' ('[NOT READ] '+$failure.Reason+' / '+$failure.Code) $palette.Warn}catch{$extraResultWarning=$_.Exception.Message}
     }finally{
         $extraClock.Stop()
-        $script:scanCatalogOutcome=if($report['Report info'].ExtendedStatus -eq 'Refreshed'){'READ'}else{'NOT READ'}
+        $script:scanCatalogOutcome=if($report['Report info'].ExtendedStatus -eq 'Refreshed'){
+            if((Get-ExtendedIdentificationCoverage $report['Extended scan info'] $report['Extended device inventory']).NeedsReview){'CHECK'}else{'READ'}
+        }else{'NOT READ'}
         $extraFeedback=(@($extraGroupWarning,$extraResultWarning,$script:lastQueryFeedbackFailure) | Where-Object {$_}) -join ' / '
         if($script:lastQueryCleanupFailure){
             $info=$report['Extended scan info']
@@ -3723,7 +3951,8 @@ $report['Warnings'] = @($warnings.ToArray())
     if($IncludeExtended) {
         $extraRead=($report['Report info'].ExtendedStatus -eq 'Refreshed')
         $complete=$complete -and $extraRead
-        $extendedNote=if($extraRead){' / device list read'}else{' / device list not read'}
+        $extraCoverage=if($extraRead){Get-ExtendedIdentificationCoverage $report['Extended scan info'] $report['Extended device inventory']}else{$null}
+        $extendedNote=if(-not $extraRead){' / device list not read'}elseif($extraCoverage.NeedsReview){' / device records read; identification review'}else{' / device list read'}
     }
     $rows=@(Get-IdentifierRows $report)
     $finalProgressWarning=$null
@@ -4323,6 +4552,10 @@ function Write-SnapshotLibraryWarning($Locations) {
 function Test-CheckerManagedInstall([string]$Directory) {
     $full=[IO.Path]::GetFullPath($Directory).TrimEnd('\')
     if([IO.File]::Exists((Join-Path $full 'HWID-SETUP.ini'))){return $true}
+    if($env:LOCALAPPDATA){
+        $personal=[IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\HWID Checker')).TrimEnd('\')
+        if($full.Equals($personal,[StringComparison]::OrdinalIgnoreCase) -or $full.StartsWith($personal+'\',[StringComparison]::OrdinalIgnoreCase)){return $true}
+    }
     foreach($root in @($env:ProgramFiles,${env:ProgramFiles(x86)},$env:ProgramW6432)){
         if(-not $root){continue}
         $prefix=[IO.Path]::GetFullPath($root).TrimEnd('\')
@@ -4919,7 +5152,7 @@ function Start-ChangeWatch {
         $script:checkerPhase='Main menu'
     }
 }
-function Get-CheckerPackageVersion {return '1.5.0'}
+function Get-CheckerPackageVersion {return '1.5.8'}
 function Get-CheckerUpdatePaths([string]$ScriptPath=$env:HWID_SCRIPT,[string]$LocalRoot=$env:LOCALAPPDATA) {
     $install=[IO.Path]::GetFullPath((Split-Path -Parent ([IO.Path]::GetFullPath($ScriptPath))))
     if(-not $LocalRoot){$LocalRoot=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)}
@@ -5185,15 +5418,15 @@ function Show-CheckerUpdates {
         $paths=Get-CheckerUpdatePaths
         $managedInstall=Test-CheckerManagedInstall (Split-Path -Parent $paths.UpdaterPath)
         $preferences=Get-CheckerUpdatePreferences $paths
-        Write-PnpValue 'Installed' ('Scanner 3.94 / package '+(Get-CheckerPackageVersion)) $palette.Text
-        Write-PnpValue 'Automatic updates' $(if($managedInstall){'All-users setup: automatic version checks only. Install updates using the new setup with administrator approval.'}elseif($preferences.Enabled){'On. Standalone-launcher sessions prepare updates and install after normal Exit.'}else{'Off. Enable this setting to install a prepared update after normal Exit.'}) $palette.Muted
+        Write-PnpValue 'Installed' ('Scanner 3.98 / package '+(Get-CheckerPackageVersion)) $palette.Text
+        Write-PnpValue 'Automatic updates' $(if($managedInstall){'Setup installation: automatic version checks only. Use the new setup with the same installation type. Only All users needs administrator approval.'}elseif($preferences.Enabled){'On. Standalone-launcher sessions prepare updates and install after normal Exit.'}else{'Off. Enable this setting to install a prepared update after normal Exit.'}) $palette.Muted
         if($managedInstall){Write-PnpValue 'Download setup' 'https://github.com/justcamop555-pixel/HWID-Checker/releases/latest' $palette.Heading}
         if($preferences.Warning){Write-PnpValue 'Preferences' $preferences.Warning $palette.Warn}
         $result=Read-CheckerUpdateResult $paths
         if(Test-CheckerUpdateRunning){Write-PnpValue 'Status' 'Checking or preparing an update in the background. Choose Refresh status shortly.' $palette.Heading}
         elseif(-not [IO.File]::Exists($paths.UpdaterPath)){Write-PnpValue 'Update unavailable' 'Keep Update-HWID.ps1 beside hwid.bat to use this page.' $palette.Warn}
         elseif($result) {
-            if($managedInstall -and $result.state -eq 'ready'){$result.state='available';$result.message='A newer package was prepared. Download and run the all-users setup; portable updates are not applied to this installation.'}
+            if($managedInstall -and $result.state -eq 'ready'){$result.state='available';$result.message='A newer package was prepared. Run the new setup using the same installation type: Just for me or All users.'}
             $color=if($result.state -eq 'ready'){$palette.Good}elseif($result.state -eq 'error'){$palette.Warn}else{$palette.Text}
             Write-PnpValue 'Status' $result.message $color
             if($result.latestVersion -and $result.state -in @('available','ready')){Write-PnpValue 'Update package' $result.latestVersion $palette.Text}

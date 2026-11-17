@@ -1,6 +1,10 @@
 HWID Checker - setup and repair
 
-This setup installs the Desktop application, BAT scanner and companion files for all Windows users. Administrator approval is required. The .NET desktop runtime is included; Windows PowerShell 5.1 must be present. Windows policy may still restrict scanning. Setup does not loosen those policies or repair Windows components.
+Choose Just for me to install the Desktop application, BAT scanner and companion files for your Windows account without administrator access. Choose All users to install in Program Files with administrator approval. Each mode has its own install folder and uninstall entry. Launch setup normally for personal installation.
+
+The .NET desktop runtime is included. Scanning requires Windows PowerShell 5.1 or PowerShell 7. Setup checks for their existing files; Windows policy may still restrict execution or scanning. Setup does not loosen those policies or repair Windows components.
+
+This desktop package needs x64-compatible Windows and at least Windows 10 build 14393. Older Windows and 32-bit Windows cannot run it. Use a Windows edition supported by the bundled .NET runtime. ARM64 emulation and Windows Server configurations are not verified by this project.
 
 Run the same setup again to replace missing or damaged application files. A copy of setup is kept with the application for offline repair. Save any current scan and close the Desktop and BAT windows before repair or updates.
 
@@ -10,4 +14,4 @@ Each Windows user keeps separate settings and a default report folder under Loca
 
 Setup does not move or delete existing portable copies, snapshots or settings. Uninstall removes the installed application files and shortcuts but keeps saved reports and per-user settings.
 
-Update checks contact GitHub. All-users updates require running the newer setup with administrator approval; the portable ZIP updater will not overwrite this installation on exit.
+Update checks contact GitHub. Use the newer setup in the same installation mode for updates. Only All users needs administrator approval. The portable ZIP updater will not overwrite this setup installation on exit.

@@ -8,6 +8,7 @@
   <ItemGroup>
     <Compile Include="../../SharedSnapshotLibrary.cs" Link="SharedSnapshotLibrary.cs"/>
     <Compile Include="../../DesktopModels.cs" Link="DesktopModels.cs"/>
+    <Compile Include="../../SnapshotPreviewCache.cs" Link="SnapshotPreviewCache.cs"/>
     <Compile Include="../../EngineClient.cs" Link="EngineClient.cs"/>
     <EmbeddedResource Include="../../engine/DesktopBridge.ps1" LogicalName="HwidDesktop.EngineBridge"/>
   </ItemGroup>

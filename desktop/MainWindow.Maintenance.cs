@@ -35,18 +35,18 @@ public partial class MainWindow
     private void OnMaintenance(object sender, RoutedEventArgs e)
     {
         if (_busy || IsVerification) return;
-        var installed = InstallationLayout.IsManaged(AppContext.BaseDirectory);
+        var scope = InstallationLayout.Scope(AppContext.BaseDirectory);
         var setup = InstallationLayout.RepairSetup(AppContext.BaseDirectory);
-        var dialog = new MaintenanceWindow(installed, File.Exists(setup)) { Owner = this };
+        var dialog = new MaintenanceWindow(scope, File.Exists(setup)) { Owner = this };
         dialog.ShowDialog();
         try
         {
             if (dialog.Action == "repair")
             {
-                // The cached setup lives in the admin-owned install directory. Windows owns the UAC prompt.
-                // Do not close the app until setup actually starts; a cancelled UAC prompt must be harmless.
+                // Preserve this installation's scope. Inno Setup requests UAC
+                // only for /ALLUSERS; personal repair must not use "runas".
                 if (!File.Exists(setup)) throw new FileNotFoundException("The saved setup is missing. Download the setup again from Releases.");
-                using var process = Process.Start(new ProcessStartInfo(setup) { UseShellExecute = true, Verb = "runas" });
+                using var process = Process.Start(InstallationLayout.RepairStartInfo(AppContext.BaseDirectory));
                 ShowStatus("Setup opened", "Save your current scan, then close this app when setup asks. Saved snapshots and settings are kept.");
             }
             else if (dialog.Action == "releases") InstallationLayout.OpenReleases();

@@ -68,6 +68,9 @@ foreach($mode in @('Direct','Worker')){
         }
         $blank=@(Invoke-ScanQuery {
             function Get-PnpDevice {param([switch]$PresentOnly) [pscustomobject]@{Name='Named device without instance ID';PNPDeviceID='';PNPClass='USB';Present=$true;ConfigManagerErrorCode=0}}
+            # This fixture verifies a genuine two-reader identity limit. A
+            # healthy alternate is covered by the dedicated recovery suite.
+            function Get-CimInstance {param($ClassName,$Namespace,$Property,$Filter,$OperationTimeoutSec) [pscustomobject]@{Name='Alternate device without instance ID';PNPDeviceID='';PNPClass='USB';Present=$true;ConfigManagerErrorCode=0}}
             Get-ExtendedDeviceInventory
         })[0]
         Assert ($blank.Devices.Count -eq 1 -and [string]::IsNullOrWhiteSpace($blank.Devices[0].DeviceInstanceId) -and ((@(Get-ExtendedDeviceReview $blank.Devices[0]) -join ' ') -match 'instance')) ($mode+' a genuine blank instance ID remains readable and explicitly reviewable')

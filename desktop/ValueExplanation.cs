@@ -3,9 +3,9 @@ namespace HwidDesktop;
 internal static class ValueExplanation
 {
     internal static string Identifier(IdentifierRow row) =>
-        row.Field + " · " + row.Status + "\n" + J.SectionName(row.Section) + " / " + row.Device +
+        row.Field + " - " + row.Status + "\n" + J.SectionName(row.Section) + " / " + row.Device +
         "\n\n" + (row.Value.Length == 0 ? "Windows did not supply a value." : row.Value) +
-        "\n\n" + (row.Value.Length > 0 ? row.Value.Length + " characters · Copy value keeps the exact original text, including leading zeros.\n" : "") +
+        "\n\n" + (row.Value.Length > 0 ? row.Value.Length + " characters - Copy value keeps the exact original text, including leading zeros.\n" : "") +
         (row.Status switch
         {
             "Reported" => "Supplied by Windows; this does not prove the value is unique or authentic.",
@@ -14,7 +14,7 @@ internal static class ValueExplanation
             _ => "Review shows what was reported and any limitations of the reading."
         });
 
-    internal static string Review(ReviewRow row) => J.SectionName(row.Section) + " · " + row.Kind +
+    internal static string Review(ReviewRow row) => J.SectionName(row.Section) + " - " + row.Kind +
         "\n" + row.Message + "\n\n" + row.Detail + "\n\n" + (row.Kind switch
         {
             "Read error" => "A failed read is not proof of missing or faulty hardware. Follow the next step above, then rescan.",

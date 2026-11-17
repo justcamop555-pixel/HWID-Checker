@@ -115,6 +115,94 @@ public partial class MainWindow
         await RefreshSnapshotsAsync(automatic: true);
         Check(!_refreshAgain, "idle polling does not compete with the initial scanner connection");
         _startupConnecting = false;
+        var originalSaveFolder = _lastSaveFolder;
+        var captureFolder = Path.Combine(Path.GetDirectoryName(path)!, "captured-library-folder");
+        using (var entered = new ManualResetEventSlim())
+        using (var release = new ManualResetEventSlim())
+        {
+            _lastSaveFolder = captureFolder;
+            var workerOnDispatcher = true;
+            var discoveryTask = DiscoverSnapshotsAsync(CancellationToken.None, () =>
+            {
+                workerOnDispatcher = Dispatcher.CheckAccess();
+                entered.Set();
+                if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("Synthetic discovery gate timed out.");
+            });
+            try
+            {
+                Check(await Task.Run(() => entered.Wait(TimeSpan.FromSeconds(5))), "snapshot discovery begins on a background worker");
+                var painted = false;
+                await Dispatcher.InvokeAsync(() => painted = true, DispatcherPriority.Background);
+                _lastSaveFolder = captureFolder + "-changed";
+                Check(painted && !workerOnDispatcher && !discoveryTask.IsCompleted,
+                    "the dispatcher accepts work while folder discovery is blocked");
+            }
+            finally { release.Set(); _lastSaveFolder = originalSaveFolder; }
+            var discovery = await discoveryTask;
+            Check(discovery.Catalog.Folders.Contains(captureFolder) && !discovery.Catalog.Folders.Contains(captureFolder + "-changed"),
+                "background discovery uses captured folder choices rather than changing UI state");
+        }
+        using (var cancelledDiscovery = new CancellationTokenSource())
+        {
+            cancelledDiscovery.Cancel();
+            var probed = false;
+            try { await DiscoverSnapshotsAsync(cancelledDiscovery.Token, () => probed = true); Check(false, "cancelled discovery must stop"); }
+            catch (OperationCanceledException) { Check(!probed, "cancelled discovery does not begin filesystem work"); }
+        }
+        var previewFolder = Path.Combine(Path.GetDirectoryName(path)!, "preview-refresh-fixture");
+        Directory.CreateDirectory(previewFolder);
+        var previewFile = Path.Combine(previewFolder, "synthetic-preview.json");
+        var priorSaveFolder = _lastSaveFolder;
+        try
+        {
+            string Preview(string pc) => JsonSerializer.Serialize(new Dictionary<string, object>
+            {
+                ["Report info"] = new { Version = "3.96", Computer = pc, Generated = "2026-11-15T00:00:00Z" },
+                ["CPU"] = new[] { new { Name = "Synthetic CPU" } }
+            });
+            File.WriteAllText(previewFile, Preview("SYNTHETIC-000123"));
+            _lastSaveFolder = previewFolder;
+            await RefreshSnapshotsAsync();
+            var firstPreview = _snapshotPreviews.Statistics;
+            await RefreshSnapshotsAsync(automatic: true);
+            var reusedPreview = _snapshotPreviews.Statistics;
+            Check(_snapshotEntries.Any(row => row.Path == previewFile && row.Computer == "SYNTHETIC-000123") &&
+                reusedPreview.Hits > firstPreview.Hits && reusedPreview.Reads == firstPreview.Reads,
+                "automatic library refresh reuses readable unchanged previews without rereading reports");
+            var modified = File.GetLastWriteTimeUtc(previewFile);
+            File.WriteAllText(previewFile, Preview("SYNTHETIC-000124"));
+            File.SetLastWriteTimeUtc(previewFile, modified);
+            await RefreshSnapshotsAsync();
+            Check(_snapshotEntries.Any(row => row.Path == previewFile && row.Computer == "SYNTHETIC-000124") &&
+                _snapshotPreviews.Statistics.Parses > reusedPreview.Parses,
+                "manual library refresh bypasses previews and sees same-size timestamp-preserved edits");
+            _lastSaveFolder = priorSaveFolder;
+            await RefreshSnapshotsAsync();
+            Check(!_snapshotEntries.Any(row => row.Path == previewFile),
+                "changing watched locations removes cached previews from the displayed library");
+        }
+        finally
+        {
+            _lastSaveFolder = priorSaveFolder;
+            if (File.Exists(previewFile)) File.Delete(previewFile);
+        }
+        Navigate("Hardware"); HardwareSearch.Clear();
+        HardwareSections.SelectedItem = original.Sections.First(section => original.FindHardwareRecords(section.Name, "").Count > 0 &&
+            original.FindHardwareRecords(section.Name, "")[0].Data.ValueKind == JsonValueKind.Object);
+        HardwareFields.SelectedIndex = 0;
+        var fieldRows = HardwareFields.ItemsSource; var selectedField = HardwareFields.SelectedItem;
+        var recordRows = HardwareRecord.ItemsSource;
+        var selectedRecord = (HardwareRecord)HardwareRecord.SelectedItem;
+        HardwareSearch.Text = selectedRecord.Title;
+        Check(ReferenceEquals(fieldRows, HardwareFields.ItemsSource) && ReferenceEquals(selectedField, HardwareFields.SelectedItem),
+            "a matching hardware search keeps the selected field and its existing view");
+        var matchingRecords = HardwareRecord.ItemsSource;
+        PopulateHardwareRecords((HardwareSection)HardwareSections.SelectedItem);
+        Check(ReferenceEquals(matchingRecords, HardwareRecord.ItemsSource), "an unchanged hardware filter reuses its record list");
+        HardwareSearch.Text = "SYNTHETIC-NO-HARDWARE-MATCH";
+        Check(HardwareRecord.SelectedItem == null && HardwareFields.Items.Count == 0 && !CopyHardwareButton.IsEnabled,
+            "hiding a hardware record clears its field and copy targets");
+        HardwareSearch.Clear();
         Navigate("Identifiers");
         IdSearch.Clear(); IdFilter.SelectedIndex = 0;
         var selectedId = original.Identifiers.First(row => row.Value.Length > 0);
@@ -288,7 +376,7 @@ public partial class MainWindow
         Check(!ScanProgress.IsIndeterminate, "reduced motion stops the comparison progress animation");
         _operationCancellation = new CancellationTokenSource();
         OnCancel(this, new RoutedEventArgs());
-        Check(_operationCancellation.IsCancellationRequested && !CancelButton.IsEnabled && StatusTitle.Text == "Cancelling comparison…",
+        Check(_operationCancellation.IsCancellationRequested && !CancelButton.IsEnabled && StatusTitle.Text == "Cancelling comparison...",
             "comparison cancellation targets the active operation and prevents duplicate requests");
         _operationCancellation.Dispose(); _operationCancellation = null; SetBusy(false);
         ClearValue(UiMotion.EnabledProperty);

@@ -1,7 +1,7 @@
 <Window x:Class="HwidDesktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Style="{StaticResource {x:Type Window}}" Title="HWID Checker — Desktop" Icon="assets/Hwid.ico"
+        Style="{StaticResource {x:Type Window}}" Title="HWID Checker - Desktop" Icon="assets/Hwid.ico"
         Width="1260" Height="850" MinWidth="640" MinHeight="480" WindowStartupLocation="CenterScreen" Closing="OnWindowClosing">
     <Grid x:Name="Dashboard" Background="{DynamicResource CanvasBrush}" UseLayoutRounding="True">
         <Grid.ColumnDefinitions>
@@ -33,7 +33,7 @@
                         <StackPanel>
                             <Button x:Name="OpenConsoleButton" Content="Open BAT console" Click="OnOpenConsole" FontSize="13" Style="{StaticResource SidebarActionButton}" HorizontalContentAlignment="Left" Padding="8,8" Margin="0,0,0,9"
                                     ToolTip="Open the console. Missing or invalid scanner files fall back to the bundled offline copy."/>
-                            <TextBlock x:Name="EngineConnectionText" Text="Connecting to BAT…" FontSize="13" FontWeight="SemiBold"
+                            <TextBlock x:Name="EngineConnectionText" Text="Connecting to BAT..." FontSize="13" FontWeight="SemiBold"
                                        Foreground="{DynamicResource AccentBrush}" Style="{StaticResource TrimmedText}"/>
                             <TextBlock x:Name="EngineVersionText" Text="Existing PowerShell scanner" FontSize="13" Foreground="{DynamicResource MutedBrush}"
                                        Style="{StaticResource TrimmedText}" Margin="0,3,0,0"/>
@@ -44,9 +44,9 @@
                                     HorizontalContentAlignment="Left" Padding="8,6" Margin="0,6,0,0"/>
                             <Button x:Name="WelcomeButton" Content="Welcome &amp; privacy" Click="OnOpenWelcome" FontSize="13" Style="{StaticResource SidebarActionButton}"
                                     HorizontalContentAlignment="Left" Padding="8,6" Margin="0,6,0,0"/>
-                            <Button x:Name="UpdatesButton" Content="Updates…" Click="OnOpenUpdates" FontSize="13" Style="{StaticResource SidebarActionButton}"
+                            <Button x:Name="UpdatesButton" Content="Updates..." Click="OnOpenUpdates" FontSize="13" Style="{StaticResource SidebarActionButton}"
                                     HorizontalContentAlignment="Left" Padding="8,6" Margin="0,6,0,0"/>
-                            <Button x:Name="MaintenanceButton" Content="Setup &amp; repair…" Click="OnMaintenance" FontSize="13" Style="{StaticResource SidebarActionButton}"
+                            <Button x:Name="MaintenanceButton" Content="Setup &amp; repair..." Click="OnMaintenance" FontSize="13" Style="{StaticResource SidebarActionButton}"
                                     HorizontalContentAlignment="Left" Padding="8,6" Margin="0,6,0,0"/>
                         </StackPanel>
                     </Border>
@@ -78,8 +78,8 @@
                 <WrapPanel x:Name="HeaderActions" Grid.Column="1" VerticalAlignment="Center">
                     <Button x:Name="ScanButton" Content="Scan this PC" IsEnabled="False" Style="{StaticResource PrimaryButton}" Click="OnScan" MinWidth="108" Margin="0,0,8,0"/>
                     <Button x:Name="SaveButton" Content="Save snapshot" Click="OnSave" Margin="0,0,8,0" IsEnabled="False"/>
-                    <Button x:Name="ExportButton" Content="Export CSV / HTML…" Click="OnExportSnapshot" Margin="0,0,8,0" IsEnabled="False"/>
-                    <Button x:Name="ConnectButton" Content="Connect BAT…" Click="OnChooseBat" FontSize="13"/>
+                    <Button x:Name="ExportButton" Content="Export CSV / HTML..." Click="OnExportSnapshot" Margin="0,0,8,0" IsEnabled="False"/>
+                    <Button x:Name="ConnectButton" Content="Connect BAT..." Click="OnChooseBat" FontSize="13"/>
                 </WrapPanel>
             </Grid>
             <Border x:Name="StatusPanel" Grid.Row="1" Background="{DynamicResource StatusBrush}" BorderBrush="{DynamicResource StatusBorderBrush}"
@@ -127,17 +127,17 @@
                                 <StackPanel x:Name="ComputerSummary" Grid.Column="0" Margin="0,0,14,0">
                                     <TextBlock Text="PC NAME" Style="{StaticResource Eyebrow}"/>
                                     <TextBlock x:Name="ComputerText" Text="No snapshot yet" FontWeight="SemiBold" Margin="0,4,0,0" Style="{StaticResource TrimmedText}"/>
-                                    <TextBlock x:Name="PcModelText" Text="Model · no scan yet" Foreground="{DynamicResource MutedBrush}" FontSize="13" Style="{StaticResource TrimmedText}"/>
+                                    <TextBlock x:Name="PcModelText" Text="Model - no scan yet" Foreground="{DynamicResource MutedBrush}" FontSize="13" Style="{StaticResource TrimmedText}"/>
                                     <TextBlock x:Name="CapturedText" Text="Scan to capture this PC" Foreground="{DynamicResource MutedBrush}" FontSize="13" Style="{StaticResource TrimmedText}"/>
                                 </StackPanel>
                                 <StackPanel x:Name="CpuSummary" Grid.Column="1" Margin="0,0,14,0">
                                     <TextBlock Text="PROCESSOR" Style="{StaticResource Eyebrow}"/>
-                                    <TextBlock x:Name="CpuText" Text="—" Margin="0,4,0,0" Style="{StaticResource TrimmedText}"/>
-                                    <TextBlock x:Name="MemoryText" Text="Memory —" Foreground="{DynamicResource MutedBrush}" FontSize="13" Style="{StaticResource TrimmedText}"/>
+                                    <TextBlock x:Name="CpuText" Text="Pending" Margin="0,4,0,0" Style="{StaticResource TrimmedText}"/>
+                                    <TextBlock x:Name="MemoryText" Text="Memory: not scanned" Foreground="{DynamicResource MutedBrush}" FontSize="13" Style="{StaticResource TrimmedText}"/>
                                 </StackPanel>
                                 <StackPanel x:Name="WindowsSummary" Grid.Column="2">
                                     <TextBlock Text="WINDOWS" Style="{StaticResource Eyebrow}"/>
-                                    <TextBlock x:Name="WindowsText" Text="—" Margin="0,4,0,0" Style="{StaticResource TrimmedText}"/>
+                                    <TextBlock x:Name="WindowsText" Text="Pending" Margin="0,4,0,0" Style="{StaticResource TrimmedText}"/>
                                     <TextBlock x:Name="CatalogText" Text="Catalog waiting for a scan" Foreground="{DynamicResource MutedBrush}" FontSize="13" Style="{StaticResource TrimmedText}"/>
                                 </StackPanel>
                             </Grid>
@@ -146,29 +146,29 @@
                             <Border Style="{StaticResource Card}" Margin="0,0,8,8" Padding="12,9">
                                 <StackPanel>
                                     <TextBlock Text="IDENTIFIER FIELDS" Style="{StaticResource Eyebrow}"/>
-                                    <TextBlock x:Name="IdsCount" Text="—" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}"/>
-                                    <TextBlock Text="Reported by Windows" Foreground="{DynamicResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="IdsCount" Text="Not scanned" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}"/>
+                                    <TextBlock x:Name="IdsMetricDetail" Text="Start a scan to collect IDs" Foreground="{DynamicResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                             <Border Style="{StaticResource Card}" Margin="0,0,8,8" Padding="12,9">
                                 <StackPanel>
                                     <TextBlock Text="SECTIONS READ" Style="{StaticResource Eyebrow}"/>
-                                    <TextBlock x:Name="SectionsCount" Text="— / 18" FontSize="26" FontWeight="SemiBold"/>
-                                    <TextBlock Text="Hardware and system" Foreground="{DynamicResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="SectionsCount" Text="Not scanned" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}"/>
+                                    <TextBlock x:Name="SectionsMetricDetail" Text="Read status after scanning" Foreground="{DynamicResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                             <Border Style="{StaticResource Card}" Margin="0,0,8,8" Padding="12,9">
                                 <StackPanel>
                                     <TextBlock Text="REVIEW FINDINGS" Style="{StaticResource Eyebrow}"/>
-                                    <TextBlock x:Name="ReviewCount" Text="—" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource WarningBrush}"/>
-                                    <TextBlock Text="Missing IDs and conflicts" Foreground="{DynamicResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="ReviewCount" Text="Not checked" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}"/>
+                                    <TextBlock x:Name="ReviewMetricDetail" Text="No results yet" Foreground="{DynamicResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                             <Border Style="{StaticResource Card}" Margin="0,0,8,8" Padding="12,9">
                                 <StackPanel>
                                     <TextBlock Text="DEVICE RECORDS" Style="{StaticResource Eyebrow}"/>
-                                    <TextBlock x:Name="DevicesCount" Text="—" FontSize="26" FontWeight="SemiBold"/>
-                                    <TextBlock Text="Windows device catalog" Foreground="{DynamicResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="DevicesCount" Text="Not scanned" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}"/>
+                                    <TextBlock x:Name="DevicesMetricDetail" Text="Counts appear after scanning" Foreground="{DynamicResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                         </UniformGrid>
@@ -183,9 +183,9 @@
                                                VerticalAlignment="Center" Style="{StaticResource TrimmedText}"/>
                                 </Grid>
                                 <WrapPanel Margin="12,0,12,8">
-                                    <TextBlock Text="READ · data received" Foreground="{DynamicResource SuccessBrush}" FontSize="12" Margin="0,0,16,0"/>
-                                    <TextBlock Text="CHECK · review values" Foreground="{DynamicResource WarningBrush}" FontSize="12" Margin="0,0,16,0"/>
-                                    <TextBlock Text="NOT READ · read failed" Foreground="{DynamicResource ErrorBrush}" FontSize="12"/>
+                                    <TextBlock Text="READ - data received" Foreground="{DynamicResource SuccessBrush}" FontSize="12" Margin="0,0,16,0"/>
+                                    <TextBlock Text="CHECK - review values" Foreground="{DynamicResource WarningBrush}" FontSize="12" Margin="0,0,16,0"/>
+                                    <TextBlock Text="NOT READ - read failed" Foreground="{DynamicResource ErrorBrush}" FontSize="12"/>
                                 </WrapPanel>
                                 <DataGrid x:Name="ScanGrid" ItemsSource="{Binding ScanRows}" Style="{StaticResource PageGrid}"
                                           ScrollViewer.VerticalScrollBarVisibility="Disabled" AutomationProperties.Name="Scan activity"
@@ -212,7 +212,7 @@
                         <Grid x:Name="IdSearchPanel">
                             <TextBox x:Name="IdSearch" TextChanged="OnIdFilterChanged" AutomationProperties.Name="Search identifiers"
                                      VerticalContentAlignment="Center" ToolTip="Search by section, device, field, value or status"/>
-                            <TextBlock Text="Search IDs…" IsHitTestVisible="False" Margin="10,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}">
+                            <TextBlock Text="Search IDs..." IsHitTestVisible="False" Margin="10,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -252,7 +252,7 @@
                         </Grid>
                     </Border>
                     <DockPanel Grid.Row="2" Margin="0,8,0,0">
-                        <TextBlock x:Name="IdDetailLabel" DockPanel.Dock="Top" Text="SELECTED VALUE · Enter on a row opens details" TextWrapping="Wrap" Style="{StaticResource Eyebrow}" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="IdDetailLabel" DockPanel.Dock="Top" Text="SELECTED VALUE - Enter on a row opens details" TextWrapping="Wrap" Style="{StaticResource Eyebrow}" Margin="0,0,0,4"/>
                         <TextBox x:Name="IdDetail" Style="{StaticResource DetailBox}" FontFamily="Consolas" AutomationProperties.Name="Selected identifier value"/>
                     </DockPanel>
                 </Grid>
@@ -290,7 +290,7 @@
                                 <Grid>
                                 <TextBox x:Name="HardwareSearch" TextChanged="OnHardwareFilterChanged" AutomationProperties.Name="Search hardware records"
                                          VerticalContentAlignment="Center" ToolTip="Filter records in this section by any field"/>
-                                <TextBlock Text="Search records…" IsHitTestVisible="False" Margin="10,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}">
+                                <TextBlock Text="Search records..." IsHitTestVisible="False" Margin="10,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Visibility" Value="Collapsed"/>
@@ -344,7 +344,7 @@
                         <Grid>
                             <TextBox x:Name="ReviewSearch" TextChanged="OnReviewFilterChanged" AutomationProperties.Name="Search review findings"
                                      VerticalContentAlignment="Center" ToolTip="Search findings by kind, section, device or message"/>
-                            <TextBlock Text="Search findings…" IsHitTestVisible="False" Margin="10,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}">
+                            <TextBlock Text="Search findings..." IsHitTestVisible="False" Margin="10,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -363,6 +363,7 @@
                             <ComboBoxItem Content="Missing / default IDs"/>
                             <ComboBoxItem Content="Conflicts"/>
                             <ComboBoxItem Content="Device status"/>
+                            <ComboBoxItem Content="Scan coverage"/>
                         </ComboBox>
                     </Grid>
                         <TextBlock x:Name="ReviewResultsText" Text="No scan yet" Style="{StaticResource TrimmedText}"
@@ -394,20 +395,20 @@
                 <Grid x:Name="SnapshotsPage" Visibility="Collapsed">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                     <StackPanel>
-                        <TextBlock x:Name="SnapshotCountText" Text="Looking for JSON snapshots…" Style="{StaticResource TrimmedText}" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="SnapshotCountText" Text="Looking for JSON snapshots..." Style="{StaticResource TrimmedText}" Margin="0,0,0,4"/>
                         <TextBlock x:Name="SnapshotFoldersText" Style="{StaticResource TrimmedText}"
                                    Foreground="{DynamicResource MutedBrush}" FontSize="13" Margin="0,0,0,6"/>
                         <WrapPanel x:Name="SnapshotToolsPanel">
-                            <Button x:Name="SnapshotFolderSettingsButton" Content="Folder settings…" Click="OnSnapshotFolderSettings" Margin="0,0,8,4"/>
+                            <Button x:Name="SnapshotFolderSettingsButton" Content="Folder settings..." Click="OnSnapshotFolderSettings" Margin="0,0,8,4"/>
                             <Button x:Name="RefreshSnapshotsButton" Content="Refresh list" Click="OnRefreshSnapshots" Margin="0,0,8,4"/>
-                            <Button x:Name="CompareSavedButton" Content="Compare two saved…" Click="OnCompareSavedSelected" Margin="0,0,0,4"
+                            <Button x:Name="CompareSavedButton" Content="Compare two saved..." Click="OnCompareSavedSelected" Margin="0,0,0,4"
                                     ToolTip="Select a previous snapshot below, then choose a second saved JSON. No live scan is required."/>
                         </WrapPanel>
                     </StackPanel>
                     <Grid Grid.Row="1" Margin="0,0,0,8">
                         <TextBox x:Name="SnapshotSearch" TextChanged="OnSnapshotSearchChanged"
                                  AutomationProperties.Name="Search saved snapshots" ToolTip="Search by PC name, capture time, file name or folder"/>
-                        <TextBlock Text="Search saved snapshots…" Margin="10,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                        <TextBlock Text="Search saved snapshots..." Margin="10,0" VerticalAlignment="Center" IsHitTestVisible="False"
                                    Foreground="{DynamicResource MutedBrush}"><TextBlock.Style>
                             <Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers>
                                 <DataTrigger Binding="{Binding Text,ElementName=SnapshotSearch}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger>
@@ -462,11 +463,11 @@
                                        FontSize="13" Style="{StaticResource TrimmedText}" Margin="0,3,0,0"/>
                         </StackPanel>
                         <WrapPanel x:Name="CompareActions" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
-                            <Button x:Name="CompareFilesButton" Content="Two saved files…" Click="OnChooseTwoFileComparison" Margin="0,0,8,0"
+                            <Button x:Name="CompareFilesButton" Content="Two saved files..." Click="OnChooseTwoFileComparison" Margin="0,0,8,0"
                                     ToolTip="Compare an older and a newer JSON capture without starting a scan."/>
-                            <Button x:Name="CompareExportButton" Content="Export results…" Click="OnExportComparison" Margin="0,0,8,0" IsEnabled="False"
+                            <Button x:Name="CompareExportButton" Content="Export results..." Click="OnExportComparison" Margin="0,0,8,0" IsEnabled="False"
                                     ToolTip="Export the full comparison, including rows hidden by filters."/>
-                            <Button x:Name="CompareCurrentButton" Content="Current scan…" Click="OnChooseComparison"
+                            <Button x:Name="CompareCurrentButton" Content="Current scan..." Click="OnChooseComparison"
                                     ToolTip="Choose an older JSON capture to compare with the current completed scan."/>
                         </WrapPanel>
                     </Grid>
@@ -479,7 +480,7 @@
                         <Grid>
                             <TextBox x:Name="CompareSearch" TextChanged="OnCompareSearchChanged"
                                      AutomationProperties.Name="Search comparison differences" ToolTip="Search fields, devices, previous values and current values"/>
-                            <TextBlock Text="Search differences…" Margin="10,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                            <TextBlock Text="Search differences..." Margin="10,0" VerticalAlignment="Center" IsHitTestVisible="False"
                                        Foreground="{DynamicResource MutedBrush}"><TextBlock.Style>
                                 <Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers>
                                     <DataTrigger Binding="{Binding Text,ElementName=CompareSearch}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger>
@@ -532,7 +533,7 @@
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="FooterText" Text="Windows-reported inventory" Style="{StaticResource TrimmedText}"
                            Foreground="{DynamicResource MutedBrush}" FontSize="13" Margin="0,0,8,0"/>
-                <TextBlock x:Name="PrivacyFooterText" Grid.Column="1" Text="Local scan · review IDs before sharing" Foreground="{DynamicResource MutedBrush}" FontSize="13"
+                <TextBlock x:Name="PrivacyFooterText" Grid.Column="1" Text="Local scan - review IDs before sharing" Foreground="{DynamicResource MutedBrush}" FontSize="13"
                            ToolTip="Snapshots, exports and clipboard copies contain full identifiers. Update checks contact GitHub. Files in synced folders may be uploaded by that service."/>
             </Grid>
         </Grid>

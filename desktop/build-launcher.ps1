@@ -50,7 +50,7 @@ call "$vc" >nul
 if errorlevel 1 exit /b 1
 rc.exe /nologo /fo "$output\launcher.res" "$rcPath"
 if errorlevel 1 exit /b 1
-cl.exe /nologo /W4 /WX /O2 /MT /D_WIN32_WINNT=0x0A00 /Fo"$output\launcher.obj" /Fe"$output\HWID Checker.exe" "$source" "$output\launcher.res" /link /SUBSYSTEM:WINDOWS /MANIFEST:NO user32.lib gdi32.lib ole32.lib shell32.lib
+cl.exe /nologo /utf-8 /W4 /WX /O2 /MT /D_WIN32_WINNT=0x0A00 /Fo"$output\launcher.obj" /Fe"$output\HWID Checker.exe" "$source" "$output\launcher.res" /link /SUBSYSTEM:WINDOWS /MANIFEST:NO user32.lib gdi32.lib ole32.lib shell32.lib
 exit /b %errorlevel%
 "@
 $cmdPath=Join-Path $output 'build-launcher.cmd'

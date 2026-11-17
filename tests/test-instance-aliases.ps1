@@ -73,9 +73,10 @@ foreach($mode in @('Direct','Worker')){
         $failure=$null;$partial=@()
         try{$partial=@(Invoke-ScanQuery {
             function Get-CimInstance {param($ClassName,$Namespace,$Property,$Filter,$OperationTimeoutSec) [pscustomobject]@{Name='Malformed primary';PNPDeviceID='USB\VALID';DeviceID=@('USB\A','USB\B');Present=$true}}
+            function Get-PnpDevice {param([switch]$PresentOnly) if(-not $PresentOnly){throw 'Unexpected device scope'};[pscustomobject]@{Name='Malformed alternative';InstanceId='USB\VALID-ALTERNATIVE';DeviceID=@('USB\A','USB\B');Present=$true}}
             Get-DriverHardwareIds
         })}catch{$failure=Get-ScanFailureInfo $_}
-        Assert ($failure.Code -eq 'READ-06' -and $partial.Count -eq 0) ($mode+' array-shaped DeviceID metadata cannot become a joined primary instance key')
+        Assert ($failure.Code -eq 'READ-06' -and $partial.Count -eq 0 -and $failure.Details -match 'Primary:.*Fallback:') ($mode+' array-shaped DeviceID metadata in both readers cannot become a joined primary instance key')
         $failure=$null;$partial=@()
         try{$partial=@(Invoke-ScanQuery {
             function Get-CimInstance {param($ClassName,$Namespace,$Property,$Filter,$OperationTimeoutSec) throw [NotSupportedException]::new('Synthetic unsupported primary')}

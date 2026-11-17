@@ -28,6 +28,13 @@ function Get-CimInstance {
     $record.__FIELD__=@('BAD-A','BAD-B')
     $record
 }
+function Get-PnpDevice {
+    param([switch]$PresentOnly)
+    if(-not $PresentOnly){throw 'Unexpected device scope'}
+    $record=[pscustomobject]@{FriendlyName='Malformed alternative';Class='USB';PNPDeviceID='USB\000A';InstanceId='USB\ALIAS';ClassGuid='{36fc9e60-c465-11cf-8056-444553540000}';Present=$true;HardwareID=@('MODEL');ConfigManagerErrorCode=0}
+    $record.__FIELD__=@('BAD-A','BAD-B')
+    $record
+}
 Get-DriverHardwareIds
 '@
 $fallbackTemplate=@'
@@ -48,7 +55,7 @@ foreach($mode in @('Direct','Worker')){
         foreach($field in @('PNPDeviceID','InstanceId','ClassGuid')){
             $failure=$null;$rows=@()
             try{$rows=@(Invoke-ScanQuery ([scriptblock]::Create($primaryTemplate.Replace('__FIELD__',$field))))}catch{$failure=Get-ScanFailureInfo $_}
-            Assert ($failure.Code -eq 'READ-06' -and $rows.Count -eq 0) ($mode+' primary '+$field+' arrays cannot become readable or joined device keys')
+            Assert ($failure.Code -eq 'READ-06' -and $rows.Count -eq 0 -and $failure.Details -match 'Primary:.*Fallback:') ($mode+' primary and alternative '+$field+' arrays cannot become readable or joined device keys')
         }
         foreach($field in @('PNPDeviceID','InstanceId','ClassGuid')){
             $failure=$null;$rows=@()
@@ -70,19 +77,22 @@ foreach($mode in @('Direct','Worker')){
     }finally{if($null -ne $script:scanQueryWorker){$script:scanQueryWorker.Dispose();$script:scanQueryWorker=$null}}
 }
 $originalCim=(Get-Item Function:Get-CimInstance).ScriptBlock
+$originalPnp=(Get-Item Function:Get-PnpDevice).ScriptBlock
 $report=[ordered]@{'Report info'=[ordered]@{ScanNumber=1};CPU=@([pscustomobject]@{DeviceID='CPU0';ProcessorId='CPU-UNCHANGED'});'PnP hardware IDs'=@([pscustomobject]@{Name='Earlier device';DeviceInstanceId='USB\OLD';HardwareID=@('OLD-MODEL');ConfigManagerErrorCode=0})}
 $warnings=New-Object 'System.Collections.Generic.List[string]'
 try{
     function Get-CimInstance {param($ClassName,$Namespace,$Property,$Filter,$OperationTimeoutSec) [pscustomobject]@{Name='Malformed refresh';PNPDeviceID=@('USB\A','USB\B');HardwareID=@('MODEL');ConfigManagerErrorCode=0}}
+    function Get-PnpDevice {param([switch]$PresentOnly) if(-not $PresentOnly){throw 'Unexpected device scope'};[pscustomobject]@{Name='Malformed refresh alternative';InstanceId=@('USB\A','USB\B');HardwareID=@('MODEL');ConfigManagerErrorCode=0}}
     Show-DriverHardwareIds
     Assert (-not (Test-SectionReadable $report['PnP hardware IDs']) -and $report['PnP hardware IDs'].FailureCode -eq 'READ-06' -and $warnings.Count -eq 1) 'Opening the present-device view cannot clear a malformed-key failure or publish joined IDs'
     Show-DriverHardwareIds
     Assert ($warnings.Count -eq 1 -and $report.Warnings.Count -eq 1 -and $report['PnP hardware IDs'].FailureCode -eq 'READ-06') 'Repeated invalid refreshes retain one current warning and NOT READ data'
     Set-Item Function:Get-CimInstance -Value $originalCim
+    Set-Item Function:Get-PnpDevice -Value $originalPnp
     Show-DriverHardwareIds
     Assert ((Test-SectionReadable $report['PnP hardware IDs']) -and $warnings.Count -eq 0 -and $report.Warnings.Count -eq 0 -and $report['PnP hardware IDs'][0].DeviceInstanceId -ceq 'USB\000A') 'A later valid refresh clears the failed read once and publishes the new exact device key'
     Assert ($report.CPU[0].ProcessorId -ceq 'CPU-UNCHANGED' -and $report['Report info'].ScanNumber -eq 1) 'A present-device refresh leaves the other hardware and scan number intact'
-}finally{Set-Item Function:Get-CimInstance -Value $originalCim}
+}finally{Set-Item Function:Get-CimInstance -Value $originalCim;Set-Item Function:Get-PnpDevice -Value $originalPnp}
 foreach($bad in @(@(0),@(22),@{Code=0},[pscustomobject]@{Code=22},$true,$false,[datetime]::UtcNow,[datetimeoffset]::UtcNow)){
     $status=Get-PnpStatus $bad
     Assert ($status.Quality -eq 'Unknown' -and $null -eq $status.Code -and $status.Text -notmatch 'Working|Disabled') 'Malformed status types cannot assert a working or disabled device'

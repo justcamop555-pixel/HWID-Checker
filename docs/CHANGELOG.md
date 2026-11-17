@@ -1,5 +1,68 @@
 # Recent changes
 
+## Desktop 1.5.8 / BAT 3.98 - November 17, 2026
+
+Includes the local 1.5.1-1.5.7 updates documented below. Those intermediate versions were not published as separate GitHub releases.
+
+- Retry only missed nodes once after generic non-terminating property-batch errors. Preserve accepted IDs and avoid expanding access, timeout or provider failures into repeated attempts.
+- Try one validated alternate catalog reader when the entire primary result lacks instance keys. Preserve useful primary data on failure or narrower results, keeping unmatched observations separate.
+- Expose incomplete identification as Scan coverage / CHECK while keeping readable device records. Separate property gaps and source disagreements from hardware faults, ordinary missing optional values and wholly unread sections.
+- Recognize valid legacy instance-ID field names consistently in BAT and Desktop coverage checks, retaining exact raw values and explicit failed-read counters.
+- Prevent contradictory timing/catalog metadata from producing optimistic success. Fresh Desktop results require unique complete section coverage before publication; older or partial data remain labeled conservatively.
+- Add a dedicated Scan coverage filter and update the FAQ to 38 questions. Completion means a finished, validated attempt, not guaranteed access to every private identifier.
+- Preserve the Scan coverage Review filter and its selection across a Desktop restart.
+- Show identification coverage warnings consistently in normal and compact BAT dashboards, without depending on another view's state.
+
+## Local candidate - Desktop 1.5.7 / BAT 3.97 (2026-11-15)
+
+- Treat successful empty monitor-identification reads as an explicit zero-identification collection status. Do not invent a physical monitor, serial or missing-ID finding; retain actual provider and malformed-data failures.
+- Permit one validated present-only fallback after malformed primary device records, with the original diagnostic and accepted reader source retained. Access and timeout failures still do not trigger this recovery.
+- Give optional Secure Boot and TPM values separate read statuses/codes. Unread values remain unknown, and optional failures do not discard readable Windows information. Buffer partial Secure Boot output before accepting its boolean state.
+- Add a 37-question FAQ covering model differences, scan limitations, false positives, optional hardware, saving/comparison, privacy and setup, with Microsoft reference links. Correct the README's current-source versions and installer-scope guidance.
+- Keep malformed-reader tests strict while isolating optional property mocks from real Windows provider/module imports.
+
+## Local candidate - Desktop 1.5.6 / BAT 3.96 (2026-11-15)
+
+- Reuse overview metric text and theme bindings while the accepted capture is unchanged. New captures and explicit reapplication refresh the cards.
+- Cache bounded snapshot preview metadata for automatic library refreshes, reducing repeated report reads and JSON parsing. Manual refresh validates fresh content; changed, removed, inaccessible and invalid files remain eligible for revalidation.
+- Skip discarded value formatting during comparison and compute repeated field labels once per section. Preserve full scan display values and raw identifiers.
+- Add non-gating synthetic performance measurements and regressions for cached previews, manual refresh, access failures, exact labels, theme changes and capture replacement. Device coverage and scanner timeout behavior are unchanged.
+
+## Local candidate - Desktop 1.5.5 / BAT 3.96 (2026-11-15)
+
+- Show neutral Not scanned / Not checked overview cards before a capture exists. Reserve review warning color for captured findings, and keep zero findings neutral.
+- Distinguish a failed, omitted or unverified device catalog from a confirmed zero-record result. Older saved records retain their count with an explicit unverified read status.
+- Add overview checks for both themes, compact layout, genuine zero counts, failed/missing catalogs, retained rescan results and first-scan cancellation.
+
+## Local candidate - Desktop 1.5.4 / BAT 3.96 (2026-11-15)
+
+- Stop repeated property recovery after non-terminating access-denied, timeout and provider failures. Preserve accepted readings, diagnostics and later independent batches in both scan modes.
+- Use an elapsed-time clock for Desktop waiting feedback so Windows clock corrections cannot suppress progress messages.
+- Add direct/worker and PowerShell 5.1/7 regressions for recovery limits, exact ID preservation, property coverage and heartbeat throttling.
+
+## Local candidate - Desktop 1.5.3 / BAT 3.95 (2026-11-14)
+
+- Offer Just for me without administrator access by default, or All users with administrator approval, in one setup.
+- Separate personal and machine install folders, shortcuts and Windows uninstall registrations. Preserve the existing machine-wide application identity for upgrades.
+- Keep the selected mode during repair from Desktop, Start or Windows installed apps. Remove unconditional elevation from personal repair.
+- Record installation scope and show accurate repair/update guidance in Desktop and BAT. Keep setup ownership when a default installation's marker is missing.
+- Preserve snapshots, custom files, settings and the other installation during uninstall.
+- Explain the minimum Windows build and x64 architecture in setup errors. Accept PowerShell 7 when Windows PowerShell is absent, and use its standard install location for Desktop update checks.
+- Stop install/repair/uninstall while the selected Desktop installation is running, using an installation-specific lifetime guard. Preserve other copies and completed scans.
+
+## Local candidate - Desktop 1.5.2 / BAT 3.94 (2026-11-14)
+
+- Move snapshot refresh settings and folder discovery off the UI thread. Capture folder choices before background work, honor cancellation between directory probes and keep refresh requests coalesced.
+- Read hardware display overrides directly from the existing JSON array instead of allocating every record for each displayed field.
+- Keep the existing record/field view when a hardware search still matches the selected record. Clear field/copy targets when the record is filtered out.
+- Preserve the unshipped English-text fixes. Hardware-reading behavior is unchanged.
+
+## Local candidate — Desktop 1.5.1 / BAT 3.94 (2026-11-14)
+
+- Fix garbled startup messages caused by compiling UTF-8 source with the Windows default code page. Build the native launcher explicitly with UTF-8.
+- Use basic punctuation in Desktop prompts, titles, status messages and value explanations. Replace dash-only counts with Pending, Not read or Unknown as appropriate.
+- Preserve Unicode device names, file paths, identifiers and report contents. The BAT's interface text remains ASCII; hardware-reading behavior is unchanged.
+
 ## Desktop 1.5.0 / BAT 3.94 — November 14, 2026
 
 - Show a lightweight native loading window before loading .NET, with elapsed time, cancellation and readable missing-file errors.

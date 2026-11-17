@@ -22,7 +22,7 @@ internal sealed class StartupWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         var panel = new StackPanel { Margin = new Thickness(24) };
         panel.Children.Add(new TextBlock { Text = "Starting HWID Checker", FontSize = 24, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
-        _step = new TextBlock { Text = "Preparing the local application…", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 14, 0, 12) };
+        _step = new TextBlock { Text = "Preparing the local application...", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 14, 0, 12) };
         _step.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush"); panel.Children.Add(_step);
         var progress = new ProgressBar { Height = 4, Minimum = 0, Maximum = 100, Value = 0 };
         progress.SetResourceReference(ProgressBar.IsIndeterminateProperty, SystemParameters.ClientAreaAnimationKey);

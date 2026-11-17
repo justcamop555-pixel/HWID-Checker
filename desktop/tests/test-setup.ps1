@@ -26,6 +26,7 @@ Run-Setup $setup 'install'
 $installedExe=Join-Path $target 'HWID Checker.exe'
 Assert ([IO.File]::Exists($installedExe)) 'setup installs the desktop executable'
 Assert ([IO.File]::Exists((Join-Path $target 'HWID-SETUP.ini'))) 'setup writes its installation marker'
+Assert ([IO.File]::ReadAllText((Join-Path $target 'HWID-SETUP.ini')) -match '(?m)^Scope=CurrentUser\s*$') 'test setup records its actual personal installation scope'
 $cached=@(Get-ChildItem -LiteralPath (Join-Path $target 'Maintenance') -File -Filter '*.exe')
 Assert ($cached.Count -eq 1 -and (Get-FileHash -LiteralPath $cached[0].FullName).Hash -eq (Get-FileHash -LiteralPath $setup).Hash) 'offline repair retains the exact setup executable'
 $reports=Join-Path $target 'HWID-Reports'

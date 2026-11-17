@@ -145,6 +145,42 @@ $legacyRaw=$raw.Replace('function Test-ScanHasReadableData(','function Legacy-Sc
 [IO.File]::WriteAllText($legacyFixture,($legacyRaw+[Environment]::NewLine+$fakeFunctions),[Text.UTF8Encoding]::new($false))
 $legacyScan=Invoke-Bridge Scan $legacyFixture $null
 Assert ($legacyScan.Results.Count -eq 1 -and $legacyScan.Data.inventory.CPU[0].ProcessorId -ceq 'CPU-000123') 'Linked older BAT engines keep working through the bridge compatibility validator'
+$timingOverride=@'
+function Invoke-HardwareScan {
+    param($ScanNumber,$UseWorker,$IncludeExtended)
+    $path=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('INVENTORY_PATH'))
+    $inventory=ConvertTo-DesktopInventory (Read-SavedReport $path)
+    $timing=@($inventory['Scan timing'])
+    switch('TIMING_CASE'){
+        'Duplicate' {$timing[1].Section=' '+$timing[0].Section.ToLowerInvariant()+' '}
+        'BlankName' {$timing[0].Section='  '}
+        'Missing' {$timing=@($timing | Select-Object -Skip 1)}
+        'UnexpectedName' {$timing[0].Section='Synthetic unexpected section'}
+        'Extra' {$timing+=@([pscustomobject]@{Section='Synthetic extra';Status='READ';Results=1})}
+        'Waiting' {$timing[0].Status=' WAITING '}
+        'Reading' {$timing[0].Status='reading'}
+        'BlankStatus' {$timing[0].Status=' '}
+        'Normalized' {foreach($row in $timing){$row.Section=' '+$row.Section.ToLowerInvariant()+' '}}
+        'UnknownTerminal' {$timing[0].Status='UNKNOWN'}
+    }
+    $inventory['Scan timing']=$timing
+    $warnings=New-Object 'System.Collections.Generic.List[string]'
+    return [pscustomobject]@{Completed=$true;Inventory=$inventory;Warnings=$warnings;Identifiers=@(Get-IdentifierRows $inventory)}
+}
+'@
+$encodedInventory=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($inventoryPath))
+foreach($case in @('Duplicate','BlankName','Missing','UnexpectedName','Extra','Waiting','Reading','BlankStatus','Normalized','UnknownTerminal')){
+    $coverageFixture=Join-Path $root ('timing-'+$case+'.bat')
+    $override=$timingOverride.Replace('INVENTORY_PATH',$encodedInventory).Replace('TIMING_CASE',$case)
+    [IO.File]::WriteAllText($coverageFixture,($raw+[Environment]::NewLine+$fakeFunctions+[Environment]::NewLine+$override),[Text.UTF8Encoding]::new($false))
+    $valid=$case -in @('Normalized','UnknownTerminal')
+    $coverageScan=Invoke-Bridge Scan $coverageFixture $null $(if($valid){0}else{1})
+    if($valid){
+        Assert ($coverageScan.Results.Count -eq 1 -and $coverageScan.Errors.Count -eq 0 -and $coverageScan.Data.inventory.CPU[0].ProcessorId -ceq 'CPU-000123') ('Complete '+$case+' coverage preserves exact captured values without requiring every read to succeed')
+    }else{
+        Assert ($coverageScan.Results.Count -eq 0 -and $coverageScan.Errors.Count -eq 1 -and $coverageScan.Errors[0].code -ceq 'BRIDGE-02') ('Completed metadata cannot conceal '+$case+' timing coverage before publication')
+    }
+}
 $brokenFixture=Join-Path $root 'incomplete-scan.bat'
 [IO.File]::WriteAllText($brokenFixture,($raw+[Environment]::NewLine+$fakeFunctions+[Environment]::NewLine+'function Invoke-HardwareScan {param($ScanNumber,$UseWorker,$IncludeExtended) [pscustomobject]@{Completed=$false;Inventory=[ordered]@{}}}'),[Text.UTF8Encoding]::new($false))
 $broken=Invoke-Bridge Scan $brokenFixture $null 1

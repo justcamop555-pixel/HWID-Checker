@@ -2,6 +2,12 @@
 
 [Back to the main README](../README.md)
 
+See the [38-question FAQ](FAQ.md) for PC-model differences, missing identifiers, optional hardware, scan results and saving/comparison.
+
+Desktop **Review > Scan coverage** and BAT **[4] > [3]** explain identification checks that remain incomplete even though base device records were read. The all-known catalog can therefore be **CHECK** with a valid record count. Blocked or unreturned property reads, missing instance keys and disagreeing identification sources do not by themselves establish a hardware fault. A successful fresh read clears the earlier coverage finding.
+
+Some models expose fewer fields. A successful empty monitor-identification query is shown as a collection-status entry with **0 identification records**; this does not establish the number of physical displays. The Windows section includes separate **Secure Boot read status/code** and **TPM read status/code** fields. Blocked or unsupported optional reads stay unknown, while readable Windows information remains available. Inspect Hardware or the full report for these fields.
+
 Application updates are available from Desktop **Updates** or BAT **[9] → [5]**. Automatic updates start enabled and prepare compatible newer packages in the background. [Update behavior and recovery](UPDATES.md)
 
 ## Desktop snapshots and comparison

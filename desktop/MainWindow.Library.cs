@@ -8,6 +8,43 @@ namespace HwidDesktop;
 public partial class MainWindow
 {
     private IReadOnlyList<SnapshotEntry> _snapshotEntries = Array.Empty<SnapshotEntry>();
+    private readonly SnapshotPreviewCache _snapshotPreviews = new();
+
+    private sealed record SnapshotDiscovery(SnapshotLibrarySettings Settings, SnapshotCatalog Catalog, string DefaultFolder);
+
+    private Task<SnapshotDiscovery> DiscoverSnapshotsAsync(CancellationToken cancellation, Action? beforeDiscovery = null,
+        bool reuseCachedPreviews = false)
+    {
+        // Capture UI-owned state before queueing work. A BAT reconnection or
+        // folder change can queue a subsequent refresh without mutating this one.
+        var settingsPath = VerificationSharedSettingsPath;
+        var isolated = IsVerification && settingsPath == null;
+        var batPath = _engine?.BatPath;
+        var engineDirectory = Path.GetDirectoryName(batPath) ?? AppContext.BaseDirectory;
+        var lastSaveFolder = _lastSaveFolder;
+        var additionalFolders = _additionalFolders.ToArray();
+        var localFolder = IsVerification ? null : LocalReportsFolder;
+        return Task.Run(async () =>
+        {
+            cancellation.ThrowIfCancellationRequested();
+            beforeDiscovery?.Invoke();
+            cancellation.ThrowIfCancellationRequested();
+            var settings = isolated ? new SnapshotLibrarySettings(null, []) : SharedSnapshotLibrary.Read(settingsPath);
+            var defaultFolder = InstallationLayout.ReportsFolder(engineDirectory);
+            var folders = new List<string>();
+            if (settings.Primary is { } primary) folders.Add(primary);
+            folders.AddRange(settings.Folders);
+            foreach (var folder in BuiltInReportFolders(batPath, defaultFolder, localFolder, cancellation)) folders.Add(folder);
+            if (!settings.IsConfigured)
+            {
+                if (lastSaveFolder.Length > 0) folders.Add(lastSaveFolder);
+                folders.AddRange(additionalFolders);
+            }
+            cancellation.ThrowIfCancellationRequested();
+            var catalog = await SnapshotStore.ReadAsync(folders, cancellation, _snapshotPreviews, reuseCachedPreviews).ConfigureAwait(false);
+            return new SnapshotDiscovery(settings, catalog, defaultFolder);
+        }, cancellation);
+    }
 
     private void DisconnectEngine()
     {
@@ -15,7 +52,7 @@ public partial class MainWindow
         EngineConnectionText.Text = "BAT not connected";
         EngineConnectionText.ToolTip = null;
         EngineVersionText.Text = "Connect or restore the scanner";
-        FooterText.Text = "Scanner unavailable · Open BAT console can restore a bundled copy";
+        FooterText.Text = "Scanner unavailable - Open BAT console can restore a bundled copy";
         FooterText.ToolTip = null;
         UpdateButtons();
     }
@@ -53,8 +90,8 @@ public partial class MainWindow
 
     private void UpdateSnapshotCount()
     {
-        SetSummary(SnapshotCountText, (_snapshotCatalogRefreshing ? "Refreshing… · " : "") + $"{SnapshotsGrid.Items.Count} shown · {_snapshotEntries.Count} saved snapshots" +
-            (_snapshotCatalogSkipped > 0 ? $" · {_snapshotCatalogSkipped} files/folders skipped" : ""),
+        SetSummary(SnapshotCountText, (_snapshotCatalogRefreshing ? "Refreshing... - " : "") + $"{SnapshotsGrid.Items.Count} shown - {_snapshotEntries.Count} saved snapshots" +
+            (_snapshotCatalogSkipped > 0 ? $" - {_snapshotCatalogSkipped} files/folders skipped" : ""),
             "Newest capture first by default. Preview entries are validated again before comparison. " +
             "Use Folder settings to see or change the local report locations. Existing rows remain available while refreshing. " +
             "Snapshots contain full identifiers; files in synced folders may be uploaded by that service.");

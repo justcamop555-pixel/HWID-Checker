@@ -13,7 +13,7 @@ internal sealed class ConsoleRepairWindow : Window
     internal ConsoleRepairWindow(string reason, string? sourcePath)
     {
         SetResourceReference(StyleProperty, typeof(Window));
-        Title = "Repair BAT console — HWID Checker";
+        Title = "Repair BAT console - HWID Checker";
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = false;
         Width = Math.Min(590, SystemParameters.WorkArea.Width - 24);

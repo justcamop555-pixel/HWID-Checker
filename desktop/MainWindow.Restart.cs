@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 
 namespace HwidDesktop;
@@ -74,7 +76,7 @@ public partial class MainWindow
         }
         catch (Exception error)
         {
-            ShowError("Restart could not finish · current window kept", error);
+            ShowError("Restart could not finish - current window kept", error);
             return false;
         }
         finally
@@ -115,7 +117,7 @@ public partial class MainWindow
             var selection = state.Number("idSelection");
             IdentifiersGrid.SelectedIndex = selection >= 0 && selection < IdentifiersGrid.Items.Count ? selection : -1;
             ReviewSearch.Text = state.Text("reviewSearch");
-            ReviewFilter.SelectedIndex = Math.Clamp(state.Number("reviewKind"), 0, 4);
+            ReviewFilter.SelectedIndex = Math.Clamp(state.Number("reviewKind"), 0, Math.Max(0, ReviewFilter.Items.Count - 1));
             ReviewGrid.SelectedIndex = state.Number("reviewSelection") is var reviewIndex && reviewIndex >= 0 && reviewIndex < ReviewGrid.Items.Count ? reviewIndex : -1;
             HardwareSections.SelectedItem = HardwareSections.Items.Cast<HardwareSection>().FirstOrDefault(section => section.Name == state.Text("hardwareSection")) ?? HardwareSections.SelectedItem;
             HardwareSearch.Text = state.Text("hardwareSearch");
@@ -144,6 +146,9 @@ public partial class MainWindow
                 if (JsonSerializer.Serialize(_snapshot?.Data) != JsonSerializer.Serialize(state.Get("snapshot")) ||
                     _page != state.Text("page") || IdSearch.Text != state.Text("idSearch") ||
                     HardwareSearch.Text != state.Text("hardwareSearch") ||
+                    ReviewSearch.Text != state.Text("reviewSearch") ||
+                    ReviewFilter.SelectedIndex != state.Number("reviewKind") ||
+                    ReviewGrid.SelectedIndex != state.Number("reviewSelection") ||
                     SnapshotSearch.Text != state.Text("snapshotSearch") || CompareSearch.Text != state.Text("compareSearch") ||
                     CompareFilter.SelectedIndex != state.Number("compareFilter") ||
                     IdFilter.SelectedIndex != state.Number("idFilter") || _darkTheme != state.Flag("dark") ||
@@ -151,6 +156,8 @@ public partial class MainWindow
                     CompareGrid.SelectedIndex != state.Number("comparisonSelection") ||
                     JsonSerializer.Serialize(_comparisonResumeData) != JsonSerializer.Serialize(state.Get("comparison")))
                     throw new InvalidDataException("Restart verification: restored session values differ.");
+                if (ReviewGrid.SelectedItem is ReviewRow restoredReview && ReviewDetail.Text != ValueExplanation.Review(restoredReview))
+                    throw new InvalidDataException("Restart verification: the selected review explanation was not restored.");
                 await WriteTestResultAsync(result, true);
                 Close();
                 return false;
@@ -172,6 +179,24 @@ public partial class MainWindow
     private async Task VerifyRestartAsync(string path)
     {
         if (!IsVerification || _snapshot == null) throw new InvalidOperationException("Restart verification requires a synthetic capture.");
+        var coverageData = JsonNode.Parse(_snapshot.Data.GetRawText())!;
+        if (coverageData["review"] is not JsonObject) coverageData["review"] = new JsonObject();
+        var coverageReview = coverageData["review"]!.AsObject();
+        if (coverageReview["CoverageIssues"] is not JsonArray) coverageReview["CoverageIssues"] = new JsonArray();
+        coverageReview["CoverageIssues"]!.AsArray().Add(new JsonObject
+        {
+            ["Section"] = "Extended device inventory", ["Message"] = "RESTART-COVERAGE-000123 - optional properties unread",
+            ["Details"] = "Exact synthetic coverage explanation 000123", ["Action"] = "Retry the synthetic read"
+        });
+        using (var coverageDocument = JsonDocument.Parse(coverageData.ToJsonString()))
+            ApplySnapshot(new DesktopSnapshot(coverageDocument.RootElement));
+        ReviewSearch.Text = "RESTART-COVERAGE-000123";
+        ReviewFilter.SelectedIndex = ReviewFilter.Items.IndexOf(ReviewFilter.Items.Cast<ComboBoxItem>()
+            .Single(item => Equals(item.Content, "Scan coverage")));
+        ReviewGrid.SelectedIndex = 0;
+        if (ReviewGrid.Items.Count != 1 || ReviewGrid.SelectedItem is not ReviewRow { Kind: "Scan coverage" } selectedCoverage ||
+            ReviewDetail.Text != ValueExplanation.Review(selectedCoverage) || !ReviewDetail.Text.Contains("explanation 000123", StringComparison.Ordinal))
+            throw new InvalidOperationException("Dashboard layout: restart verification could not select the exact coverage explanation.");
         HardwareSections.SelectedItem = HardwareSections.Items.Cast<HardwareSection>().First(section => section.Name == "CPU");
         HardwareSearch.Text = "CPU";
         IdSearch.Text = "CPU"; IdFilter.SelectedIndex = 1;

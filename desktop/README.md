@@ -2,13 +2,27 @@
 
 A Windows desktop interface for the existing HWID Checker scanner. The application launches the PowerShell scanner embedded in the adjacent `hwid.bat`, then presents its results in a graphical dashboard.
 
-Desktop **1.5.0** includes BAT **3.94**. Download the complete ZIP or all-users installer from [GitHub Releases](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.5.0).
+Desktop **1.5.8** includes BAT **3.98**. Download the installer or complete portable ZIP from [GitHub Releases](https://github.com/justcamop555-pixel/HWID-Checker/releases/tag/desktop-v1.5.8).
+
+**Scan coverage** separates readable device records from incomplete identification checks. A CHECK catalog retains its real record count and exposes blocked/unreturned properties or disagreeing sources in Review. A validated finished attempt can still need review; no completion message guarantees every manufacturer-private ID. Generic partial property errors can recover missed nodes once, and a primary catalog without instance keys can use one validated alternate without guessing matches or discarding source observations.
+
+See the [38-question FAQ](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/FAQ.md) for model-dependent readings, missing IDs, scan errors, saving and comparison. A successful monitor-identification query can return zero records without a read failure; optional Secure Boot and TPM fields have separate read statuses/codes. These results do not establish physical hardware absence or a disabled security feature.
+
+Before your first scan, Overview shows **Not scanned** and **Not checked** in neutral colors. These are not findings. Review uses a warning color only when a completed capture contains items to explain. A device catalog that was not read or included is labeled explicitly rather than displayed as zero devices.
+
+For slower PCs, unchanged overview cards are reused, automatic snapshot-library refreshes reuse a bounded in-memory preview, and comparisons skip formatting values they do not display. Manual **Refresh** reads the reports again, and comparisons still validate the selected files. The preview cache stores only catalog metadata and does not reduce hardware scan coverage or provider timeouts.
+
+Device-property recovery now stops repeated per-device attempts after non-terminating access, timeout or provider errors, while retaining accepted readings and continuing later independent batches. Waiting messages use elapsed time so a Windows clock correction cannot suppress scan feedback. Missing optional property reads remain visible in the saved diagnostics; they do not erase primary device records or prove hardware failure.
+
+Snapshot refresh prepares its settings, report locations and directory probes on a background worker so slow storage does not block the window. Hardware browsing reads display overrides directly from the existing JSON array and retains a matching selected field when filtering. These changes reduce temporary allocation and avoid rebuilding an unchanged view; the exact hardware values and saved reports are preserved.
+
+The early startup window is compiled explicitly as UTF-8 to prevent broken characters. App messages use plain English with basic punctuation; waiting and unavailable counts use words instead of decorative dash placeholders. Device-provided names, IDs, serial numbers and saved values retain their original Unicode text. These display changes preserve the exact collected values.
 
 The update adds clearer ID search counts and empty states, responsive ID controls, device-aware list copying, accurate coverage for older captures, and staged CSV/HTML and comparison exports. The BAT retains scan text through resizing and can fall back to normal text output if native drawing remains unavailable. Published release history is in the [changelog](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/CHANGELOG.md).
 
-## Install or repair for all users
+## Install or repair
 
-The new all-users setup requires administrator approval and installs the app under Program Files. It provides Start menu shortcuts, offline repair and Windows uninstall registration. Saved snapshots and per-user settings are kept during repair and uninstall. See the [setup guide](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/desktop/installer/README.md) for requirements, build instructions and validation limits. The portable ZIP remains supported.
+Setup now offers **Just for me** without administrator access, or **All users** with administrator approval. Personal installation uses your LocalAppData Programs folder; all-users installation uses Program Files. Each mode has its own uninstall entry and shortcuts. Repair keeps the installed mode. Saved snapshots and per-user settings are kept during repair and uninstall. See the [setup guide](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/desktop/installer/README.md). The portable ZIP remains supported.
 
 IDs, Hardware and Review rows now open a larger detail window with a double-click or Enter. ID details explain the value's status and preserve leading zeros. Review can filter read errors, missing/default IDs, conflicts and device status separately. **Clear filters** resets both search and type. Copy success messages show a count instead of repeating the sensitive value; clipboard contents still contain the full original text.
 
@@ -103,7 +117,7 @@ The application reads the companion `hwid.bat` at runtime. It does not convert o
 
 Use **Connect BAT…** to select an existing checker when it is stored elsewhere. The EXE uses your saved connection if that file is available, then checks for an adjacent BAT. The scanning bridge loads collection/report functions from that file and runs them in a separate, hidden PowerShell process. The desktop window presents progress and results.
 
-Use **Connect BAT…** to select the `hwid.bat` supplied with this desktop package when upgrading an older scanner. This release includes BAT **3.94**. Earlier BAT versions can still compare a JSON report by path.
+Use **Connect BAT...** to select the `hwid.bat` supplied with this desktop package when upgrading an older scanner. This release includes BAT **3.98**. Earlier BAT versions can still compare a JSON report by path.
 
 **Open BAT console** checks the selected scanner with available PowerShell runtimes before opening a separate console. A source accepted by either installed runtime is kept. The standard `hwid.bat` requires its sibling launcher; a renamed BAT ignores an unused missing or invalid launcher.
 
@@ -121,7 +135,7 @@ Connection checks reject empty, truncated or larger-than-8-MB BAT files before d
 
 ## Application updates
 
-Automatic updates start enabled. Desktop checks published releases in the background and prepares a newer compatible Windows x64 package. A ready update installs after normal window closure. Open **Updates** to change this preference, check manually, or install and restart.
+Automatic update checks start enabled. Portable copies prepare a newer compatible package and apply it after normal window closure. Installed copies use setup for updates: choose the same Just for me or All users mode. Only All users needs administrator approval. Open **Updates** to change the preference or check manually.
 
 The updater downloads release metadata and application files from this project's GitHub releases. Scans and report content stay outside update requests. Desktop updates its installation and adjacent BAT. A separately connected BAT uses that BAT's update controls. [Update behavior and recovery](https://github.com/justcamop555-pixel/HWID-Checker/blob/main/docs/UPDATES.md)
 

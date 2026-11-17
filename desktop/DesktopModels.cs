@@ -105,7 +105,7 @@ internal sealed record HardwareSection(string Name, int Count)
             return Count + " " + unit;
         }
     }
-    public string Display => FriendlyName + "  ·  " + CountText;
+    public string Display => FriendlyName + "  -  " + CountText;
 }
 internal sealed record HardwareRecord(string Title, JsonElement Data, int Index);
 internal sealed record SnapshotEntry(string Path, string Name, string Computer, string Captured, string Version, string Size, DateTimeOffset SortTime)
@@ -138,10 +138,10 @@ internal sealed class DesktopSnapshot
         .Distinct(StringComparer.OrdinalIgnoreCase).Count();
     public string CoverageText => SectionsChecked > 0 ? $"{SectionsRead} of {SectionsChecked} sections read" : "Section read status not recorded";
     public bool AllSectionsRead => SectionsChecked > 0 && SectionsRead == SectionsChecked;
-    public int SectionsRead => Timing.Where(x =>
-        x.Status.Trim().Equals("READ", StringComparison.OrdinalIgnoreCase) ||
-        x.Status.Trim().Equals("CHECK", StringComparison.OrdinalIgnoreCase))
-        .Select(x => x.Name.Trim()).Where(name => name.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+    public int SectionsRead => Timing.Where(x => !string.IsNullOrWhiteSpace(x.Name))
+        .GroupBy(x => x.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+        .Count(group => group.All(x => x.Status.Trim().Equals("READ", StringComparison.OrdinalIgnoreCase) ||
+            x.Status.Trim().Equals("CHECK", StringComparison.OrdinalIgnoreCase)));
     public int DeviceCount => Inventory.Get("Extended device inventory").Rows()
         .Count(row => row.ValueKind == JsonValueKind.Object && J.IsCapturedRecord(row));
     public ScanRow CatalogRow
@@ -151,18 +151,50 @@ internal sealed class DesktopSnapshot
             var status = Info.Text("ExtendedStatus").Trim();
             var info = Inventory.Get("Extended scan info");
             var conflicts = info.Number("ParentLinkConflicts");
+            static bool Failed(JsonElement value) => value.ValueKind == JsonValueKind.True ||
+                value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(value.GetString());
+            static bool DiagnosticShape(JsonElement value) => value.ValueKind is JsonValueKind.Undefined or
+                JsonValueKind.Null or JsonValueKind.True or JsonValueKind.False or JsonValueKind.String;
+            if (status.Equals("Unavailable", StringComparison.OrdinalIgnoreCase) ||
+                Failed(info.Get("Error")) || Failed(info.Get("Unavailable")))
+                return new("All-known device catalog", "NOT READ", "Not read",
+                    "The device list could not be refreshed. Open Review or Hardware for details.", "");
+            if (info.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null or JsonValueKind.Object) ||
+                !DiagnosticShape(info.Get("Error")) || !DiagnosticShape(info.Get("Unavailable")))
+                return new("All-known device catalog", "UNKNOWN", DeviceCount.ToString(),
+                    "Device-list read metadata was invalid; captured records remain available.", "");
             if (status.Equals("Refreshed", StringComparison.OrdinalIgnoreCase))
+            {
+                var gaps = new List<string>();
+                static bool Key(JsonElement row, string name)
+                {
+                    var value = row.Get(name);
+                    if (value.ValueKind != JsonValueKind.String) return false;
+                    foreach (var character in value.GetString() ?? "")
+                        if (character != '\0' && !char.IsWhiteSpace(character)) return true;
+                    return false;
+                }
+                var missingKeys = Inventory.Get("Extended device inventory").Rows().Count(row =>
+                    row.ValueKind == JsonValueKind.Object && J.IsCapturedRecord(row) &&
+                    !Key(row, "DeviceInstanceId") && !Key(row, "PNPDeviceID") && !Key(row, "InstanceId") && !Key(row, "DeviceID"));
+                foreach (var pair in new[] { ("PropertyNodesWithoutRows", "nodes returned no extra properties"),
+                    ("PropertyBlockingErrors", "blocked or unavailable property reads"),
+                    ("InvalidPropertyRows", "invalid property rows"), ("IdSourceConflicts", "ID source disagreements"),
+                    ("IdPropertyConflicts", "differing property ID readings"), ("ContainerIdConflicts", "unresolved grouping IDs") })
+                    if (info.Number(pair.Item1) > 0) gaps.Add(info.Number(pair.Item1) + " " + pair.Item2);
+                if (Math.Max(missingKeys, info.Number("MissingInstanceIds")) > 0)
+                    gaps.Add(Math.Max(missingKeys, info.Number("MissingInstanceIds")) + " records lack instance IDs");
+                if (gaps.Count > 0)
+                    return new("All-known device catalog", "CHECK", DeviceCount.ToString(),
+                        "Device records read; " + string.Join("; ", gaps) + ". Review scan coverage. Unreported properties can be normal.", "");
                 return new("All-known device catalog", "READ", DeviceCount.ToString(),
                     conflicts > 0 ? conflicts + " unresolved parent links" : "Present, hidden and remembered Windows records", "");
-            if (status.Equals("Unavailable", StringComparison.OrdinalIgnoreCase) ||
-                info.Text("Error").Length > 0 || info.Text("Unavailable").Length > 0)
-                return new("All-known device catalog", "NOT READ", "—",
-                    "The device list could not be refreshed. Open Review or Hardware for details.", "");
+            }
             if (status.Length == 0 && info.ValueKind == JsonValueKind.Undefined &&
                 Inventory.Get("Extended device inventory").ValueKind == JsonValueKind.Undefined)
-                return new("All-known device catalog", "NOT SCANNED", "—", "This capture does not include an extended device scan.", "");
+                return new("All-known device catalog", "NOT SCANNED", "Unknown", "This capture does not include an extended device scan.", "");
             return new("All-known device catalog", "UNKNOWN", DeviceCount.ToString(),
-                DeviceCount > 0 ? "Saved device records are available; the original read status was not recorded." :
+                DeviceCount > 0 ? "Captured device records are available; the original read status was not recorded." :
                     "Device-list read status was not recorded.", "");
         }
     }
@@ -189,12 +221,15 @@ internal sealed class DesktopSnapshot
         }
         var review = Data.Get("review");
         foreach (var row in review.Get("UnreadDetails").Rows())
-            findings.Add(new("Read error", row.Text("Section"), row.Text("Reason") + " · " + row.Text("Code"),
+            findings.Add(new("Read error", row.Text("Section"), row.Text("Reason") + " - " + row.Text("Code"),
                 row.Text("Message") + "\n\nNext step: " + row.Text("Action")));
+        foreach (var row in review.Get("CoverageIssues").Rows())
+            findings.Add(new("Scan coverage", row.Text("Section"), row.Text("Message"),
+                row.Text("Details") + "\n\nNext step: " + row.Text("Action")));
         foreach (var row in review.Get("IdIssues").Rows())
         {
             var section = row.Text("Section"); var field = Label(section, row.Text("Field"));
-            findings.Add(new("ID review", section, field + " · " + (row.Text("Quality") == "Placeholder" ? "default value" : "not supplied"),
+            findings.Add(new("ID review", section, field + " - " + (row.Text("Quality") == "Placeholder" ? "default value" : "not supplied"),
                 "Device: " + row.Text("Device") + "\nField: " + field + "\nValue: " + row.Get("Value").Display() +
                 "\n\nA missing or generic identifier can be normal for this component. The full inventory retains the Windows-reported value."));
         }
@@ -211,6 +246,10 @@ internal sealed class DesktopSnapshot
         foreach (var row in Inventory.Get("Extended device inventory").Rows().Where(x => x.Flag("ParentInstanceIdConflict")))
             findings.Add(new("Parent link", row.Text("Name"), "Parent-device readings disagree", "Instance: " + row.Text("DeviceInstanceId") +
                 "\n\nObserved parents:\n" + row.Get("ParentInstanceIdReadings").Display() + "\n\nThe relationship is unresolved. Core device identifiers remain available."));
+        var catalogCoverage = CatalogRow;
+        if (catalogCoverage.Status == "CHECK" && !findings.Any(row => row.Kind == "Scan coverage" && row.Section == "Extended device inventory"))
+            findings.Add(new("Scan coverage", "Extended device inventory", "Additional device properties need review",
+                catalogCoverage.Detail + "\n\nThis describes identification coverage, not a hardware fault. Inspect the captured metadata and retry if appropriate."));
         Identifiers = identifiers.AsReadOnly();
         Findings = findings.AsReadOnly();
         _identifierSearch = identifiers.Select(row => (row, string.Join(" ", row.Section, row.Field, row.Value, row.Device, row.Status))).ToArray();
@@ -309,8 +348,13 @@ internal sealed class DesktopSnapshot
         if (Regex.IsMatch(field, @"\A(?:SerialNumber|IdentifyingNumber|UUID|ProcessorId|MachineGuid|VolumeSerialNumber|UniqueId|Guid|MacAddress|PermanentAddress|InterfaceGuid|PNPDeviceID|DeviceInstanceId|SMBIOSAssetTag)\z", RegexOptions.IgnoreCase) &&
             value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) && value.Text().Length > 0)
             return value.Text();
-        var records = Data.Get("fieldValues").Get(section).Rows();
-        var display = recordIndex >= 0 && recordIndex < records.Length ? records[recordIndex].Text(field) : "";
+        // Index the existing JSON array instead of copying every record for
+        // each field shown in the hardware table.
+        var records = Data.Get("fieldValues").Get(section);
+        var record = records.ValueKind == JsonValueKind.Array
+            ? recordIndex >= 0 && recordIndex < records.GetArrayLength() ? records[recordIndex] : default
+            : recordIndex == 0 ? records : default;
+        var display = record.Text(field);
         if (section == "Report info" && field == "Administrator" &&
             value.ValueKind is JsonValueKind.True or JsonValueKind.False &&
             display.Trim().ToUpperInvariant() is "" or "YES" or "NO" or "TRUE" or "FALSE")
@@ -351,6 +395,10 @@ internal sealed class DesktopSnapshot
     public string RecordTitle(string section, JsonElement record, int recordIndex)
     {
         if (record.Get("Unavailable").ValueKind != JsonValueKind.Undefined) return "Read unavailable";
+        if (section == "Monitors" && record.Text("RecordKind") == "Collection status" &&
+            record.Get("IdentificationRecords").ValueKind == JsonValueKind.Number && record.Number("IdentificationRecords") == 0 &&
+            string.IsNullOrWhiteSpace(record.Text("InstanceName")) && string.IsNullOrWhiteSpace(record.Text("SerialNumber")))
+            return "Monitor identification status - 0 identification records";
         var title = section switch
         {
             "Report info" => "Snapshot details", "Compatibility" => "Windows / PowerShell support",
@@ -375,6 +423,7 @@ internal sealed class DesktopSnapshot
         "Extended scan info" => "Capture time, reader and query counts for the extended device list.",
         "Extended device inventory" => "Records returned by the extended Windows reader. Entries can represent physical or virtual devices.",
         "PnP hardware IDs" => "Windows device records and the identifiers Windows exposes for them.",
+        "Monitors" => "Windows-reported monitor identification. A collection-status entry means no identification records were returned; it does not establish how many physical displays are connected.",
         "Windows Machine GUID" => "The identifier reported for this Windows installation.",
         "Warnings" => "Messages captured while reading this snapshot.",
         _ => "Hardware records reported by Windows in this snapshot."
@@ -390,6 +439,8 @@ internal sealed class DesktopSnapshot
         ("Report info", "ExtendedAttempted") => "Last device-list read attempt",
         ("Report info", "CompatibleReadSections") => "Sections read with a fallback",
         ("Report info", "ProgressFallbackSections") => "Sections using basic progress",
+        ("Windows", "SecureBootReadStatus") => "Secure Boot read status", ("Windows", "SecureBootReadCode") => "Secure Boot read code",
+        ("Windows", "TPMReadStatus") => "TPM read status", ("Windows", "TPMReadCode") => "TPM read code",
         ("Report info", "QueryCleanupSections") => "Sections with cleanup warnings",
         ("Extended scan info", "Captured") => "Device list captured at",
         ("Extended scan info", "Source") => "Read method",
@@ -425,7 +476,8 @@ internal static class SnapshotStore
         "Network adapters", "Monitors", "Battery", "Windows", "Windows Machine GUID", "PnP hardware IDs", "Extended device inventory"
     };
 
-    public static Task<SnapshotCatalog> ReadAsync(IEnumerable<string> directories, CancellationToken cancellationToken = default) => Task.Run(() =>
+    public static Task<SnapshotCatalog> ReadAsync(IEnumerable<string> directories, CancellationToken cancellationToken = default,
+        SnapshotPreviewCache? cache = null, bool reuseCachedPreviews = false) => Task.Run(() =>
     {
         var entries = new List<SnapshotEntry>();
         var folders = new List<string>();
@@ -465,13 +517,14 @@ internal static class SnapshotStore
                 if (!seenFiles.Add(file)) continue;
                 try
                 {
-                    var entry = ReadEntry(file);
-                    if (entry is null) skipped++;
+                    var entry = ReadEntry(file, cancellationToken, cache, reuseCachedPreviews);
+                    if (entry is null) { cache?.Remove(file); skipped++; }
                     else entries.Add(entry);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException
                     or DecoderFallbackException or InvalidOperationException)
                 {
+                    cache?.Remove(file);
                     skipped++;
                 }
             }
@@ -481,19 +534,36 @@ internal static class SnapshotStore
         var ordered = entries.OrderByDescending(x => x.SortTime)
             .ThenBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        cancellationToken.ThrowIfCancellationRequested();
+        // Prune only after a completed discovery, never from a cancelled partial list.
+        cache?.Retain(seenFiles);
         return new SnapshotCatalog(ordered, skipped, folders.ToArray());
     }, cancellationToken);
 
-    private static SnapshotEntry? ReadEntry(string file)
+    private static SnapshotEntry? ReadEntry(string file, CancellationToken cancellationToken,
+        SnapshotPreviewCache? cache, bool reuseCachedPreviews)
     {
         // Match the BAT's shared-read lock and enforce the size limit on this handle.
         using var stream = File.Open(file, FileMode.Open, FileAccess.Read, FileShare.Read);
         var length = stream.Length;
         if (length <= 0 || length > MaximumReportBytes) return null;
+        cancellationToken.ThrowIfCancellationRequested();
+        // A cache hit still requires readable access. All metadata comes from
+        // this open handle, so replacing the path cannot pair old bytes with a
+        // newer file's stamp. Unsupported metadata simply disables reuse.
+        var stamp = cache == null ? null : SnapshotPreviewStamp.Read(stream);
+        if (reuseCachedPreviews && stamp is { } current && cache != null && cache.TryGet(file, current, out var preview))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return preview;
+        }
         var bytes = GC.AllocateUninitializedArray<byte>((int)length);
         stream.ReadExactly(bytes);
-
+        cache?.RecordRead(length);
+        cancellationToken.ThrowIfCancellationRequested();
+        cache?.RecordParse();
         using var document = ParseReport(bytes);
+        cancellationToken.ThrowIfCancellationRequested();
         var root = document.RootElement;
         var info = root.Get("Report info");
         var version = info.Get("Version");
@@ -513,8 +583,13 @@ internal static class SnapshotStore
             DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal, out var captured);
         var sortTime = hasCaptureTime ? captured.ToUniversalTime() : new DateTimeOffset(File.GetLastWriteTimeUtc(stream.SafeFileHandle));
         var size = length < 1024 * 1024 ? $"{length / 1024d:0.#} KB" : $"{length / (1024d * 1024):0.#} MB";
-        return new SnapshotEntry(file, Path.GetFileName(file), string.IsNullOrWhiteSpace(computer) ? "Unknown PC" : computer,
+        var entry = new SnapshotEntry(file, Path.GetFileName(file), string.IsNullOrWhiteSpace(computer) ? "Unknown PC" : computer,
             hasCaptureTime ? captured.ToLocalTime().ToString("MMM d, yyyy  HH:mm") : "Unknown capture time", version.Text(), size, sortTime);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (stamp is { } readStamp && SnapshotPreviewStamp.Read(stream) == readStamp)
+            cache?.Store(file, readStamp, entry);
+        else cache?.Remove(file);
+        return entry;
     }
 
     private static JsonDocument ParseReport(ReadOnlyMemory<byte> bytes)

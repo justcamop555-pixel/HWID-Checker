@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../DesktopModels.cs" Link="DesktopModels.cs" />
+    <Compile Include="../../SnapshotPreviewCache.cs" Link="SnapshotPreviewCache.cs" />
     <Compile Include="../../SharedSnapshotLibrary.cs" Link="SharedSnapshotLibrary.cs" />
     <Compile Include="../../ReportFiles.cs" Link="ReportFiles.cs" />
   </ItemGroup>

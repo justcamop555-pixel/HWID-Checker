@@ -24,6 +24,9 @@ $custom=Join-Path $root 'Existing reports'
 Assert ((Get-ReportLocations -ScriptPath $env:HWID_SCRIPT -LocalRoot $local).Primary -eq $custom) 'existing shared report folder selection survives installation'
 Assert (Test-CheckerManagedInstall (Join-Path $env:ProgramFiles 'HWID Checker')) 'Program Files remains protected if the marker was deleted'
 Assert (-not (Test-CheckerManagedInstall ($env:ProgramFiles+' copy\HWID Checker'))) 'similar folder prefixes do not falsely identify a managed installation'
+$personal=Join-Path $local 'Programs\HWID Checker'
+Assert (Test-CheckerManagedInstall $personal) 'personal default path remains setup-managed if its marker is deleted'
+Assert (-not (Test-CheckerManagedInstall ($personal+' copy'))) 'personal path detection requires a directory boundary'
 $updater=Join-Path (Split-Path -Parent $Source) 'Update-HWID.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($updater,[ref]$t,[ref]$e)
 foreach($fn in $ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){. ([scriptblock]::Create($fn.Extent.Text))}
@@ -31,4 +34,7 @@ $Mode='Apply';$InstallDirectory=$app;$CurrentVersion='1.4.8';$Component='Package
 $rejected=$false
 try{Invoke-HwidUpdate}catch{$rejected=$_.Exception.Message -like '*administrator approval*'}
 Assert $rejected 'portable updater rejects machine-wide writes before reading a payload or waiting for the app'
+$InstallDirectory=$personal;$rejected=$false
+try{Invoke-HwidUpdate}catch{$rejected=$_.Exception.Message -like '*setup-managed installation*'}
+Assert $rejected 'portable updater rejects writes to a personal setup without claiming it needs elevation'
 [Console]::WriteLine(('All {0} managed installation checks passed. Synthetic paths only.' -f $checks))

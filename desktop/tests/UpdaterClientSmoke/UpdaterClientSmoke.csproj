@@ -9,7 +9,9 @@
     <Compile Include="../../DesktopUpdater.cs" Link="DesktopUpdater.cs"/>
     <Compile Include="../../InstallationLayout.cs" Link="InstallationLayout.cs"/>
     <Compile Include="../../NativeStartup.cs" Link="NativeStartup.cs"/>
+    <Compile Include="../../SetupSession.cs" Link="SetupSession.cs"/>
     <Compile Include="../../DesktopModels.cs" Link="DesktopModels.cs"/>
+    <Compile Include="../../SnapshotPreviewCache.cs" Link="SnapshotPreviewCache.cs"/>
     <None Include="FakeUpdater.ps1" CopyToOutputDirectory="PreserveNewest"/>
   </ItemGroup>
 </Project>

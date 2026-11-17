@@ -480,9 +480,9 @@ Assert ($overviewSummary.ExtendedState -eq 'NOT SCANNED' -and $null -eq $overvie
 $overviewFixture['Extended scan info']=[ordered]@{Captured='EXTENDED-TIME'}
 $overviewFixture['Extended device inventory']=@(
     $null,
-    [pscustomobject]@{HiddenByNodeFlag=$true;HiddenByClass=$true;Present=$false},
-    [pscustomobject]@{HiddenByNodeFlag=$null;HiddenByClass=$null;Present=$null},
-    [pscustomobject]@{HiddenByNodeFlag=$false;HiddenByClass=$false;Present=$true}
+    [pscustomobject]@{DeviceInstanceId='ROOT\HIDDEN\1';HiddenByNodeFlag=$true;HiddenByClass=$true;Present=$false},
+    [pscustomobject]@{DeviceInstanceId='ROOT\UNKNOWN\2';HiddenByNodeFlag=$null;HiddenByClass=$null;Present=$null},
+    [pscustomobject]@{DeviceInstanceId='ROOT\VISIBLE\3';HiddenByNodeFlag=$false;HiddenByClass=$false;Present=$true}
 )
 $overviewSummary=Get-OverviewSummary $overviewFixture $overviewIds @()
 Assert ($overviewSummary.ExtendedState -eq 'READ' -and $overviewSummary.Known -eq 3 -and $overviewSummary.Hidden -eq 1) 'Extended overview counts a node hidden by two flags only once'

@@ -6,6 +6,10 @@ if(Test-Path -LiteralPath $root){throw 'Choose a new test output directory.'}
 [void][IO.Directory]::CreateDirectory($root)
 $checks=0
 function Assert($condition,$message){if(-not $condition){throw $message};$script:checks++;Write-Output ('PASS: '+$message)}
+$bytes=[IO.File]::ReadAllBytes([IO.Path]::GetFullPath($ExePath))
+$wide=[Text.Encoding]::Unicode.GetString($bytes)+[Text.Encoding]::Unicode.GetString($bytes,1,$bytes.Length-1)
+Assert ($wide.Contains('Opening the desktop... %llu s')) 'compiled loading text contains readable English instead of code-page corruption'
+Assert ($wide.Contains('Cancelling startup. Waiting for Windows to finish opening the application process...')) 'compiled cancellation guidance remains readable'
 $csc=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $fixture=Join-Path $root 'fixture.exe'
 & $csc /nologo /target:winexe (('/out:')+$fixture) (Join-Path $PSScriptRoot 'NativeLauncherFixture.cs')

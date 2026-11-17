@@ -12,7 +12,7 @@ public partial class MainWindow
     {
         var read = ScanRows.Count(row => row.Status is "READ" or "CHECK");
         var notRead = ScanRows.Count(row => row.Status is "NOT READ" or "UNAVAILABLE");
-        SetSummary(ScanElapsedText, $"{_scanCompletedStages}/{_scanTotalStages} finished · {read} read · {notRead} not read · {_scanClock.Elapsed:mm\\:ss}",
+        SetSummary(ScanElapsedText, $"{_scanCompletedStages}/{_scanTotalStages} finished - {read} read - {notRead} not read - {_scanClock.Elapsed:mm\\:ss}",
             "Finished counts attempted checks, including the device catalog. READ and CHECK received data; NOT READ is a failed check. A scan is published after its complete result is validated.");
     }
 }
